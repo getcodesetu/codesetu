@@ -1,7 +1,7 @@
 {
   "name": "codesetu",
   "displayName": "CodeSetu",
-  "description": "AI coding assistant for VSCode with Sarvam-backed completions and chat.",
+  "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
   "version": "0.1.0",
   "publisher": "codesetu",
   "license": "Apache-2.0",
@@ -22,8 +22,37 @@
   },
   "categories": [
     "Machine Learning",
-    "Programming Languages"
+    "Programming Languages",
+    "Snippets",
+    "Other"
   ],
+  "keywords": [
+    "ai",
+    "llm",
+    "ai-coding-assistant",
+    "copilot-alternative",
+    "code-completion",
+    "chat",
+    "inline-completions",
+    "fim",
+    "sarvam",
+    "ollama",
+    "openai-compatible",
+    "vllm",
+    "openrouter",
+    "self-hosted",
+    "local-llm",
+    "air-gapped",
+    "on-premise",
+    "indic",
+    "india",
+    "open-source"
+  ],
+  "galleryBanner": {
+    "color": "#5865F2",
+    "theme": "dark"
+  },
+  "qna": "https://discord.gg/sjVKU8cpC6",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -33,6 +62,31 @@
         "command": "codesetu.openChat",
         "title": "CodeSetu: Open Chat",
         "category": "CodeSetu"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codesetu",
+          "title": "CodeSetu",
+          "icon": "media/codesetu-activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "codesetu": [
+        {
+          "id": "codesetuHome",
+          "name": "CodeSetu",
+          "icon": "media/codesetu-activitybar.svg",
+          "contextualTitle": "CodeSetu"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codesetuHome",
+        "contents": "Open-source AI coding assistant. Bring your own model — Sarvam, OpenAI-compatible APIs, or local.\n\n[Open Chat](command:codesetu.openChat)\n\nConfigure providers in [Settings](command:workbench.action.openSettings?%22codesetu%22)."
       }
     ],
     "configuration": {

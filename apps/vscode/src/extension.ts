@@ -46,11 +46,17 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   });
 
+  const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
+    getTreeItem: (item: vscode.TreeItem) => item,
+    getChildren: () => [],
+  });
+
   context.subscriptions.push(
     statusBarItem,
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    homeView,
   );
 }
 

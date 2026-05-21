@@ -2,6 +2,28 @@
   "name": "@codesetu/core",
   "version": "0.0.0",
   "private": true,
+  "description": "Core provider, tool, and orchestration primitives for CodeSetu — an open-source AI coding assistant for Indian developers and air-gapped enterprises.",
+  "keywords": [
+    "ai",
+    "llm",
+    "ai-coding-assistant",
+    "openai-compatible",
+    "sarvam",
+    "ollama",
+    "vllm",
+    "fim",
+    "tool-calling",
+    "self-hosted",
+    "indic",
+    "codesetu"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcodesetu/codesetu.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/getcodesetu/codesetu#readme",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

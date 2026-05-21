@@ -45,4 +45,4 @@ Thumbs.db
 .history/
 .vscode-test/
 .vscode-test-web/
-*.md
+.claude/

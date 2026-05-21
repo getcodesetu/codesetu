@@ -1,0 +1,58 @@
+# CodeSetu
+
+CodeSetu is an AI coding assistant for VS Code with chat and inline
+fill-in-the-middle completions.
+
+## Features
+
+- `CodeSetu: Open Chat` command
+- Status bar entry
+- Inline completions for code files
+- Sarvam provider support
+- Generic OpenAI-compatible provider support for Ollama, OpenRouter, vLLM,
+  SGLang, and similar endpoints
+
+## Provider Settings
+
+Open VS Code Settings JSON and configure one provider.
+
+Sarvam (set `codesetu.model` to the model id from your Sarvam account):
+
+```json
+{
+  "codesetu.provider": "sarvam",
+  "codesetu.apiKey": "YOUR_SARVAM_API_KEY",
+  "codesetu.baseUrl": "https://api.sarvam.ai/v1",
+  "codesetu.model": "<your-sarvam-model-id>"
+}
+```
+
+Ollama:
+
+```json
+{
+  "codesetu.provider": "openai-compatible",
+  "codesetu.apiKey": "ollama",
+  "codesetu.baseUrl": "http://localhost:11434/v1",
+  "codesetu.model": "qwen2.5-coder:7b"
+}
+```
+
+OpenRouter:
+
+```json
+{
+  "codesetu.provider": "openai-compatible",
+  "codesetu.apiKey": "YOUR_OPENROUTER_API_KEY",
+  "codesetu.baseUrl": "https://openrouter.ai/api/v1",
+  "codesetu.model": "anthropic/claude-3.5-sonnet"
+}
+```
+
+## Troubleshooting
+
+Open Output and select the `CodeSetu` channel to inspect provider errors.
+
+## License
+
+Apache License 2.0.

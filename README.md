@@ -1,8 +1,15 @@
 # CodeSetu
 
-CodeSetu is an open-source AI coding assistant for VSCode and JetBrains IDEs,
-built around Sarvam-30B and designed for Indian developers, enterprises, public
-sector teams, and air-gapped deployments.
+> **Open-source AI coding assistant for VSCode and JetBrains. Multi-provider, self-hostable, made in India.**
+
+[![CI](https://github.com/getcodesetu/codesetu/actions/workflows/ci.yml/badge.svg)](https://github.com/getcodesetu/codesetu/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/sjVKU8cpC6)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
+
+**Highlights**: AI chat in IDE · Inline (FIM) code completions · Tool-calling · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
 
 ## Status
 
@@ -20,7 +27,7 @@ This repository is a pnpm + Gradle monorepo organized as:
 
 - Node.js 18+
 - pnpm 9+
-- A Sarvam API key for hosted model calls
+- A provider — Sarvam API key, OpenRouter key, or a local OpenAI-compatible endpoint (Ollama, vLLM, SGLang)
 
 ## Setup
 
@@ -61,6 +68,13 @@ corepack pnpm test
 Open this repository in VSCode and press `F5` from the extension workspace to
 launch an Extension Development Host after the scaffold is expanded with debug
 configuration.
+
+## Community
+
+- [Discord](https://discord.gg/sjVKU8cpC6) — chat with users and maintainers
+- [GitHub Discussions](https://github.com/getcodesetu/codesetu/discussions) — design questions, RFCs, longer-form
+- [GitHub Issues](https://github.com/getcodesetu/codesetu/issues) — bugs and feature requests
+- Security: see [SECURITY.md](SECURITY.md) for private vulnerability reporting
 
 ## License
 
