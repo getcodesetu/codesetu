@@ -1,13 +1,10 @@
 name: Release VSCode Extension
 
 on:
-  push:
-    tags:
-      - "vscode-v*"
   workflow_dispatch:
     inputs:
       dry-run:
-        description: "Build and attach the VSIX to a GitHub Release without publishing to marketplaces"
+        description: "Build VSIX, skip publishing and tagging"
         type: boolean
         default: false
 
@@ -16,12 +13,15 @@ permissions:
 
 jobs:
   release:
-    name: Publish to Marketplace + Open VSX
+    name: Build and publish
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -34,10 +34,25 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Compute version
+        id: version
+        run: |
+          # Major.minor is read from apps/vscode/package.json (single source of truth).
+          # Patch is the GitHub Actions run_number for this workflow (monotonic, never resets).
+          MAJOR_MINOR=$(node -p "require('./apps/vscode/package.json').version.split('.').slice(0,2).join('.')")
+          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=vscode-v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Computed version: ${VERSION}"
+
+      - name: Apply version to manifest (workspace only, not committed)
+        working-directory: apps/vscode
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify before release
+      - name: Verify
         run: |
           pnpm format
           pnpm build
@@ -46,16 +61,6 @@ jobs:
 
       - name: Package VSIX
         run: pnpm package:vscode
-
-      - name: Verify tag matches manifest version
-        if: startsWith(github.ref, 'refs/tags/vscode-v')
-        run: |
-          TAG_VERSION="${GITHUB_REF_NAME#vscode-v}"
-          MANIFEST_VERSION=$(node -p "require('./apps/vscode/package.json').version")
-          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
-            echo "::error::Tag version ($TAG_VERSION) does not match apps/vscode/package.json version ($MANIFEST_VERSION)"
-            exit 1
-          fi
 
       - name: Publish to Visual Studio Marketplace
         if: ${{ !inputs.dry-run }}
@@ -73,11 +78,40 @@ jobs:
           VSIX=$(ls artifacts/codesetu-*.vsix | head -n1)
           pnpm dlx ovsx publish "$VSIX" --pat "$OVSX_PAT"
 
+      - name: Configure git identity for tagging
+        if: ${{ !inputs.dry-run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag the release commit
+        if: ${{ !inputs.dry-run }}
+        run: |
+          # Discard the in-workspace version bump so the tag points at the original commit.
+          git checkout apps/vscode/package.json
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        if: ${{ !inputs.dry-run }}
         uses: softprops/action-gh-release@v2
         with:
-          name: VSCode Extension ${{ github.ref_name }}
+          name: VSCode Extension ${{ steps.version.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
           files: artifacts/codesetu-*.vsix
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Release summary"
+            echo ""
+            echo "- Version: \`${{ steps.version.outputs.version }}\`"
+            echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
+            echo "- Run number: \`${{ github.run_number }}\`"
+            if [ "${{ inputs.dry-run }}" = "true" ]; then
+              echo "- Mode: **dry-run** (nothing published, no tag pushed)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
