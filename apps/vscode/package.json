@@ -1,0 +1,133 @@
+{
+  "name": "codesetu",
+  "displayName": "CodeSetu",
+  "description": "AI coding assistant for VSCode with Sarvam-backed completions and chat.",
+  "version": "0.1.0",
+  "publisher": "codesetu",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcodesetu/codesetu.git",
+    "directory": "apps/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/getcodesetu/codesetu/issues"
+  },
+  "homepage": "https://github.com/getcodesetu/codesetu#readme",
+  "type": "commonjs",
+  "main": "./dist/extension.cjs",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codesetu.openChat",
+        "title": "CodeSetu: Open Chat",
+        "category": "CodeSetu"
+      }
+    ],
+    "configuration": {
+      "title": "CodeSetu",
+      "properties": {
+        "codesetu.provider": {
+          "type": "string",
+          "enum": [
+            "sarvam",
+            "openai-compatible"
+          ],
+          "default": "sarvam",
+          "description": "Model provider used by CodeSetu."
+        },
+        "codesetu.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for the configured provider. If empty, CodeSetu reads provider environment variables."
+        },
+        "codesetu.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI-compatible base URL. Leave empty for the provider default."
+        },
+        "codesetu.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name. Leave empty for the provider default."
+        },
+        "codesetu.inlineCompletions.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline fill-in-the-middle completions."
+        },
+        "codesetu.inlineCompletions.maxTokens": {
+          "type": "number",
+          "default": 96,
+          "minimum": 1,
+          "maximum": 512,
+          "description": "Maximum tokens to request for inline completions."
+        },
+        "codesetu.inlineCompletions.temperature": {
+          "type": "number",
+          "default": 0.1,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature for inline completions."
+        },
+        "codesetu.inlineCompletions.maxPrefixChars": {
+          "type": "number",
+          "default": 4000,
+          "minimum": 100,
+          "description": "Maximum characters before the cursor sent for FIM completions."
+        },
+        "codesetu.inlineCompletions.maxSuffixChars": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 0,
+          "description": "Maximum characters after the cursor sent for FIM completions."
+        },
+        "codesetu.inlineCompletions.stopSequences": {
+          "type": "array",
+          "default": [
+            "\n\n",
+            "\n```"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Stop sequences for inline completions."
+        },
+        "codesetu.chat.maxTokens": {
+          "type": "number",
+          "default": 1024,
+          "minimum": 1,
+          "description": "Maximum tokens to request for chat responses."
+        },
+        "codesetu.chat.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature for chat responses."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs --sourcemap",
+    "dev": "esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs --sourcemap --watch",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@codesetu/core": "workspace:*",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5"
+  }
+}
