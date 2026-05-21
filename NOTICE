@@ -1,0 +1,32 @@
+CodeSetu
+Copyright 2026 CodeSetu Contributors
+
+This product includes software developed by third parties:
+
+---
+
+Continue.dev
+Copyright 2023 Continue Dev, Inc.
+Licensed under the Apache License, Version 2.0
+https://github.com/continuedev/continue
+
+CodeSetu's core architecture is derived from Continue.dev.
+The original source code, architecture, and IDE integration
+patterns are the work of the Continue.dev team.
+
+---
+
+Sarvam AI — Sarvam-30B and Sarvam-105B
+Copyright 2026 Sarvam AI
+Licensed under the Apache License, Version 2.0
+https://sarvam.ai | https://huggingface.co/sarvamai
+
+---
+
+AI4Bharat — IndicASR, IndicVoices, Indic NLP tools
+Copyright AI4Bharat / IIT Madras
+https://ai4bharat.org
+
+---
+
+All trademarks are the property of their respective owners.

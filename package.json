@@ -1,0 +1,30 @@
+{
+  "name": "codesetu-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source AI coding assistant for Indian developers and enterprises.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "dev": "corepack pnpm -r --parallel --if-present dev",
+    "package:vscode": "corepack pnpm --dir apps/vscode build && node -e \"require('fs').mkdirSync('artifacts',{recursive:true})\" && cd apps/vscode && corepack pnpm dlx @vscode/vsce package --no-dependencies --out ../../artifacts/",
+    "lint": "corepack pnpm -r lint",
+    "test": "corepack pnpm -r test",
+    "format": "prettier --check .",
+    "format:write": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

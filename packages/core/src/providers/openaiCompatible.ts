@@ -1,0 +1,120 @@
+/**
+ * Copyright 2026 CodeSetu Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import OpenAI from "openai";
+import type {
+  ChatCompletion,
+  ChatCompletionCreateParamsNonStreaming,
+} from "openai/resources/chat/completions";
+import type { Completion, CompletionCreateParamsNonStreaming } from "openai/resources/completions";
+
+import type { ChatCompletionRequest, FimCompletionRequest, LlmProvider } from "./base.js";
+
+export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
+export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:8000/v1";
+export const DEFAULT_OPENAI_COMPATIBLE_MODEL = "local-code-model";
+
+export interface OpenAICompatibleClient {
+  chat: {
+    completions: {
+      create(params: ChatCompletionCreateParamsNonStreaming): Promise<ChatCompletion>;
+    };
+  };
+  completions: {
+    create(params: CompletionCreateParamsNonStreaming): Promise<Completion>;
+  };
+}
+
+export interface OpenAICompatibleProviderOptions {
+  providerId?: string;
+  apiKey?: string;
+  apiKeyEnvVar?: string;
+  baseURL?: string;
+  baseURLEnvVar?: string;
+  defaultBaseURL?: string;
+  model?: string;
+  modelEnvVar?: string;
+  defaultModel?: string;
+  client?: OpenAICompatibleClient;
+}
+
+export class OpenAICompatibleProvider implements LlmProvider {
+  public readonly providerId: string;
+  public readonly baseURL: string;
+  public readonly model: string;
+
+  private readonly client: OpenAICompatibleClient;
+  private readonly apiKeyEnvVar: string;
+
+  public constructor(options: OpenAICompatibleProviderOptions = {}) {
+    this.providerId = options.providerId ?? DEFAULT_OPENAI_COMPATIBLE_PROVIDER;
+    this.apiKeyEnvVar = options.apiKeyEnvVar ?? "CODESETU_API_KEY";
+    this.baseURL =
+      options.baseURL ??
+      (options.baseURLEnvVar === undefined ? undefined : process.env[options.baseURLEnvVar]) ??
+      process.env.CODESETU_BASE_URL ??
+      options.defaultBaseURL ??
+      DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
+    this.model =
+      options.model ??
+      (options.modelEnvVar === undefined ? undefined : process.env[options.modelEnvVar]) ??
+      process.env.CODESETU_MODEL ??
+      options.defaultModel ??
+      DEFAULT_OPENAI_COMPATIBLE_MODEL;
+    this.client = options.client ?? this.createClient(options.apiKey);
+  }
+
+  public chat(request: ChatCompletionRequest): Promise<ChatCompletion> {
+    const params: ChatCompletionCreateParamsNonStreaming = {
+      model: request.model ?? this.model,
+      messages: request.messages,
+      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.tools === undefined ? {} : { tools: request.tools }),
+      ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
+    };
+
+    return this.client.chat.completions.create(params);
+  }
+
+  public completeFim(request: FimCompletionRequest): Promise<Completion> {
+    const params: CompletionCreateParamsNonStreaming = {
+      model: request.model ?? this.model,
+      prompt: request.prompt,
+      ...(request.suffix === undefined ? {} : { suffix: request.suffix }),
+      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.stop === undefined ? {} : { stop: request.stop }),
+    };
+
+    return this.client.completions.create(params);
+  }
+
+  private createClient(apiKeyOption: string | undefined): OpenAICompatibleClient {
+    const apiKey = apiKeyOption ?? process.env[this.apiKeyEnvVar] ?? process.env.CODESETU_API_KEY;
+
+    if (apiKey === undefined || apiKey.length === 0) {
+      throw new Error(
+        `${this.apiKeyEnvVar} is required to create the ${this.providerId} provider.`,
+      );
+    }
+
+    return new OpenAI({
+      apiKey,
+      baseURL: this.baseURL,
+    });
+  }
+}

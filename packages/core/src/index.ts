@@ -1,0 +1,47 @@
+/**
+ * Copyright 2026 CodeSetu Contributors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+export type {
+  ChatCompletionRequest,
+  ChatMessage,
+  FimCompletionRequest,
+  LlmProvider,
+} from "./providers/base.js";
+export {
+  DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+  DEFAULT_OPENAI_COMPATIBLE_MODEL,
+  DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
+  OpenAICompatibleProvider,
+  type OpenAICompatibleClient,
+  type OpenAICompatibleProviderOptions,
+} from "./providers/openaiCompatible.js";
+export {
+  DEFAULT_PROVIDER_ID,
+  createProvider,
+  listProviderIds,
+  type ConfiguredProvider,
+  type ProviderFactoryOptions,
+  type ProviderId,
+} from "./providers/registry.js";
+export { getAssistantText } from "./providers/response.js";
+export {
+  DEFAULT_SARVAM_BASE_URL,
+  DEFAULT_SARVAM_MODEL,
+  SarvamProvider,
+  type SarvamOpenAIClient,
+  type SarvamProviderOptions,
+} from "./providers/sarvam.js";
+export { listTools, registerTool, type CodeSetuTool } from "./tools/index.js";

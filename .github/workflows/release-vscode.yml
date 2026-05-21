@@ -1,0 +1,83 @@
+name: Release VSCode Extension
+
+on:
+  push:
+    tags:
+      - "vscode-v*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Build and attach the VSIX to a GitHub Release without publishing to marketplaces"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish to Marketplace + Open VSX
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify before release
+        run: |
+          pnpm format
+          pnpm lint
+          pnpm build
+          pnpm test
+
+      - name: Package VSIX
+        run: pnpm package:vscode
+
+      - name: Verify tag matches manifest version
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#vscode-v}"
+          MANIFEST_VERSION=$(node -p "require('./apps/vscode/package.json').version")
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match apps/vscode/package.json version ($MANIFEST_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish to Visual Studio Marketplace
+        if: ${{ !inputs.dry-run }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          cd apps/vscode
+          pnpm dlx @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
+
+      - name: Publish to Open VSX
+        if: ${{ !inputs.dry-run && env.OVSX_PAT != '' }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          VSIX=$(ls artifacts/codesetu-*.vsix | head -n1)
+          pnpm dlx ovsx publish "$VSIX" --pat "$OVSX_PAT"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/vscode-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: VSCode Extension ${{ github.ref_name }}
+          files: artifacts/codesetu-*.vsix
+          generate_release_notes: true
+          fail_on_unmatched_files: true
