@@ -2,6 +2,24 @@
   "name": "@codesetu/plugin-sdk",
   "version": "0.0.0",
   "private": true,
+  "description": "Plugin and skill contracts for extending the CodeSetu AI coding assistant. Build tools, providers, and skills consumed by VSCode, JetBrains, and CLI hosts.",
+  "keywords": [
+    "ai",
+    "ai-coding-assistant",
+    "plugin-sdk",
+    "ai-plugin",
+    "ai-skill",
+    "tool-calling",
+    "vscode-extension",
+    "codesetu"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcodesetu/codesetu.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "homepage": "https://github.com/getcodesetu/codesetu#readme",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -3,3 +3,4 @@ artifacts/
 dist/
 packages/*/dist/
 node_modules/
+.claude/
