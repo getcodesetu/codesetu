@@ -1,12 +1,12 @@
 {
   "name": "@codesetu/jetbrains",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "JetBrains plugin placeholder for CodeSetu. Kotlin setup will be added later.",
+  "description": "JetBrains plugin for CodeSetu. This Kotlin/Gradle project is integrated into the pnpm workspace via thin script delegations — actual build/test runs through Gradle.",
   "license": "Apache-2.0",
   "scripts": {
-    "build": "node -e \"console.log('JetBrains Kotlin scaffold pending')\"",
-    "lint": "node -e \"console.log('JetBrains Kotlin scaffold pending')\"",
-    "test": "node -e \"console.log('JetBrains Kotlin scaffold pending')\""
+    "build": "echo 'JetBrains plugin: run ./gradlew buildPlugin from this directory (requires JDK 17+).'",
+    "lint": "echo 'JetBrains plugin: lint is handled by Gradle/IntelliJ; no Node-side linting.'",
+    "test": "echo 'JetBrains plugin: run ./gradlew test from this directory.'"
   }
 }

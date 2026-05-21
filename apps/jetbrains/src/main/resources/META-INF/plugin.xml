@@ -1,0 +1,37 @@
+<idea-plugin>
+  <id>ai.codesetu.codesetu</id>
+  <name>CodeSetu</name>
+  <vendor url="https://github.com/getcodesetu/codesetu">CodeSetu Maintainers</vendor>
+
+  <description><![CDATA[
+    Open-source AI coding assistant for JetBrains IDEs.
+    Multi-provider — works with Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter), and local self-hosted deployments.
+    Built for Indian developers, public-sector teams, and air-gapped enterprises.<br/><br/>
+    This plugin is in early scaffold. Source: <a href="https://github.com/getcodesetu/codesetu">github.com/getcodesetu/codesetu</a>
+    &middot; Community: <a href="https://discord.gg/sjVKU8cpC6">Discord</a>
+  ]]></description>
+
+  <change-notes><![CDATA[
+    <h3>0.1.0</h3>
+    <ul>
+      <li>Initial JetBrains plugin scaffold</li>
+      <li>Adds CodeSetu menu group with a placeholder "Open Chat" action</li>
+    </ul>
+  ]]></change-notes>
+
+  <depends>com.intellij.modules.platform</depends>
+
+  <actions>
+    <group id="ai.codesetu.MainMenu" text="CodeSetu" description="CodeSetu actions" popup="true">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+      <action
+        id="ai.codesetu.OpenChatAction"
+        class="ai.codesetu.actions.OpenChatAction"
+        text="Open Chat"
+        description="Open the CodeSetu chat panel"/>
+    </group>
+  </actions>
+
+  <extensions defaultExtensionNs="com.intellij">
+  </extensions>
+</idea-plugin>
