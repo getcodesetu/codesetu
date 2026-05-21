@@ -40,8 +40,8 @@ jobs:
       - name: Verify before release
         run: |
           pnpm format
-          pnpm lint
           pnpm build
+          pnpm lint
           pnpm test
 
       - name: Package VSIX
