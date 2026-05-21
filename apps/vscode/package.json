@@ -16,6 +16,7 @@
   "homepage": "https://github.com/getcodesetu/codesetu#readme",
   "type": "commonjs",
   "main": "./dist/extension.cjs",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.85.0"
   },
