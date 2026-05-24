@@ -11,18 +11,21 @@ fun buildSystemMessage(instructions: List<WorkspaceInstruction>): String =
     "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware.\n\nFollow applicable workspace guidance when it helps the user's request."
   }
 
-fun buildActionUserMessage(
-  actionId: IdeActionId,
-  context: IdeContextPayload,
-  instructions: List<WorkspaceInstruction>,
-): String {
-  val actionInstruction = when (actionId) {
+fun buildActionInstruction(actionId: IdeActionId): String =
+  when (actionId) {
     IdeActionId.EXPLAIN -> "Explain the selected code clearly and concisely. Include key control flow, inputs, outputs, and risks."
     IdeActionId.REFACTOR -> "Suggest a focused refactor for the selected code. Preserve behavior and explain the trade-offs."
     IdeActionId.WRITE_TESTS -> "Write focused tests for the selected code. Prefer examples that cover normal behavior and edge cases."
     IdeActionId.FIX_BUG -> "Identify the likely bug in the selected code and propose the smallest safe fix."
     IdeActionId.ADD_DOCS -> "Add useful documentation for the selected code. Keep it accurate and close to the code."
   }
+
+fun buildActionUserMessage(
+  actionId: IdeActionId,
+  context: IdeContextPayload,
+  instructions: List<WorkspaceInstruction>,
+): String {
+  val actionInstruction = buildActionInstruction(actionId)
 
   val instructionBlock = instructions.joinToString("\n\n") { "### ${it.name}\n${it.body}" }
   return listOf(

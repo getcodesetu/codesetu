@@ -80,7 +80,6 @@ export function activate(context: vscode.ExtensionContext): void {
     context,
     responder,
     outputChannel,
-    loadInstructions,
   });
 
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {

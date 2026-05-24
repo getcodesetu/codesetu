@@ -1,9 +1,7 @@
 package ai.codesetu.actions
 
-import ai.codesetu.context.collectIdeContext
-import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.IdeActionId
-import ai.codesetu.prompts.buildActionUserMessage
+import ai.codesetu.prompts.buildActionInstruction
 import ai.codesetu.toolwindow.CodeSetuChatService
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -14,11 +12,7 @@ abstract class CodeSetuEditorAction(
 ) : AnAction() {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
-    val message = buildActionUserMessage(
-      actionId,
-      collectIdeContext(e),
-      loadWorkspaceInstructions(project),
-    )
+    val message = buildActionInstruction(actionId)
     val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CodeSetu") ?: return
     toolWindow.show {
       CodeSetuChatService.getInstance(project).sendMessage(message)

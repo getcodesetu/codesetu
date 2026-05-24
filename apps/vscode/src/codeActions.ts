@@ -8,21 +8,16 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import {
-  buildActionUserMessage,
-  type IdeActionId,
-  type WorkspaceInstruction,
-} from "@codesetu/core";
+import type { IdeActionId } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import { buildEditorActionMessage } from "./actionMessages";
 import { ChatPanel, type ChatResponder } from "./chatPanel";
-import { collectVSCodeContext } from "./ideContext";
 
 interface RegisterCodeActionsOptions {
   context: vscode.ExtensionContext;
   responder: ChatResponder;
   outputChannel: vscode.OutputChannel;
-  loadInstructions(): Promise<readonly WorkspaceInstruction[]>;
 }
 
 const commandMap: Array<{ command: string; actionId: IdeActionId }> = [
@@ -38,9 +33,7 @@ export function registerCodeSetuEditorActions(
 ): vscode.Disposable[] {
   return commandMap.map(({ command, actionId }) =>
     vscode.commands.registerCommand(command, async () => {
-      const ideContext = await collectVSCodeContext();
-      const instructions = await options.loadInstructions();
-      const message = buildActionUserMessage(actionId, ideContext, [...instructions]);
+      const message = buildEditorActionMessage(actionId);
 
       await ChatPanel.createOrShowAndSend(
         options.context.extensionUri,
