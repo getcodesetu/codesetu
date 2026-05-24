@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildActionUserMessage,
@@ -81,6 +81,11 @@ describe("workspace instruction parser", () => {
 });
 
 describe("provider diagnostics", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
   it("classifies missing model before creating a provider", async () => {
     const result = await diagnoseProvider({
       providerOptions: {
@@ -94,5 +99,87 @@ describe("provider diagnostics", () => {
 
     expect(result.status).toBe("missing-config");
     expect(result.message).toContain("model");
+  });
+
+  it("classifies default Sarvam without model or API key before creating a provider", async () => {
+    vi.stubEnv("SARVAM_MODEL", "");
+    vi.stubEnv("CODESETU_MODEL", "");
+    vi.stubEnv("SARVAM_API_KEY", "");
+    vi.stubEnv("CODESETU_API_KEY", "");
+    const createProvider = vi.fn();
+
+    const result = await diagnoseProvider({
+      providerOptions: {
+        provider: "sarvam",
+      },
+      createProvider,
+    });
+
+    expect(result.status).toBe("missing-config");
+    expect(result.message).toContain("model");
+    expect(createProvider).not.toHaveBeenCalled();
+  });
+
+  it("classifies missing API key before creating a provider", async () => {
+    vi.stubEnv("SARVAM_API_KEY", "");
+    vi.stubEnv("CODESETU_API_KEY", "");
+    const createProvider = vi.fn();
+
+    const result = await diagnoseProvider({
+      providerOptions: {
+        provider: "sarvam",
+        model: "sarvam-test-model",
+      },
+      createProvider,
+    });
+
+    expect(result.status).toBe("missing-config");
+    expect(result.message).toContain("API key");
+    expect(createProvider).not.toHaveBeenCalled();
+  });
+
+  it("returns ok with latency when provider chat succeeds", async () => {
+    const chat = vi.fn().mockResolvedValue({
+      id: "chatcmpl-test",
+      object: "chat.completion",
+      created: 0,
+      model: "test-model",
+      choices: [],
+    });
+
+    const result = await diagnoseProvider({
+      providerOptions: {
+        provider: "sarvam",
+        apiKey: "test-key",
+        model: "sarvam-test-model",
+      },
+      createProvider: vi.fn(() => ({
+        chat,
+        completeFim: vi.fn(),
+      })),
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.latencyMs).toEqual(expect.any(Number));
+    expect(chat).toHaveBeenCalledOnce();
+  });
+
+  it("returns provider errors with the error message", async () => {
+    const chat = vi.fn().mockRejectedValue(new Error("diagnostic failed"));
+
+    const result = await diagnoseProvider({
+      providerOptions: {
+        provider: "sarvam",
+        apiKey: "test-key",
+        model: "sarvam-test-model",
+      },
+      createProvider: vi.fn(() => ({
+        chat,
+        completeFim: vi.fn(),
+      })),
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.message).toBe("diagnostic failed");
   });
 });

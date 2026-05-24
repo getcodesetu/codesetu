@@ -63,6 +63,7 @@ export type ProviderDiagnosticStatus = "ok" | "missing-config" | "error";
 export interface ProviderDiagnostic {
   status: ProviderDiagnosticStatus;
   message: string;
+  latencyMs?: number;
 }
 
 export interface DiagnoseProviderOptions {

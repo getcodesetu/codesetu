@@ -14,25 +14,27 @@
  * limitations under the License.
  */
 
-import { createProvider as createConfiguredProvider } from "../providers/registry.js";
+import { DEFAULT_OPENAI_COMPATIBLE_PROVIDER } from "../providers/openaiCompatible.js";
+import { DEFAULT_PROVIDER_ID, createProvider as createConfiguredProvider } from "../providers/registry.js";
 import type { DiagnoseProviderOptions, ProviderDiagnostic } from "./types.js";
 
 export async function diagnoseProvider(
   options: DiagnoseProviderOptions = {},
 ): Promise<ProviderDiagnostic> {
   const providerOptions = options.providerOptions ?? {};
-  const configuredModel = providerOptions.model;
+  const missingConfig = getMissingConfigMessage(providerOptions);
 
-  if (configuredModel !== undefined && configuredModel.trim().length === 0) {
+  if (missingConfig !== undefined) {
     return {
       status: "missing-config",
-      message: "model is required before CodeSetu can create the provider.",
+      message: missingConfig,
     };
   }
 
   try {
     const createProvider = options.createProvider ?? createConfiguredProvider;
     const provider = createProvider(providerOptions);
+    const startedAt = Date.now();
 
     await provider.chat({
       messages: [{ role: "user", content: "Reply with ok." }],
@@ -43,6 +45,7 @@ export async function diagnoseProvider(
     return {
       status: "ok",
       message: "Provider diagnostic chat completed.",
+      latencyMs: Date.now() - startedAt,
     };
   } catch (error) {
     return {
@@ -50,4 +53,34 @@ export async function diagnoseProvider(
       message: error instanceof Error ? error.message : "Provider diagnostic failed.",
     };
   }
+}
+
+function getMissingConfigMessage(providerOptions: {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+}): string | undefined {
+  const provider = providerOptions.provider ?? process.env.CODESETU_PROVIDER ?? DEFAULT_PROVIDER_ID;
+
+  if (provider === DEFAULT_PROVIDER_ID) {
+    if (!hasConfigValue(providerOptions.model, process.env.SARVAM_MODEL, process.env.CODESETU_MODEL)) {
+      return "model is required before CodeSetu can create the provider.";
+    }
+
+    if (!hasConfigValue(providerOptions.apiKey, process.env.SARVAM_API_KEY, process.env.CODESETU_API_KEY)) {
+      return "API key is required before CodeSetu can create the provider.";
+    }
+  }
+
+  if (provider === DEFAULT_OPENAI_COMPATIBLE_PROVIDER) {
+    if (!hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY)) {
+      return "API key is required before CodeSetu can create the provider.";
+    }
+  }
+
+  return undefined;
+}
+
+function hasConfigValue(...values: Array<string | undefined>): boolean {
+  return values.some((value) => value !== undefined && value.trim().length > 0);
 }
