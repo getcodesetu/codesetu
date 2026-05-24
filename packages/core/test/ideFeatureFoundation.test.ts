@@ -99,6 +99,10 @@ describe("provider diagnostics", () => {
 
     expect(result.status).toBe("missing-config");
     expect(result.message).toContain("model");
+    expect(result.provider).toBe("sarvam");
+    expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
+    expect(result.model).toBe("");
+    expect(result.hasApiKey).toBe(true);
   });
 
   it("classifies default Sarvam without model or API key before creating a provider", async () => {
@@ -117,6 +121,10 @@ describe("provider diagnostics", () => {
 
     expect(result.status).toBe("missing-config");
     expect(result.message).toContain("model");
+    expect(result.provider).toBe("sarvam");
+    expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
+    expect(result.model).toBe("");
+    expect(result.hasApiKey).toBe(false);
     expect(createProvider).not.toHaveBeenCalled();
   });
 
@@ -135,6 +143,10 @@ describe("provider diagnostics", () => {
 
     expect(result.status).toBe("missing-config");
     expect(result.message).toContain("API key");
+    expect(result.provider).toBe("sarvam");
+    expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
+    expect(result.model).toBe("sarvam-test-model");
+    expect(result.hasApiKey).toBe(false);
     expect(createProvider).not.toHaveBeenCalled();
   });
 
@@ -160,8 +172,40 @@ describe("provider diagnostics", () => {
     });
 
     expect(result.status).toBe("ok");
+    expect(result.provider).toBe("sarvam");
+    expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
+    expect(result.model).toBe("sarvam-test-model");
+    expect(result.hasApiKey).toBe(true);
     expect(result.latencyMs).toEqual(expect.any(Number));
     expect(chat).toHaveBeenCalledOnce();
+  });
+
+  it("reports env-derived model and API key presence without leaking the key", async () => {
+    vi.stubEnv("SARVAM_MODEL", "sarvam-env-model");
+    vi.stubEnv("SARVAM_API_KEY", "secret-env-key");
+    const chat = vi.fn().mockResolvedValue({
+      id: "chatcmpl-test",
+      object: "chat.completion",
+      created: 0,
+      model: "sarvam-env-model",
+      choices: [],
+    });
+
+    const result = await diagnoseProvider({
+      providerOptions: {
+        provider: "sarvam",
+      },
+      createProvider: vi.fn(() => ({
+        chat,
+        completeFim: vi.fn(),
+      })),
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.provider).toBe("sarvam");
+    expect(result.model).toBe("sarvam-env-model");
+    expect(result.hasApiKey).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("secret-env-key");
   });
 
   it("returns provider errors with the error message", async () => {
@@ -180,6 +224,10 @@ describe("provider diagnostics", () => {
     });
 
     expect(result.status).toBe("error");
+    expect(result.provider).toBe("sarvam");
+    expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
+    expect(result.model).toBe("sarvam-test-model");
+    expect(result.hasApiKey).toBe(true);
     expect(result.message).toBe("diagnostic failed");
   });
 });

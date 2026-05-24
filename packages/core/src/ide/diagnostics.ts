@@ -14,18 +14,25 @@
  * limitations under the License.
  */
 
-import { DEFAULT_OPENAI_COMPATIBLE_PROVIDER } from "../providers/openaiCompatible.js";
+import {
+  DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+  DEFAULT_OPENAI_COMPATIBLE_MODEL,
+  DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
+} from "../providers/openaiCompatible.js";
 import { DEFAULT_PROVIDER_ID, createProvider as createConfiguredProvider } from "../providers/registry.js";
+import { DEFAULT_SARVAM_BASE_URL, DEFAULT_SARVAM_MODEL } from "../providers/sarvam.js";
 import type { DiagnoseProviderOptions, ProviderDiagnostic } from "./types.js";
 
 export async function diagnoseProvider(
   options: DiagnoseProviderOptions = {},
 ): Promise<ProviderDiagnostic> {
   const providerOptions = options.providerOptions ?? {};
-  const missingConfig = getMissingConfigMessage(providerOptions);
+  const metadata = resolveDiagnosticMetadata(providerOptions);
+  const missingConfig = getMissingConfigMessage(metadata);
 
   if (missingConfig !== undefined) {
     return {
+      ...metadata,
       status: "missing-config",
       message: missingConfig,
     };
@@ -43,37 +50,80 @@ export async function diagnoseProvider(
     });
 
     return {
+      ...metadata,
       status: "ok",
       message: "Provider diagnostic chat completed.",
       latencyMs: Date.now() - startedAt,
     };
   } catch (error) {
     return {
+      ...metadata,
       status: "error",
       message: error instanceof Error ? error.message : "Provider diagnostic failed.",
     };
   }
 }
 
-function getMissingConfigMessage(providerOptions: {
+interface DiagnosticMetadata {
+  provider: string;
+  baseURL: string;
+  model: string;
+  hasApiKey: boolean;
+}
+
+function resolveDiagnosticMetadata(providerOptions: {
   provider?: string;
+  baseURL?: string;
   apiKey?: string;
   model?: string;
-}): string | undefined {
+}): DiagnosticMetadata {
   const provider = providerOptions.provider ?? process.env.CODESETU_PROVIDER ?? DEFAULT_PROVIDER_ID;
 
   if (provider === DEFAULT_PROVIDER_ID) {
-    if (!hasConfigValue(providerOptions.model, process.env.SARVAM_MODEL, process.env.CODESETU_MODEL)) {
+    return {
+      provider,
+      baseURL:
+        providerOptions.baseURL ??
+        process.env.SARVAM_BASE_URL ??
+        process.env.CODESETU_BASE_URL ??
+        DEFAULT_SARVAM_BASE_URL,
+      model: providerOptions.model ?? process.env.SARVAM_MODEL ?? process.env.CODESETU_MODEL ?? DEFAULT_SARVAM_MODEL,
+      hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.SARVAM_API_KEY, process.env.CODESETU_API_KEY),
+    };
+  }
+
+  if (provider === DEFAULT_OPENAI_COMPATIBLE_PROVIDER) {
+    return {
+      provider,
+      baseURL: providerOptions.baseURL ?? process.env.CODESETU_BASE_URL ?? DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+      model: providerOptions.model ?? process.env.CODESETU_MODEL ?? DEFAULT_OPENAI_COMPATIBLE_MODEL,
+      hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY),
+    };
+  }
+
+  return {
+    provider,
+    baseURL: providerOptions.baseURL ?? process.env.CODESETU_BASE_URL ?? "",
+    model: providerOptions.model ?? process.env.CODESETU_MODEL ?? "",
+    hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY),
+  };
+}
+
+function getMissingConfigMessage(metadata: DiagnosticMetadata): string | undefined {
+  const { provider } = metadata;
+
+  if (provider === DEFAULT_PROVIDER_ID) {
+    if (!hasConfigValue(metadata.model)) {
       return "model is required before CodeSetu can create the provider.";
     }
 
-    if (!hasConfigValue(providerOptions.apiKey, process.env.SARVAM_API_KEY, process.env.CODESETU_API_KEY)) {
+    if (!metadata.hasApiKey) {
       return "API key is required before CodeSetu can create the provider.";
     }
   }
 
   if (provider === DEFAULT_OPENAI_COMPATIBLE_PROVIDER) {
-    if (!hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY)) {
+    if (!metadata.hasApiKey) {
       return "API key is required before CodeSetu can create the provider.";
     }
   }
