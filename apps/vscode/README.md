@@ -7,10 +7,15 @@ fill-in-the-middle completions.
 
 - `CodeSetu: Open Chat` command
 - Status bar entry
+- Repo-aware chat context from the active editor and workspace snippets
+- Selected-code actions: Explain, Refactor, Write Tests, Fix Bug, Add Docs
+- `CodeSetu: Setup Provider` guided provider configuration
+- `CodeSetu: Diagnose Provider` connection test and friendly errors
 - Inline completions for code files
 - Sarvam provider support
 - Generic OpenAI-compatible provider support for Ollama, OpenRouter, vLLM,
   SGLang, and similar endpoints
+- Workspace skills/checks from `.codesetu/skills/*.md` and `.codesetu/checks/*.md`
 
 ## Provider Settings
 

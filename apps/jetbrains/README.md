@@ -3,13 +3,14 @@
 Kotlin/Gradle plugin for IntelliJ IDEA, PyCharm, WebStorm, GoLand, Android
 Studio, and other JetBrains IDEs.
 
-## Status
+## Features
 
-Early scaffold. Currently contributes one menu entry (`Tools → CodeSetu →
-Open Chat`) that displays a placeholder dialog. The provider/chat/completions
-backend that powers the VSCode extension is TypeScript and is not yet bridged
-into this Kotlin plugin — see [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
-for the planned daemon-based integration.
+- `Tools -> CodeSetu -> Open Chat`
+- CodeSetu tool window with provider-backed chat
+- Selected-code actions: Explain, Refactor, Write Tests, Fix Bug, Add Docs
+- Provider settings for Sarvam and OpenAI-compatible APIs
+- Provider diagnostics for missing model, failed connection, and successful connection
+- Workspace skills/checks from `.codesetu/skills/*.md` and `.codesetu/checks/*.md`
 
 ## Prerequisites
 
@@ -23,7 +24,7 @@ cd apps/jetbrains
 ./gradlew buildPlugin
 ```
 
-First run downloads IntelliJ Platform 2024.2.5 (~700 MB, one-time, cached in
+First run downloads IntelliJ Platform 2025.2.5 (~700 MB, one-time, cached in
 `~/.gradle/caches/`), compiles the Kotlin sources, and produces a
 distributable zip at `build/distributions/codesetu-jetbrains-0.1.0.zip`.
 
