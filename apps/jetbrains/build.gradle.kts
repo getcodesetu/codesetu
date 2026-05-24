@@ -2,6 +2,7 @@ plugins {
   // Kotlin version must be >= the version bundled in the target IntelliJ Platform.
   // IDEA 2025.2 (IC-252.x) ships with Kotlin 2.2.x.
   id("org.jetbrains.kotlin.jvm") version "2.2.0"
+  id("org.jetbrains.kotlin.plugin.serialization") version "2.2.0"
   id("org.jetbrains.intellij.platform") version "2.1.0"
 }
 
@@ -19,12 +20,14 @@ repositories {
 }
 
 dependencies {
+  implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+  testImplementation(kotlin("test"))
+
   intellijPlatform {
-    // Prefer a locally installed IDE for faster dev iteration. On CI (or any
-    // machine without IDEA installed at that path), download the platform.
-    val localIdePath = (project.findProperty("codesetu.intellij.path") as String?)
-      ?: "/Applications/IntelliJ IDEA CE.app"
-    if (file(localIdePath).exists()) {
+    // Use a local IDE only when explicitly requested. The pinned platform keeps
+    // tests and CI hermetic across machines.
+    val localIdePath = project.findProperty("codesetu.intellij.path") as String?
+    if (localIdePath != null && file(localIdePath).exists()) {
       local(localIdePath)
     } else {
       // Pinned platform version for hermetic CI builds. Bump in lockstep with
@@ -33,6 +36,14 @@ dependencies {
     }
     instrumentationTools()
   }
+}
+
+tasks.test {
+  useJUnitPlatform()
+  jvmArgumentProviders.removeIf {
+    it.javaClass.name.contains("IntelliJPlatformArgumentProvider")
+  }
+  systemProperties.remove("java.system.class.loader")
 }
 
 kotlin {
