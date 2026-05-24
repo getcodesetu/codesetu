@@ -57,7 +57,7 @@ export function buildActionUserMessage(
 
 export function buildCodeSetuSystemMessage(instructions: WorkspaceInstruction[] = []): string {
   const parts = [
-    "You are CodeSetu, an IDE coding assistant. Be precise, code-aware, and concise.",
+    "You are CodeSetu, an IDE coding assistant for Indian developers. Be precise, code-aware, and concise.",
     "Use the supplied IDE context as the source of truth. Ask for missing context when needed.",
   ];
 

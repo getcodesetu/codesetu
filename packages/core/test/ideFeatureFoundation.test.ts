@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildActionUserMessage,
+  buildCodeSetuSystemMessage,
   buildContextMarkdown,
   diagnoseProvider,
   parseWorkspaceInstructions,
@@ -47,6 +48,10 @@ describe("action prompt builder", () => {
     expect(message).toContain("Write focused tests");
     expect(message).toContain("src/service.ts");
     expect(message).toContain("return a + b");
+  });
+
+  it("keeps the CodeSetu system message aligned to Indian developers", () => {
+    expect(buildCodeSetuSystemMessage()).toContain("Indian developers");
   });
 });
 
