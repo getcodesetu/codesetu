@@ -28,9 +28,9 @@ import * as vscode from "vscode";
 import { ChatPanel } from "./chatPanel";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
-import { readCodeSetuConfiguration } from "./configuration";
+import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
 import { collectVSCodeContext } from "./ideContext";
-import { runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
+import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
 import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
@@ -111,6 +111,7 @@ async function sendChatRequest(
   ideContext: IdeContextPayload = {},
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
+  outputChannel.appendLine(formatChatProviderLine(summarizeCodeSetuConfiguration()));
   const provider = createProvider(configuration.providerOptions);
   statusBarItem.text = "CodeSetu: Thinking";
   const contextualMessages = hasIdeContext(ideContext)

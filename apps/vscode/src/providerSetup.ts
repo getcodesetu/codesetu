@@ -10,6 +10,8 @@
 
 import * as vscode from "vscode";
 
+const DEFAULT_SARVAM_CHAT_MODEL = "sarvam-30b";
+
 export async function setupCodeSetuProvider(): Promise<void> {
   const provider = await vscode.window.showQuickPick(
     [
@@ -37,7 +39,7 @@ export async function setupCodeSetuProvider(): Promise<void> {
 
   const model = await vscode.window.showInputBox({
     prompt: "Model id",
-    value: provider.label === "openai-compatible" ? "qwen2.5-coder:7b" : "",
+    value: provider.label === "openai-compatible" ? "qwen2.5-coder:7b" : DEFAULT_SARVAM_CHAT_MODEL,
   });
 
   if (model === undefined) {

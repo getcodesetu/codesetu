@@ -21,14 +21,14 @@ fill-in-the-middle completions.
 
 Open VS Code Settings JSON and configure one provider.
 
-Sarvam (set `codesetu.model` to the model id from your Sarvam account):
+Sarvam (`sarvam-30b` is the default; use `sarvam-105b` if your account/workload needs it):
 
 ```json
 {
   "codesetu.provider": "sarvam",
   "codesetu.apiKey": "YOUR_SARVAM_API_KEY",
   "codesetu.baseUrl": "https://api.sarvam.ai/v1",
-  "codesetu.model": "<your-sarvam-model-id>"
+  "codesetu.model": "sarvam-30b"
 }
 ```
 

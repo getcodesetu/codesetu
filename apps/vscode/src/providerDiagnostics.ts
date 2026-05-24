@@ -29,6 +29,15 @@ export function formatProviderDiagnosticLines(
   ];
 }
 
+export function formatChatProviderLine(summary: CodeSetuConfigurationSummary): string {
+  return [
+    `Chat request provider: ${summary.provider}`,
+    `baseURL=${summary.baseURL ?? "(default)"}`,
+    `model=${summary.model ?? "(not set)"}`,
+    `apiKeyConfigured=${summary.hasApiKey ? "yes" : "no"}`,
+  ].join("; ");
+}
+
 export async function runCodeSetuProviderDiagnostics(
   outputChannel: vscodeTypes.OutputChannel,
 ): Promise<void> {

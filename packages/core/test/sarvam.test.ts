@@ -74,12 +74,34 @@ function createMockClient(): {
 }
 
 describe("SarvamProvider", () => {
+  it("defaults to the current standard Sarvam chat model", () => {
+    expect(DEFAULT_SARVAM_MODEL).toBe("sarvam-30b");
+  });
+
   it("uses Sarvam defaults", () => {
     const { client } = createMockClient();
     const provider = new SarvamProvider({ client });
 
     expect(provider.baseURL).toBe(DEFAULT_SARVAM_BASE_URL);
     expect(provider.model).toBe(DEFAULT_SARVAM_MODEL);
+  });
+
+  it("ignores blank environment values when resolving defaults", () => {
+    const originalModel = process.env.SARVAM_MODEL;
+    process.env.SARVAM_MODEL = "";
+
+    try {
+      const { client } = createMockClient();
+      const provider = new SarvamProvider({ client });
+
+      expect(provider.model).toBe(DEFAULT_SARVAM_MODEL);
+    } finally {
+      if (originalModel === undefined) {
+        delete process.env.SARVAM_MODEL;
+      } else {
+        process.env.SARVAM_MODEL = originalModel;
+      }
+    }
   });
 
   it("requires an API key when constructing the real OpenAI-compatible client", () => {

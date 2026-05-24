@@ -108,7 +108,7 @@ describe("provider diagnostics", () => {
     expect(result.hasApiKey).toBe(true);
   });
 
-  it("classifies default Sarvam without model or API key before creating a provider", async () => {
+  it("classifies default Sarvam without API key before creating a provider", async () => {
     vi.stubEnv("SARVAM_MODEL", "");
     vi.stubEnv("CODESETU_MODEL", "");
     vi.stubEnv("SARVAM_API_KEY", "");
@@ -123,10 +123,10 @@ describe("provider diagnostics", () => {
     });
 
     expect(result.status).toBe("missing-config");
-    expect(result.message).toContain("model");
+    expect(result.message).toContain("API key");
     expect(result.provider).toBe("sarvam");
     expect(result.baseURL).toBe("https://api.sarvam.ai/v1");
-    expect(result.model).toBe("");
+    expect(result.model).toBe("sarvam-30b");
     expect(result.hasApiKey).toBe(false);
     expect(createProvider).not.toHaveBeenCalled();
   });

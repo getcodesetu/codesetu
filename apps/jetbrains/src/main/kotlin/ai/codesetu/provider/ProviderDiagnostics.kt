@@ -1,7 +1,6 @@
 package ai.codesetu.provider
 
 import ai.codesetu.model.ChatMessage
-import ai.codesetu.settings.CodeSetuSettingsState
 import kotlin.system.measureTimeMillis
 
 data class ProviderDiagnosticResult(
@@ -11,15 +10,6 @@ data class ProviderDiagnosticResult(
 )
 
 fun runProviderDiagnostic(client: CodeSetuProviderClient = CodeSetuProviderClient()): ProviderDiagnosticResult {
-  val state = CodeSetuSettingsState.getInstance().state
-
-  if (state.model.isBlank()) {
-    return ProviderDiagnosticResult(
-      "missing-config",
-      "CodeSetu needs a model before it can send chat requests.",
-    )
-  }
-
   return try {
     var text = ""
     val latency = measureTimeMillis {

@@ -86,15 +86,18 @@ function resolveDiagnosticMetadata(providerOptions: {
     return {
       provider,
       baseURL:
-        providerOptions.baseURL ??
-        process.env.SARVAM_BASE_URL ??
-        process.env.CODESETU_BASE_URL ??
-        DEFAULT_SARVAM_BASE_URL,
-      model:
-        providerOptions.model ??
-        process.env.SARVAM_MODEL ??
-        process.env.CODESETU_MODEL ??
+        firstConfigValue(
+          providerOptions.baseURL,
+          process.env.SARVAM_BASE_URL,
+          process.env.CODESETU_BASE_URL,
+          DEFAULT_SARVAM_BASE_URL,
+        ) ?? DEFAULT_SARVAM_BASE_URL,
+      model: resolveModel(
+        providerOptions.model,
+        process.env.SARVAM_MODEL,
+        process.env.CODESETU_MODEL,
         DEFAULT_SARVAM_MODEL,
+      ),
       hasApiKey: hasConfigValue(
         providerOptions.apiKey,
         process.env.SARVAM_API_KEY,
@@ -107,18 +110,24 @@ function resolveDiagnosticMetadata(providerOptions: {
     return {
       provider,
       baseURL:
-        providerOptions.baseURL ??
-        process.env.CODESETU_BASE_URL ??
-        DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
-      model: providerOptions.model ?? process.env.CODESETU_MODEL ?? DEFAULT_OPENAI_COMPATIBLE_MODEL,
+        firstConfigValue(
+          providerOptions.baseURL,
+          process.env.CODESETU_BASE_URL,
+          DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+        ) ?? DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+      model: resolveModel(
+        providerOptions.model,
+        process.env.CODESETU_MODEL,
+        DEFAULT_OPENAI_COMPATIBLE_MODEL,
+      ),
       hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY),
     };
   }
 
   return {
     provider,
-    baseURL: providerOptions.baseURL ?? process.env.CODESETU_BASE_URL ?? "",
-    model: providerOptions.model ?? process.env.CODESETU_MODEL ?? "",
+    baseURL: firstConfigValue(providerOptions.baseURL, process.env.CODESETU_BASE_URL) ?? "",
+    model: resolveModel(providerOptions.model, process.env.CODESETU_MODEL, ""),
     hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY),
   };
 }
@@ -147,4 +156,25 @@ function getMissingConfigMessage(metadata: DiagnosticMetadata): string | undefin
 
 function hasConfigValue(...values: Array<string | undefined>): boolean {
   return values.some((value) => value !== undefined && value.trim().length > 0);
+}
+
+function resolveModel(
+  explicitModel: string | undefined,
+  ...fallbacks: Array<string | undefined>
+): string {
+  if (explicitModel !== undefined) {
+    return explicitModel.trim();
+  }
+
+  return firstConfigValue(...fallbacks) ?? "";
+}
+
+function firstConfigValue(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }

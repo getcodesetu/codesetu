@@ -4,6 +4,7 @@ import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.settings.CodeSetuSettingsState
+import ai.codesetu.settings.resolveCodeSetuModel
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -18,7 +19,7 @@ class CodeSetuProviderClient(
   fun chat(messages: List<ChatMessage>, maxTokens: Int = 1024, temperature: Double = 0.2): String {
     val state = CodeSetuSettingsState.getInstance().state
     val body = buildChatCompletionRequestJson(
-      model = state.model,
+      model = resolveCodeSetuModel(state.model),
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,

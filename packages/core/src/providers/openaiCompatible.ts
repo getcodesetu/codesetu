@@ -63,17 +63,21 @@ export class OpenAICompatibleProvider implements LlmProvider {
     this.providerId = options.providerId ?? DEFAULT_OPENAI_COMPATIBLE_PROVIDER;
     this.apiKeyEnvVar = options.apiKeyEnvVar ?? "CODESETU_API_KEY";
     this.baseURL =
-      options.baseURL ??
-      (options.baseURLEnvVar === undefined ? undefined : process.env[options.baseURLEnvVar]) ??
-      process.env.CODESETU_BASE_URL ??
-      options.defaultBaseURL ??
-      DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
+      firstConfigValue(
+        options.baseURL,
+        options.baseURLEnvVar === undefined ? undefined : process.env[options.baseURLEnvVar],
+        process.env.CODESETU_BASE_URL,
+        options.defaultBaseURL,
+        DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+      ) ?? DEFAULT_OPENAI_COMPATIBLE_BASE_URL;
     this.model =
-      options.model ??
-      (options.modelEnvVar === undefined ? undefined : process.env[options.modelEnvVar]) ??
-      process.env.CODESETU_MODEL ??
-      options.defaultModel ??
-      DEFAULT_OPENAI_COMPATIBLE_MODEL;
+      firstConfigValue(
+        options.model,
+        options.modelEnvVar === undefined ? undefined : process.env[options.modelEnvVar],
+        process.env.CODESETU_MODEL,
+        options.defaultModel,
+        DEFAULT_OPENAI_COMPATIBLE_MODEL,
+      ) ?? DEFAULT_OPENAI_COMPATIBLE_MODEL;
     this.client = options.client ?? this.createClient(options.apiKey);
   }
 
@@ -104,7 +108,11 @@ export class OpenAICompatibleProvider implements LlmProvider {
   }
 
   private createClient(apiKeyOption: string | undefined): OpenAICompatibleClient {
-    const apiKey = apiKeyOption ?? process.env[this.apiKeyEnvVar] ?? process.env.CODESETU_API_KEY;
+    const apiKey = firstConfigValue(
+      apiKeyOption,
+      process.env[this.apiKeyEnvVar],
+      process.env.CODESETU_API_KEY,
+    );
 
     if (apiKey === undefined || apiKey.length === 0) {
       throw new Error(
@@ -117,4 +125,14 @@ export class OpenAICompatibleProvider implements LlmProvider {
       baseURL: this.baseURL,
     });
   }
+}
+
+function firstConfigValue(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }

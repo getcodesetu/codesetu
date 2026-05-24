@@ -12,8 +12,8 @@ import com.intellij.openapi.components.Storage
 class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.State> {
   data class State(
     var provider: String = ProviderKind.SARVAM.id,
-    var baseUrl: String = "https://api.sarvam.ai/v1",
-    var model: String = "",
+    var baseUrl: String = DEFAULT_CODESETU_BASE_URL,
+    var model: String = DEFAULT_CODESETU_MODEL,
     var apiKey: String = "",
   )
 

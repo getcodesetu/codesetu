@@ -10,7 +10,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatProviderDiagnosticLines } from "../src/providerDiagnostics.js";
+import {
+  formatChatProviderLine,
+  formatProviderDiagnosticLines,
+} from "../src/providerDiagnostics.js";
 
 describe("formatProviderDiagnosticLines", () => {
   it("renders safe provider metadata and diagnostic status", () => {
@@ -40,5 +43,18 @@ describe("formatProviderDiagnosticLines", () => {
       "Diagnostic: ok - Provider diagnostic chat completed.",
       "Latency: 42ms",
     ]);
+  });
+
+  it("formats chat provider metadata without leaking secrets", () => {
+    expect(
+      formatChatProviderLine({
+        provider: "sarvam",
+        baseURL: "https://api.sarvam.ai/v1",
+        model: "sarvam-30b",
+        hasApiKey: true,
+      }),
+    ).toBe(
+      "Chat request provider: sarvam; baseURL=https://api.sarvam.ai/v1; model=sarvam-30b; apiKeyConfigured=yes",
+    );
   });
 });
