@@ -75,30 +75,59 @@
       },
       {
         "command": "codesetu.explainSelection",
-        "title": "CodeSetu: Explain Selection",
+        "title": "Explain with CodeSetu",
         "category": "CodeSetu"
       },
       {
         "command": "codesetu.refactorSelection",
-        "title": "CodeSetu: Refactor Selection",
+        "title": "Refactor with CodeSetu",
         "category": "CodeSetu"
       },
       {
         "command": "codesetu.writeTestsForSelection",
-        "title": "CodeSetu: Write Tests for Selection",
+        "title": "Write Tests with CodeSetu",
         "category": "CodeSetu"
       },
       {
         "command": "codesetu.fixBugInSelection",
-        "title": "CodeSetu: Fix Bug in Selection",
+        "title": "Fix Bug with CodeSetu",
         "category": "CodeSetu"
       },
       {
         "command": "codesetu.addDocsToSelection",
-        "title": "CodeSetu: Add Docs to Selection",
+        "title": "Add Docs with CodeSetu",
         "category": "CodeSetu"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codesetu.explainSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@30"
+        },
+        {
+          "command": "codesetu.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@31"
+        },
+        {
+          "command": "codesetu.writeTestsForSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@32"
+        },
+        {
+          "command": "codesetu.fixBugInSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@33"
+        },
+        {
+          "command": "codesetu.addDocsToSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@34"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
