@@ -17,7 +17,9 @@
 import { describe, expect, it } from "vitest";
 import type {
   ChatCompletion,
+  ChatCompletionChunk,
   ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { Completion, CompletionCreateParamsNonStreaming } from "openai/resources/completions";
@@ -47,19 +49,28 @@ const fimResponse: Completion = {
 
 function createMockClient(): {
   client: SarvamOpenAIClient;
-  chatCalls: ChatCompletionCreateParamsNonStreaming[];
+  chatCalls: Array<ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming>;
   completionCalls: CompletionCreateParamsNonStreaming[];
 } {
-  const chatCalls: ChatCompletionCreateParamsNonStreaming[] = [];
+  const chatCalls: Array<
+    ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming
+  > = [];
   const completionCalls: CompletionCreateParamsNonStreaming[] = [];
 
   const client: SarvamOpenAIClient = {
     chat: {
       completions: {
-        create: (params) => {
+        create: ((
+          params: ChatCompletionCreateParamsNonStreaming | ChatCompletionCreateParamsStreaming,
+        ) => {
           chatCalls.push(params);
+          if (params.stream === true) {
+            return Promise.resolve(
+              toAsyncIterable([chatChunk("Namaste"), chatChunk(" from Sarvam")]),
+            );
+          }
           return Promise.resolve(chatResponse);
-        },
+        }) as SarvamOpenAIClient["chat"]["completions"]["create"],
       },
     },
     completions: {
@@ -71,6 +82,34 @@ function createMockClient(): {
   };
 
   return { client, chatCalls, completionCalls };
+}
+
+async function* toAsyncIterable(chunks: ChatCompletionChunk[]): AsyncIterable<ChatCompletionChunk> {
+  await Promise.resolve();
+
+  for (const chunk of chunks) {
+    yield chunk;
+  }
+}
+
+function chatChunk(content: string): ChatCompletionChunk {
+  return {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: DEFAULT_SARVAM_MODEL,
+    choices: [
+      {
+        index: 0,
+        delta: {
+          content,
+          role: "assistant",
+        },
+        finish_reason: null,
+        logprobs: null,
+      },
+    ],
+  };
 }
 
 describe("SarvamProvider", () => {
@@ -157,6 +196,31 @@ describe("SarvamProvider", () => {
         temperature: 0.2,
         tools,
         tool_choice: "auto",
+      },
+    ]);
+  });
+
+  it("streams chat completion text chunks", async () => {
+    const { client, chatCalls } = createMockClient();
+    const provider = new SarvamProvider({ client });
+    const chunks: string[] = [];
+
+    for await (const chunk of provider.streamChat({
+      messages: [{ role: "user", content: "Say namaste." }],
+      maxTokens: 64,
+      temperature: 0.1,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(["Namaste", " from Sarvam"]);
+    expect(chatCalls).toEqual([
+      {
+        model: DEFAULT_SARVAM_MODEL,
+        messages: [{ role: "user", content: "Say namaste." }],
+        max_tokens: 64,
+        temperature: 0.1,
+        stream: true,
       },
     ]);
   });

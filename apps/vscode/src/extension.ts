@@ -19,6 +19,7 @@ import {
   buildContextMarkdown,
   createProvider,
   getAssistantText,
+  type ChatCompletionRequest,
   type ChatMessage,
   type IdeContextPayload,
   type WorkspaceInstruction,
@@ -26,6 +27,7 @@ import {
 import * as vscode from "vscode";
 
 import { ChatPanel, type ChatResponder } from "./chatPanel";
+import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
@@ -63,6 +65,7 @@ export function activate(context: vscode.ExtensionContext): void {
       outputChannel,
       await loadInstructions(),
       requestContext?.ideContext ?? (await collectVSCodeContext()),
+      requestContext?.onChunk,
     );
 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
@@ -109,6 +112,7 @@ async function sendChatRequest(
   outputChannel: vscode.OutputChannel,
   instructions: readonly WorkspaceInstruction[] = [],
   ideContext: IdeContextPayload = {},
+  onChunk?: (chunk: string) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(formatChatProviderLine(summarizeCodeSetuConfiguration()));
@@ -125,7 +129,7 @@ async function sendChatRequest(
     : messages;
 
   try {
-    const completion = await provider.chat({
+    const request: ChatCompletionRequest = {
       messages: [
         {
           role: "system",
@@ -135,10 +139,19 @@ async function sendChatRequest(
       ],
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
-    });
-    const text = getAssistantText(completion).trim();
+    };
 
-    return text.length === 0 ? "CodeSetu did not return any text." : text;
+    return await resolveAssistantResponse({
+      completeChat: async () => getAssistantText(await provider.chat(request)),
+      emptyMessage: "CodeSetu did not return any text.",
+      onChunk,
+      onStreamFallback: (error) => {
+        outputChannel.appendLine(
+          `Streaming chat failed before response text; retrying without streaming: ${formatErrorMessage(error)}`,
+        );
+      },
+      streamChat: () => provider.streamChat(request),
+    });
   } catch (error: unknown) {
     outputChannel.appendLine(`Chat completion failed: ${formatErrorMessage(error)}`);
     throw error;

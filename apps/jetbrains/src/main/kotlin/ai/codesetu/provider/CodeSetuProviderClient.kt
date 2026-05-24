@@ -2,6 +2,7 @@ package ai.codesetu.provider
 
 import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
+import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.resolveCodeSetuModel
@@ -39,6 +40,62 @@ class CodeSetuProviderClient(
 
     return getAssistantText(json.decodeFromString<ChatCompletionResponse>(response.body()))
   }
+
+  fun streamChat(
+    messages: List<ChatMessage>,
+    maxTokens: Int = 1024,
+    temperature: Double = 0.2,
+    onChunk: (String) -> Unit,
+  ): String {
+    val state = CodeSetuSettingsState.getInstance().state
+    val body = buildChatCompletionRequestJson(
+      model = resolveCodeSetuModel(state.model),
+      messages = messages,
+      maxTokens = maxTokens,
+      temperature = temperature,
+      stream = true,
+      json = json,
+    )
+    val request = HttpRequest.newBuilder()
+      .uri(URI.create(state.baseUrl.trimEnd('/') + "/chat/completions"))
+      .header("Authorization", "Bearer ${state.apiKey}")
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build()
+    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
+
+    if (response.statusCode() !in 200..299) {
+      val errorBody = response.body().bufferedReader().use { it.readText() }
+      error("Provider request failed with HTTP ${response.statusCode()}: $errorBody")
+    }
+
+    val assistantText = StringBuilder()
+    response.body().bufferedReader().use { reader ->
+      while (true) {
+        val line = reader.readLine() ?: break
+        val trimmed = line.trim()
+
+        if (!trimmed.startsWith("data:")) {
+          continue
+        }
+
+        val data = trimmed.removePrefix("data:").trim()
+
+        if (data == "[DONE]") {
+          break
+        }
+
+        val text = getAssistantChunkText(json.decodeFromString<ChatCompletionChunk>(data))
+
+        if (text.isNotEmpty()) {
+          assistantText.append(text)
+          onChunk(text)
+        }
+      }
+    }
+
+    return assistantText.toString()
+  }
 }
 
 fun getAssistantText(response: ChatCompletionResponse): String {
@@ -46,11 +103,17 @@ fun getAssistantText(response: ChatCompletionResponse): String {
   return message?.content ?: message?.refusal.orEmpty()
 }
 
+fun getAssistantChunkText(chunk: ChatCompletionChunk): String {
+  val delta = chunk.choices.firstOrNull()?.delta
+  return delta?.content ?: delta?.refusal.orEmpty()
+}
+
 fun buildChatCompletionRequestJson(
   model: String,
   messages: List<ChatMessage>,
   maxTokens: Int,
   temperature: Double,
+  stream: Boolean = false,
   json: Json = Json,
 ): String =
   json.encodeToString(
@@ -59,5 +122,6 @@ fun buildChatCompletionRequestJson(
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
+      stream = stream,
     ),
   )

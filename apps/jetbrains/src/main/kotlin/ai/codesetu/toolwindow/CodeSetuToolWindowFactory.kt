@@ -58,19 +58,52 @@ class CodeSetuChatPanel(private val project: Project) {
       } else {
         "$trimmed\n\nCurrent IDE context:\n\n$ideContext"
       }
+      val messages = listOf(
+        ChatMessage("system", buildSystemMessage(instructions)),
+        ChatMessage("user", userMessage),
+      )
+      var receivedChunk = false
       val response = try {
-        client.chat(
-          listOf(
-            ChatMessage("system", buildSystemMessage(instructions)),
-            ChatMessage("user", userMessage),
-          ),
-        )
+        client.streamChat(messages) { chunk ->
+          if (!receivedChunk) {
+            receivedChunk = true
+            ApplicationManager.getApplication().invokeLater {
+              beginAppend("CodeSetu")
+              appendChunk(chunk)
+            }
+          } else {
+            ApplicationManager.getApplication().invokeLater {
+              appendChunk(chunk)
+            }
+          }
+        }
       } catch (error: Exception) {
-        "CodeSetu could not complete that request: ${error.message ?: error}"
+        if (receivedChunk) {
+          val message = "\n\nCodeSetu could not complete that request: ${error.message ?: error}"
+          ApplicationManager.getApplication().invokeLater {
+            appendChunk(message)
+            endAppend()
+            send.isEnabled = true
+          }
+          return@executeOnPooledThread
+        }
+
+        try {
+          client.chat(messages)
+        } catch (fallbackError: Exception) {
+          "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}"
+        }
       }
 
       ApplicationManager.getApplication().invokeLater {
-        append("CodeSetu", response)
+        if (receivedChunk) {
+          if (response.isBlank()) {
+            appendChunk("CodeSetu did not return any text.")
+          }
+          endAppend()
+        } else {
+          append("CodeSetu", response.ifBlank { "CodeSetu did not return any text." })
+        }
         send.isEnabled = true
       }
     }
@@ -78,5 +111,17 @@ class CodeSetuChatPanel(private val project: Project) {
 
   private fun append(role: String, text: String) {
     transcript.append("$role:\n$text\n\n")
+  }
+
+  private fun beginAppend(role: String) {
+    transcript.append("$role:\n")
+  }
+
+  private fun appendChunk(text: String) {
+    transcript.append(text)
+  }
+
+  private fun endAppend() {
+    transcript.append("\n\n")
   }
 }

@@ -17,11 +17,19 @@
 import OpenAI from "openai";
 import type {
   ChatCompletion,
+  ChatCompletionChunk,
   ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
 } from "openai/resources/chat/completions";
 import type { Completion, CompletionCreateParamsNonStreaming } from "openai/resources/completions";
 
-import type { ChatCompletionRequest, FimCompletionRequest, LlmProvider } from "./base.js";
+import type {
+  ChatCompletionChunkStream,
+  ChatCompletionRequest,
+  ChatCompletionStream,
+  FimCompletionRequest,
+  LlmProvider,
+} from "./base.js";
 
 export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
 export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:8000/v1";
@@ -31,6 +39,7 @@ export interface OpenAICompatibleClient {
   chat: {
     completions: {
       create(params: ChatCompletionCreateParamsNonStreaming): Promise<ChatCompletion>;
+      create(params: ChatCompletionCreateParamsStreaming): Promise<ChatCompletionChunkStream>;
     };
   };
   completions: {
@@ -82,16 +91,25 @@ export class OpenAICompatibleProvider implements LlmProvider {
   }
 
   public chat(request: ChatCompletionRequest): Promise<ChatCompletion> {
-    const params: ChatCompletionCreateParamsNonStreaming = {
-      model: request.model ?? this.model,
-      messages: request.messages,
-      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
-      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-      ...(request.tools === undefined ? {} : { tools: request.tools }),
-      ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
-    };
+    const params: ChatCompletionCreateParamsNonStreaming = this.buildChatParams(request);
 
     return this.client.chat.completions.create(params);
+  }
+
+  public async *streamChat(request: ChatCompletionRequest): ChatCompletionStream {
+    const params: ChatCompletionCreateParamsStreaming = {
+      ...this.buildChatParams(request),
+      stream: true,
+    };
+    const stream = await this.client.chat.completions.create(params);
+
+    for await (const chunk of stream) {
+      const text = getTextFromChunk(chunk);
+
+      if (text.length > 0) {
+        yield text;
+      }
+    }
   }
 
   public completeFim(request: FimCompletionRequest): Promise<Completion> {
@@ -125,6 +143,34 @@ export class OpenAICompatibleProvider implements LlmProvider {
       baseURL: this.baseURL,
     });
   }
+
+  private buildChatParams(
+    request: ChatCompletionRequest,
+  ): Omit<ChatCompletionCreateParamsNonStreaming, "stream"> {
+    return {
+      model: request.model ?? this.model,
+      messages: request.messages,
+      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.tools === undefined ? {} : { tools: request.tools }),
+      ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
+    };
+  }
+}
+
+function getTextFromChunk(chunk: ChatCompletionChunk): string {
+  const delta = chunk.choices[0]?.delta;
+  const content = delta?.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (typeof delta?.refusal === "string") {
+    return delta.refusal;
+  }
+
+  return "";
 }
 
 function firstConfigValue(...values: Array<string | undefined>): string | undefined {

@@ -21,6 +21,7 @@ import * as vscode from "vscode";
 
 export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
+  onChunk?: (chunk: string) => void;
 }
 
 export interface SendUserMessageOptions {
@@ -126,12 +127,24 @@ export class ChatPanel {
     this.history.push({ role: "user", content: text });
 
     try {
-      const response = await this.responder(
-        this.history,
-        options.ideContext === undefined ? undefined : { ideContext: options.ideContext },
-      );
+      let isStreamingAssistantMessage = false;
+      const response = await this.responder(this.history, {
+        ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
+        onChunk: (chunk) => {
+          if (!isStreamingAssistantMessage) {
+            isStreamingAssistantMessage = true;
+            void this.panel.webview.postMessage({ type: "assistantMessageStart" });
+          }
+
+          void this.panel.webview.postMessage({ type: "assistantMessageDelta", text: chunk });
+        },
+      });
       this.history.push({ role: "assistant", content: response });
-      void this.panel.webview.postMessage({ type: "assistantMessage", text: response });
+      void this.panel.webview.postMessage(
+        isStreamingAssistantMessage
+          ? { type: "assistantMessageDone" }
+          : { type: "assistantMessage", text: response },
+      );
     } catch (error: unknown) {
       this.outputChannel.appendLine(`Chat request failed: ${formatErrorMessage(error)}`);
       void this.panel.webview.postMessage({
@@ -240,6 +253,7 @@ export class ChatPanel {
       const textarea = document.getElementById("message");
       const send = document.getElementById("send");
       const transcript = document.getElementById("transcript");
+      let activeAssistantMessage;
 
       function appendMessage(kind, text) {
         const message = document.createElement("article");
@@ -247,6 +261,16 @@ export class ChatPanel {
         message.textContent = text;
         transcript.appendChild(message);
         message.scrollIntoView({ block: "end", behavior: "smooth" });
+        return message;
+      }
+
+      function appendAssistantDelta(text) {
+        if (!activeAssistantMessage) {
+          activeAssistantMessage = appendMessage("assistant", "");
+        }
+
+        activeAssistantMessage.textContent += text;
+        activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
       }
 
       form.addEventListener("submit", (event) => {
@@ -265,7 +289,25 @@ export class ChatPanel {
         const message = event.data;
 
         if (message.type === "assistantMessage") {
-          appendMessage("assistant", message.text);
+          if (activeAssistantMessage) {
+            activeAssistantMessage.textContent = message.text;
+            activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
+            activeAssistantMessage = undefined;
+          } else {
+            appendMessage("assistant", message.text);
+          }
+        }
+
+        if (message.type === "assistantMessageStart") {
+          activeAssistantMessage = appendMessage("assistant", "");
+        }
+
+        if (message.type === "assistantMessageDelta") {
+          appendAssistantDelta(message.text);
+        }
+
+        if (message.type === "assistantMessageDone") {
+          activeAssistantMessage = undefined;
         }
 
         if (message.type === "userMessage") {

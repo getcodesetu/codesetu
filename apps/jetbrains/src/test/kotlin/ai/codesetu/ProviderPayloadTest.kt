@@ -1,8 +1,10 @@
 package ai.codesetu
 
 import ai.codesetu.model.ChatMessage
+import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.provider.buildChatCompletionRequestJson
+import ai.codesetu.provider.getAssistantChunkText
 import ai.codesetu.provider.getAssistantText
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -25,6 +27,19 @@ class ProviderPayloadTest {
   }
 
   @Test
+  fun serializesStreamingChatPayload() {
+    val payload = buildChatCompletionRequestJson(
+      model = "sarvam-m",
+      messages = listOf(ChatMessage(role = "user", content = "Hello")),
+      maxTokens = 64,
+      temperature = 0.1,
+      stream = true,
+    )
+
+    assertContains(payload, "\"stream\":true")
+  }
+
+  @Test
   fun extractsProviderRefusalWhenAssistantContentIsNull() {
     val response = Json.decodeFromString<ChatCompletionResponse>(
       """
@@ -43,5 +58,44 @@ class ProviderPayloadTest {
     )
 
     assertEquals("I cannot inspect secret values.", getAssistantText(response))
+  }
+
+  @Test
+  fun extractsStreamingProviderChunkText() {
+    val chunk = Json.decodeFromString<ChatCompletionChunk>(
+      """
+        {
+          "choices": [
+            {
+              "delta": {
+                "content": "Namaste"
+              }
+            }
+          ]
+        }
+      """.trimIndent(),
+    )
+
+    assertEquals("Namaste", getAssistantChunkText(chunk))
+  }
+
+  @Test
+  fun extractsStreamingProviderRefusalWhenContentIsNull() {
+    val chunk = Json.decodeFromString<ChatCompletionChunk>(
+      """
+        {
+          "choices": [
+            {
+              "delta": {
+                "content": null,
+                "refusal": "I cannot inspect secret values."
+              }
+            }
+          ]
+        }
+      """.trimIndent(),
+    )
+
+    assertEquals("I cannot inspect secret values.", getAssistantChunkText(chunk))
   }
 }
