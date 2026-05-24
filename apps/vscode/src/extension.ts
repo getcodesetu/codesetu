@@ -14,12 +14,23 @@
  * limitations under the License.
  */
 
-import { createProvider, getAssistantText, type ChatMessage } from "@codesetu/core";
+import {
+  buildCodeSetuSystemMessage,
+  buildContextMarkdown,
+  createProvider,
+  getAssistantText,
+  type ChatMessage,
+  type IdeContextPayload,
+  type WorkspaceInstruction,
+} from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { ChatPanel } from "./chatPanel";
+import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration } from "./configuration";
+import { collectVSCodeContext } from "./ideContext";
+import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
 export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel("CodeSetu");
@@ -38,12 +49,29 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
-    ChatPanel.createOrShow(
-      context.extensionUri,
-      async (messages) => sendChatRequest(messages, statusBarItem, outputChannel),
+  const loadInstructions = async (): Promise<WorkspaceInstruction[]> => {
+    const result = await loadWorkspaceInstructions(outputChannel);
+    return [...result.skills, ...result.checks];
+  };
+
+  const responder = async (messages: ChatMessage[]): Promise<string> =>
+    sendChatRequest(
+      messages,
+      statusBarItem,
       outputChannel,
+      await loadInstructions(),
+      await collectVSCodeContext(),
     );
+
+  const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
+  });
+
+  const editorActions = registerCodeSetuEditorActions({
+    context,
+    responder,
+    outputChannel,
+    loadInstructions,
   });
 
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
@@ -56,6 +84,7 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    ...editorActions,
     homeView,
   );
 }
@@ -68,20 +97,30 @@ async function sendChatRequest(
   messages: ChatMessage[],
   statusBarItem: vscode.StatusBarItem,
   outputChannel: vscode.OutputChannel,
+  instructions: readonly WorkspaceInstruction[] = [],
+  ideContext: IdeContextPayload = {},
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   const provider = createProvider(configuration.providerOptions);
   statusBarItem.text = "CodeSetu: Thinking";
+  const contextualMessages = hasIdeContext(ideContext)
+    ? [
+        {
+          role: "user" as const,
+          content: `Current IDE context:\n\n${buildContextMarkdown(ideContext)}`,
+        },
+        ...messages,
+      ]
+    : messages;
 
   try {
     const completion = await provider.chat({
       messages: [
         {
           role: "system",
-          content:
-            "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, and practical.",
+          content: buildCodeSetuSystemMessage([...instructions]),
         },
-        ...messages,
+        ...contextualMessages,
       ],
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
@@ -99,4 +138,16 @@ async function sendChatRequest(
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function hasIdeContext(context: IdeContextPayload): boolean {
+  return (
+    context.activeFilePath !== undefined ||
+    context.activeFileText !== undefined ||
+    context.languageId !== undefined ||
+    context.selectedText !== undefined ||
+    context.cursorPrefix !== undefined ||
+    context.cursorSuffix !== undefined ||
+    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0)
+  );
 }

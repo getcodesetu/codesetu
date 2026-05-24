@@ -62,6 +62,41 @@
         "command": "codesetu.openChat",
         "title": "CodeSetu: Open Chat",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.setupProvider",
+        "title": "CodeSetu: Setup Provider",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.diagnoseProvider",
+        "title": "CodeSetu: Diagnose Provider",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.explainSelection",
+        "title": "CodeSetu: Explain Selection",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.refactorSelection",
+        "title": "CodeSetu: Refactor Selection",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.writeTestsForSelection",
+        "title": "CodeSetu: Write Tests for Selection",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.fixBugInSelection",
+        "title": "CodeSetu: Fix Bug in Selection",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.addDocsToSelection",
+        "title": "CodeSetu: Add Docs to Selection",
+        "category": "CodeSetu"
       }
     ],
     "viewsContainers": {

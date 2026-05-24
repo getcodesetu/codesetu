@@ -72,12 +72,34 @@ export class ChatPanel {
     ChatPanel.currentPanel = new ChatPanel(panel, responder, outputChannel);
   }
 
+  public static async createOrShowAndSend(
+    extensionUri: vscode.Uri,
+    responder: ChatResponder,
+    outputChannel: vscode.OutputChannel,
+    text: string,
+  ): Promise<void> {
+    ChatPanel.createOrShow(extensionUri, responder, outputChannel);
+    await ChatPanel.currentPanel?.sendUserMessage(text);
+  }
+
+  public async sendUserMessage(text: string): Promise<void> {
+    await this.submitMessage(text);
+  }
+
   private async handleMessage(message: unknown): Promise<void> {
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
 
-    const text = message.text.trim();
+    await this.submitMessage(message.text);
+  }
+
+  private async submitMessage(rawText: string): Promise<void> {
+    if (this.inFlight) {
+      return;
+    }
+
+    const text = rawText.trim();
 
     if (text.length === 0) {
       return;
@@ -85,6 +107,7 @@ export class ChatPanel {
 
     this.inFlight = true;
     void this.panel.webview.postMessage({ type: "busy", value: true });
+    void this.panel.webview.postMessage({ type: "userMessage", text });
     this.history.push({ role: "user", content: text });
 
     try {
@@ -216,7 +239,6 @@ export class ChatPanel {
           return;
         }
 
-        appendMessage("user", text);
         textarea.value = "";
         vscode.postMessage({ type: "sendMessage", text });
       });
@@ -226,6 +248,10 @@ export class ChatPanel {
 
         if (message.type === "assistantMessage") {
           appendMessage("assistant", message.text);
+        }
+
+        if (message.type === "userMessage") {
+          appendMessage("user", message.text);
         }
 
         if (message.type === "error") {
