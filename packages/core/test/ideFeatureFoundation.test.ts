@@ -79,9 +79,7 @@ describe("workspace instruction parser", () => {
 
     expect(result.skills).toHaveLength(1);
     expect(result.checks).toHaveLength(1);
-    expect(result.warnings).toEqual([
-      ".codesetu/skills/broken.md: missing YAML frontmatter",
-    ]);
+    expect(result.warnings).toEqual([".codesetu/skills/broken.md: missing YAML frontmatter"]);
   });
 });
 

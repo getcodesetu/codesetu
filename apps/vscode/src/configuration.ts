@@ -65,7 +65,9 @@ export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
 
   return {
     provider:
-      configuration.providerOptions.provider === "openai-compatible" ? "openai-compatible" : "sarvam",
+      configuration.providerOptions.provider === "openai-compatible"
+        ? "openai-compatible"
+        : "sarvam",
     baseURL: configuration.providerOptions.baseURL,
     model: configuration.providerOptions.model,
     hasApiKey: (configuration.providerOptions.apiKey ?? "").trim().length > 0,

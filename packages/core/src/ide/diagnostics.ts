@@ -19,7 +19,10 @@ import {
   DEFAULT_OPENAI_COMPATIBLE_MODEL,
   DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
 } from "../providers/openaiCompatible.js";
-import { DEFAULT_PROVIDER_ID, createProvider as createConfiguredProvider } from "../providers/registry.js";
+import {
+  DEFAULT_PROVIDER_ID,
+  createProvider as createConfiguredProvider,
+} from "../providers/registry.js";
 import { DEFAULT_SARVAM_BASE_URL, DEFAULT_SARVAM_MODEL } from "../providers/sarvam.js";
 import type { DiagnoseProviderOptions, ProviderDiagnostic } from "./types.js";
 
@@ -87,15 +90,26 @@ function resolveDiagnosticMetadata(providerOptions: {
         process.env.SARVAM_BASE_URL ??
         process.env.CODESETU_BASE_URL ??
         DEFAULT_SARVAM_BASE_URL,
-      model: providerOptions.model ?? process.env.SARVAM_MODEL ?? process.env.CODESETU_MODEL ?? DEFAULT_SARVAM_MODEL,
-      hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.SARVAM_API_KEY, process.env.CODESETU_API_KEY),
+      model:
+        providerOptions.model ??
+        process.env.SARVAM_MODEL ??
+        process.env.CODESETU_MODEL ??
+        DEFAULT_SARVAM_MODEL,
+      hasApiKey: hasConfigValue(
+        providerOptions.apiKey,
+        process.env.SARVAM_API_KEY,
+        process.env.CODESETU_API_KEY,
+      ),
     };
   }
 
   if (provider === DEFAULT_OPENAI_COMPATIBLE_PROVIDER) {
     return {
       provider,
-      baseURL: providerOptions.baseURL ?? process.env.CODESETU_BASE_URL ?? DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+      baseURL:
+        providerOptions.baseURL ??
+        process.env.CODESETU_BASE_URL ??
+        DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
       model: providerOptions.model ?? process.env.CODESETU_MODEL ?? DEFAULT_OPENAI_COMPATIBLE_MODEL,
       hasApiKey: hasConfigValue(providerOptions.apiKey, process.env.CODESETU_API_KEY),
     };

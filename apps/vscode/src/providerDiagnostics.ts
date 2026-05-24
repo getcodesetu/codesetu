@@ -33,9 +33,8 @@ export async function runCodeSetuProviderDiagnostics(
   outputChannel: vscodeTypes.OutputChannel,
 ): Promise<void> {
   const vscode: VSCodeApi = await import("vscode");
-  const { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } = await import(
-    "./configuration"
-  );
+  const { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } =
+    await import("./configuration");
   const configuration = readCodeSetuConfiguration();
   const summary = summarizeCodeSetuConfiguration();
   const result = await diagnoseProvider({

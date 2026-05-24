@@ -37,11 +37,7 @@ export {
   type ProviderId,
 } from "./providers/registry.js";
 export { getAssistantText } from "./providers/response.js";
-export {
-  IDE_ACTIONS,
-  buildActionUserMessage,
-  buildCodeSetuSystemMessage,
-} from "./ide/actions.js";
+export { IDE_ACTIONS, buildActionUserMessage, buildCodeSetuSystemMessage } from "./ide/actions.js";
 export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
 export { diagnoseProvider } from "./ide/diagnostics.js";
 export {

@@ -17,7 +17,13 @@
 import type { LlmProvider } from "../providers/base.js";
 import type { ProviderFactoryOptions } from "../providers/registry.js";
 
-export const IDE_ACTION_IDS = ["explain", "refactor", "write-tests", "fix-bug", "add-docs"] as const;
+export const IDE_ACTION_IDS = [
+  "explain",
+  "refactor",
+  "write-tests",
+  "fix-bug",
+  "add-docs",
+] as const;
 
 export type IdeActionId = (typeof IDE_ACTION_IDS)[number];
 

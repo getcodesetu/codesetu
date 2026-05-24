@@ -61,10 +61,9 @@ export function buildContextMarkdown(
 
   if (context.selectedText !== undefined && context.selectedText.length > 0) {
     sections.push(
-      [
-        `Selected code from ${activeFilePath}`,
-        codeFence(languageId, context.selectedText),
-      ].join("\n"),
+      [`Selected code from ${activeFilePath}`, codeFence(languageId, context.selectedText)].join(
+        "\n",
+      ),
     );
   }
 
@@ -85,10 +84,7 @@ export function buildContextMarkdown(
     const suffix = trimMiddle(context.cursorSuffix ?? "", maxCursorChars);
 
     sections.push(
-      [
-        "Cursor neighborhood",
-        codeFence(languageId, `${prefix}<cursor>${suffix}`),
-      ].join("\n"),
+      ["Cursor neighborhood", codeFence(languageId, `${prefix}<cursor>${suffix}`)].join("\n"),
     );
   }
 

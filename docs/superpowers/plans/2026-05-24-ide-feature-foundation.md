@@ -177,9 +177,7 @@ describe("workspace instruction parser", () => {
 
     expect(result.skills).toHaveLength(1);
     expect(result.checks).toHaveLength(1);
-    expect(result.warnings).toEqual([
-      ".codesetu/skills/broken.md: missing YAML frontmatter",
-    ]);
+    expect(result.warnings).toEqual([".codesetu/skills/broken.md: missing YAML frontmatter"]);
   });
 });
 
@@ -218,7 +216,13 @@ Create `packages/core/src/ide/types.ts`:
 ```ts
 import type { ProviderFactoryOptions } from "../providers/registry.js";
 
-export const IDE_ACTION_IDS = ["explain", "refactor", "write-tests", "fix-bug", "add-docs"] as const;
+export const IDE_ACTION_IDS = [
+  "explain",
+  "refactor",
+  "write-tests",
+  "fix-bug",
+  "add-docs",
+] as const;
 
 export type IdeActionId = (typeof IDE_ACTION_IDS)[number];
 
@@ -402,17 +406,20 @@ export const IDE_ACTIONS: readonly IdeActionDefinition[] = [
   {
     id: "explain",
     title: "Explain",
-    instruction: "Explain the selected code clearly and concisely. Include key control flow, inputs, outputs, and risks.",
+    instruction:
+      "Explain the selected code clearly and concisely. Include key control flow, inputs, outputs, and risks.",
   },
   {
     id: "refactor",
     title: "Refactor",
-    instruction: "Suggest a focused refactor for the selected code. Preserve behavior and explain the trade-offs.",
+    instruction:
+      "Suggest a focused refactor for the selected code. Preserve behavior and explain the trade-offs.",
   },
   {
     id: "write-tests",
     title: "Write Tests",
-    instruction: "Write focused tests for the selected code. Prefer examples that cover normal behavior and edge cases.",
+    instruction:
+      "Write focused tests for the selected code. Prefer examples that cover normal behavior and edge cases.",
   },
   {
     id: "fix-bug",
@@ -422,7 +429,8 @@ export const IDE_ACTIONS: readonly IdeActionDefinition[] = [
   {
     id: "add-docs",
     title: "Add Docs",
-    instruction: "Add useful documentation for the selected code. Keep it accurate and close to the code.",
+    instruction:
+      "Add useful documentation for the selected code. Keep it accurate and close to the code.",
   },
 ];
 
@@ -451,7 +459,9 @@ export function buildActionUserMessage(
     .join("\n\n");
 }
 
-export function buildCodeSetuSystemMessage(instructions: readonly WorkspaceInstruction[] = []): string {
+export function buildCodeSetuSystemMessage(
+  instructions: readonly WorkspaceInstruction[] = [],
+): string {
   const base =
     "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware.";
 
@@ -559,7 +569,10 @@ function parseSimpleYaml(yaml: string): Record<string, string> {
     }
 
     const key = line.slice(0, separator).trim();
-    const value = line.slice(separator + 1).trim().replace(/^["']|["']$/g, "");
+    const value = line
+      .slice(separator + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
 
     result[key] = value;
   }
@@ -575,7 +588,9 @@ Create `packages/core/src/ide/diagnostics.ts`:
 ```ts
 import type { DiagnoseProviderOptions, ProviderDiagnostic } from "./types.js";
 
-export async function diagnoseProvider(options: DiagnoseProviderOptions): Promise<ProviderDiagnostic> {
+export async function diagnoseProvider(
+  options: DiagnoseProviderOptions,
+): Promise<ProviderDiagnostic> {
   const provider = options.providerOptions.provider ?? "sarvam";
   const baseURL = options.providerOptions.baseURL;
   const model = options.providerOptions.model;
@@ -785,7 +800,10 @@ export function buildEditorContext(options: BuildEditorContextOptions): IdeConte
   const maxActiveFileChars = options.maxActiveFileChars ?? 12_000;
   const maxCursorChars = options.maxCursorChars ?? 2_000;
   const selectionStart = Math.max(0, Math.min(options.selectionStart, options.text.length));
-  const selectionEnd = Math.max(selectionStart, Math.min(options.selectionEnd, options.text.length));
+  const selectionEnd = Math.max(
+    selectionStart,
+    Math.min(options.selectionEnd, options.text.length),
+  );
 
   return {
     activeFilePath: options.activeFilePath,
@@ -793,7 +811,10 @@ export function buildEditorContext(options: BuildEditorContextOptions): IdeConte
     selectedText: options.text.slice(selectionStart, selectionEnd),
     activeFileText: trimMiddle(options.text, maxActiveFileChars),
     cursorPrefix: options.text.slice(Math.max(0, selectionStart - maxCursorChars), selectionStart),
-    cursorSuffix: options.text.slice(selectionEnd, Math.min(options.text.length, selectionEnd + maxCursorChars)),
+    cursorSuffix: options.text.slice(
+      selectionEnd,
+      Math.min(options.text.length, selectionEnd + maxCursorChars),
+    ),
     relatedSnippets: options.relatedSnippets ?? [],
   };
 }
@@ -1005,7 +1026,9 @@ const commandMap: Array<{ command: string; actionId: IdeActionId }> = [
   { command: "codesetu.addDocsToSelection", actionId: "add-docs" },
 ];
 
-export function registerCodeSetuEditorActions(options: RegisterCodeActionsOptions): vscode.Disposable[] {
+export function registerCodeSetuEditorActions(
+  options: RegisterCodeActionsOptions,
+): vscode.Disposable[] {
   return commandMap.map(({ command, actionId }) =>
     vscode.commands.registerCommand(command, async () => {
       const ideContext = await collectVSCodeContext();
@@ -1205,7 +1228,10 @@ export async function setupCodeSetuProvider(): Promise<void> {
   const provider = await vscode.window.showQuickPick(
     [
       { label: "sarvam", description: "Sarvam hosted or compatible endpoint" },
-      { label: "openai-compatible", description: "Ollama, vLLM, SGLang, OpenRouter, or compatible API" },
+      {
+        label: "openai-compatible",
+        description: "Ollama, vLLM, SGLang, OpenRouter, or compatible API",
+      },
     ],
     { placeHolder: "Choose a CodeSetu provider" },
   );
@@ -1262,7 +1288,9 @@ import * as vscode from "vscode";
 
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
 
-export async function runCodeSetuProviderDiagnostics(outputChannel: vscode.OutputChannel): Promise<void> {
+export async function runCodeSetuProviderDiagnostics(
+  outputChannel: vscode.OutputChannel,
+): Promise<void> {
   const configuration = readCodeSetuConfiguration();
   const summary = summarizeCodeSetuConfiguration();
   const result = await diagnoseProvider({
@@ -1668,7 +1696,7 @@ private fun parseSimpleYaml(yaml: String): Map<String, String> =
 
 Create `apps/jetbrains/src/main/kotlin/ai/codesetu/prompts/PromptBuilder.kt`:
 
-```kotlin
+````kotlin
 package ai.codesetu.prompts
 
 import ai.codesetu.model.IdeActionId
@@ -1724,7 +1752,7 @@ private fun fenced(label: String, languageId: String?, value: String): String =
 
 private fun trimMiddle(value: String, maxChars: Int): String =
   if (value.length <= maxChars) value else value.take(maxChars / 2) + "\n...[trimmed for context]...\n" + value.takeLast(maxChars / 2)
-```
+````
 
 - [ ] **Step 6: Add JetBrains settings state and configurable**
 

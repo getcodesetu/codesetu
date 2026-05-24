@@ -61,7 +61,9 @@ export function parseWorkspaceInstructions(
 
 function parseSource(
   source: WorkspaceInstructionSource,
-): { instruction: WorkspaceInstruction; warning?: never } | { instruction?: never; warning: string } {
+):
+  | { instruction: WorkspaceInstruction; warning?: never }
+  | { instruction?: never; warning: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source.content);
 
   if (match === null) {
@@ -102,7 +104,9 @@ function parseSource(
   };
 }
 
-function parseFrontmatter(frontmatter: string): Partial<Record<(typeof REQUIRED_FIELDS)[number], string>> {
+function parseFrontmatter(
+  frontmatter: string,
+): Partial<Record<(typeof REQUIRED_FIELDS)[number], string>> {
   const fields: Partial<Record<(typeof REQUIRED_FIELDS)[number], string>> = {};
 
   for (const line of frontmatter.split(/\r?\n/)) {
@@ -113,7 +117,10 @@ function parseFrontmatter(frontmatter: string): Partial<Record<(typeof REQUIRED_
     }
 
     const key = line.slice(0, separatorIndex).trim();
-    const value = line.slice(separatorIndex + 1).trim().replace(/^["']|["']$/g, "");
+    const value = line
+      .slice(separatorIndex + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
 
     if (isRequiredField(key)) {
       fields[key] = value;
