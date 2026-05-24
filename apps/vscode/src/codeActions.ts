@@ -11,8 +11,9 @@
 import type { IdeActionId } from "@codesetu/core";
 import * as vscode from "vscode";
 
-import { buildEditorActionMessage } from "./actionMessages";
+import { buildEditorActionRequest } from "./actionMessages";
 import { ChatPanel, type ChatResponder } from "./chatPanel";
+import { collectVSCodeContext } from "./ideContext";
 
 interface RegisterCodeActionsOptions {
   context: vscode.ExtensionContext;
@@ -33,13 +34,14 @@ export function registerCodeSetuEditorActions(
 ): vscode.Disposable[] {
   return commandMap.map(({ command, actionId }) =>
     vscode.commands.registerCommand(command, async () => {
-      const message = buildEditorActionMessage(actionId);
+      const request = buildEditorActionRequest(actionId, await collectVSCodeContext());
 
       await ChatPanel.createOrShowAndSend(
         options.context.extensionUri,
         options.responder,
         options.outputChannel,
-        message,
+        request.text,
+        { ideContext: request.ideContext },
       );
     }),
   );

@@ -1,29 +1,35 @@
 package ai.codesetu.toolwindow
 
+import ai.codesetu.model.IdeContextPayload
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 
 @Service(Service.Level.PROJECT)
 class CodeSetuChatService(private val project: Project) {
-  private val pendingMessages = mutableListOf<String>()
+  private val pendingMessages = mutableListOf<PendingMessage>()
   private var panel: CodeSetuChatPanel? = null
 
   fun register(panel: CodeSetuChatPanel) {
     this.panel = panel
-    pendingMessages.forEach(panel::sendMessage)
+    pendingMessages.forEach { panel.sendMessage(it.text, it.ideContext) }
     pendingMessages.clear()
   }
 
-  fun sendMessage(text: String) {
+  fun sendMessage(text: String, ideContext: IdeContextPayload? = null) {
     val currentPanel = panel
 
     if (currentPanel === null) {
-      pendingMessages.add(text)
+      pendingMessages.add(PendingMessage(text, ideContext))
       return
     }
 
-    currentPanel.sendMessage(text)
+    currentPanel.sendMessage(text, ideContext)
   }
+
+  private data class PendingMessage(
+    val text: String,
+    val ideContext: IdeContextPayload?,
+  )
 
   companion object {
     fun getInstance(project: Project): CodeSetuChatService =

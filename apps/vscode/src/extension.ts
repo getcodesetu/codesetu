@@ -25,7 +25,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
-import { ChatPanel } from "./chatPanel";
+import { ChatPanel, type ChatResponder } from "./chatPanel";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
@@ -56,13 +56,13 @@ export function activate(context: vscode.ExtensionContext): void {
     return [...result.skills, ...result.checks];
   };
 
-  const responder = async (messages: ChatMessage[]): Promise<string> =>
+  const responder: ChatResponder = async (messages, requestContext) =>
     sendChatRequest(
       messages,
       statusBarItem,
       outputChannel,
       await loadInstructions(),
-      await collectVSCodeContext(),
+      requestContext?.ideContext ?? (await collectVSCodeContext()),
     );
 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {

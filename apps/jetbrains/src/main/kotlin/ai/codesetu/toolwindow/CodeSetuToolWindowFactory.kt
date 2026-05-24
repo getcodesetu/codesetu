@@ -3,6 +3,7 @@ package ai.codesetu.toolwindow
 import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
+import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.provider.CodeSetuProviderClient
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
@@ -41,7 +42,7 @@ class CodeSetuChatPanel(private val project: Project) {
     send.addActionListener { sendMessage(input.text) }
   }
 
-  fun sendMessage(text: String) {
+  fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
 
@@ -51,7 +52,7 @@ class CodeSetuChatPanel(private val project: Project) {
 
     ApplicationManager.getApplication().executeOnPooledThread {
       val instructions = loadWorkspaceInstructions(project)
-      val ideContext = buildContextMarkdown(collectIdeContext(project))
+      val ideContext = buildContextMarkdown(capturedIdeContext ?: collectIdeContext(project))
       val userMessage = if (ideContext.isBlank()) {
         trimmed
       } else {

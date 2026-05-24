@@ -16,10 +16,21 @@
 
 import crypto from "node:crypto";
 
-import type { ChatMessage } from "@codesetu/core";
+import type { ChatMessage, IdeContextPayload } from "@codesetu/core";
 import * as vscode from "vscode";
 
-export type ChatResponder = (messages: ChatMessage[]) => Promise<string>;
+export interface ChatResponderContext {
+  ideContext?: IdeContextPayload;
+}
+
+export interface SendUserMessageOptions {
+  ideContext?: IdeContextPayload;
+}
+
+export type ChatResponder = (
+  messages: ChatMessage[],
+  context?: ChatResponderContext,
+) => Promise<string>;
 
 interface SendMessageRequest {
   type: "sendMessage";
@@ -77,13 +88,14 @@ export class ChatPanel {
     responder: ChatResponder,
     outputChannel: vscode.OutputChannel,
     text: string,
+    options: SendUserMessageOptions = {},
   ): Promise<void> {
     ChatPanel.createOrShow(extensionUri, responder, outputChannel);
-    await ChatPanel.currentPanel?.sendUserMessage(text);
+    await ChatPanel.currentPanel?.sendUserMessage(text, options);
   }
 
-  public async sendUserMessage(text: string): Promise<void> {
-    await this.submitMessage(text);
+  public async sendUserMessage(text: string, options: SendUserMessageOptions = {}): Promise<void> {
+    await this.submitMessage(text, options);
   }
 
   private async handleMessage(message: unknown): Promise<void> {
@@ -94,7 +106,10 @@ export class ChatPanel {
     await this.submitMessage(message.text);
   }
 
-  private async submitMessage(rawText: string): Promise<void> {
+  private async submitMessage(
+    rawText: string,
+    options: SendUserMessageOptions = {},
+  ): Promise<void> {
     if (this.inFlight) {
       return;
     }
@@ -111,7 +126,10 @@ export class ChatPanel {
     this.history.push({ role: "user", content: text });
 
     try {
-      const response = await this.responder(this.history);
+      const response = await this.responder(
+        this.history,
+        options.ideContext === undefined ? undefined : { ideContext: options.ideContext },
+      );
       this.history.push({ role: "assistant", content: response });
       void this.panel.webview.postMessage({ type: "assistantMessage", text: response });
     } catch (error: unknown) {

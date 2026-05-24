@@ -1,5 +1,6 @@
 package ai.codesetu.actions
 
+import ai.codesetu.context.collectIdeContext
 import ai.codesetu.model.IdeActionId
 import ai.codesetu.prompts.buildActionInstruction
 import ai.codesetu.toolwindow.CodeSetuChatService
@@ -13,9 +14,10 @@ abstract class CodeSetuEditorAction(
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
     val message = buildActionInstruction(actionId)
+    val ideContext = collectIdeContext(e)
     val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("CodeSetu") ?: return
     toolWindow.show {
-      CodeSetuChatService.getInstance(project).sendMessage(message)
+      CodeSetuChatService.getInstance(project).sendMessage(message, ideContext)
     }
   }
 }

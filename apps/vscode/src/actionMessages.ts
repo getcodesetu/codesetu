@@ -8,8 +8,23 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-import { IDE_ACTIONS, type IdeActionId } from "@codesetu/core";
+import { IDE_ACTIONS, type IdeActionId, type IdeContextPayload } from "@codesetu/core";
+
+export interface EditorActionRequest {
+  text: string;
+  ideContext: IdeContextPayload;
+}
 
 export function buildEditorActionMessage(actionId: IdeActionId): string {
   return IDE_ACTIONS[actionId].prompt;
+}
+
+export function buildEditorActionRequest(
+  actionId: IdeActionId,
+  ideContext: IdeContextPayload,
+): EditorActionRequest {
+  return {
+    text: buildEditorActionMessage(actionId),
+    ideContext,
+  };
 }

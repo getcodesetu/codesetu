@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { buildEditorActionMessage } from "../src/actionMessages.js";
+import { buildEditorActionMessage, buildEditorActionRequest } from "../src/actionMessages.js";
 
 describe("buildEditorActionMessage", () => {
   it("keeps editor action chat messages concise and leaves context internal", () => {
@@ -20,5 +20,17 @@ describe("buildEditorActionMessage", () => {
     expect(message).not.toContain("Active file excerpt");
     expect(message).not.toContain("Related snippets");
     expect(message).not.toContain("```");
+  });
+
+  it("keeps captured IDE context attached to editor action requests", () => {
+    const request = buildEditorActionRequest("refactor", {
+      activeFilePath: "src/service.ts",
+      languageId: "typescript",
+      selectedText: "const value = oldName;",
+    });
+
+    expect(request.text).toBe("Refactor the selected code while preserving behavior.");
+    expect(request.text).not.toContain("const value");
+    expect(request.ideContext.selectedText).toBe("const value = oldName;");
   });
 });
