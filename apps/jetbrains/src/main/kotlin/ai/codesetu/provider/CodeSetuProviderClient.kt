@@ -36,13 +36,13 @@ class CodeSetuProviderClient(
       error("Provider request failed with HTTP ${response.statusCode()}: ${response.body()}")
     }
 
-    return json.decodeFromString<ChatCompletionResponse>(response.body())
-      .choices
-      .firstOrNull()
-      ?.message
-      ?.content
-      .orEmpty()
+    return getAssistantText(json.decodeFromString<ChatCompletionResponse>(response.body()))
   }
+}
+
+fun getAssistantText(response: ChatCompletionResponse): String {
+  val message = response.choices.firstOrNull()?.message
+  return message?.content ?: message?.refusal.orEmpty()
 }
 
 fun buildChatCompletionRequestJson(

@@ -66,5 +66,12 @@ data class ChatCompletionResponse(
 
 @Serializable
 data class ChatChoice(
-  val message: ChatMessage? = null,
+  val message: ChatCompletionMessage? = null,
+)
+
+@Serializable
+data class ChatCompletionMessage(
+  val role: String? = null,
+  val content: String? = null,
+  val refusal: String? = null,
 )
