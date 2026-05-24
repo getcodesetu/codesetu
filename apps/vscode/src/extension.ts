@@ -30,6 +30,8 @@ import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration } from "./configuration";
 import { collectVSCodeContext } from "./ideContext";
+import { runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
+import { setupCodeSetuProvider } from "./providerSetup";
 import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -66,6 +68,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
   });
+  const setupProviderCommand = vscode.commands.registerCommand(
+    "codesetu.setupProvider",
+    setupCodeSetuProvider,
+  );
+  const diagnoseProviderCommand = vscode.commands.registerCommand("codesetu.diagnoseProvider", () =>
+    runCodeSetuProviderDiagnostics(outputChannel),
+  );
 
   const editorActions = registerCodeSetuEditorActions({
     context,
@@ -84,6 +93,8 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    setupProviderCommand,
+    diagnoseProviderCommand,
     ...editorActions,
     homeView,
   );

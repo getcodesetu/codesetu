@@ -29,6 +29,13 @@ export interface CodeSetuConfiguration {
   chatTemperature: number;
 }
 
+export interface CodeSetuConfigurationSummary {
+  provider: ProviderId;
+  baseURL?: string;
+  model?: string;
+  hasApiKey: boolean;
+}
+
 export function readCodeSetuConfiguration(): CodeSetuConfiguration {
   const configuration = vscode.workspace.getConfiguration("codesetu");
 
@@ -50,6 +57,18 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
     ]),
     chatMaxTokens: configuration.get<number>("chat.maxTokens", 1024),
     chatTemperature: configuration.get<number>("chat.temperature", 0.2),
+  };
+}
+
+export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
+  const configuration = readCodeSetuConfiguration();
+
+  return {
+    provider:
+      configuration.providerOptions.provider === "openai-compatible" ? "openai-compatible" : "sarvam",
+    baseURL: configuration.providerOptions.baseURL,
+    model: configuration.providerOptions.model,
+    hasApiKey: (configuration.providerOptions.apiKey ?? "").trim().length > 0,
   };
 }
 
