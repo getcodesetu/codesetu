@@ -1,6 +1,9 @@
 package ai.codesetu.instructions
 
 import ai.codesetu.model.WorkspaceInstruction
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.project.Project
+import java.nio.charset.StandardCharsets
 
 data class WorkspaceInstructionSource(
   val kind: String,
@@ -45,6 +48,40 @@ fun parseWorkspaceInstructions(
   }
 
   return WorkspaceInstructionParseResult(skills, checks, warnings)
+}
+
+fun loadWorkspaceInstructions(project: Project): List<WorkspaceInstruction> {
+  val basePath = project.basePath ?: return emptyList()
+  val baseDir = LocalFileSystem.getInstance().findFileByPath(basePath) ?: return emptyList()
+  val codesetuDir = baseDir.findChild(".codesetu") ?: return emptyList()
+  val sources = mutableListOf<WorkspaceInstructionSource>()
+
+  codesetuDir.findChild("skills")?.children
+    ?.filter { it.extension == "md" }
+    ?.forEach { file ->
+      sources.add(
+        WorkspaceInstructionSource(
+          kind = "skill",
+          path = ".codesetu/skills/${file.name}",
+          content = String(file.contentsToByteArray(), StandardCharsets.UTF_8),
+        ),
+      )
+    }
+
+  codesetuDir.findChild("checks")?.children
+    ?.filter { it.extension == "md" }
+    ?.forEach { file ->
+      sources.add(
+        WorkspaceInstructionSource(
+          kind = "check",
+          path = ".codesetu/checks/${file.name}",
+          content = String(file.contentsToByteArray(), StandardCharsets.UTF_8),
+        ),
+      )
+    }
+
+  val result = parseWorkspaceInstructions(sources)
+  return result.skills + result.checks
 }
 
 private data class ParsedInstruction(
