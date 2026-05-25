@@ -40,6 +40,19 @@ class ProviderPayloadTest {
   }
 
   @Test
+  fun serializesSarvamReasoningEffort() {
+    val payload = buildChatCompletionRequestJson(
+      model = "sarvam-m",
+      messages = listOf(ChatMessage(role = "user", content = "Hello")),
+      maxTokens = 4096,
+      temperature = 0.1,
+      reasoningEffort = "low",
+    )
+
+    assertContains(payload, "\"reasoning_effort\":\"low\"")
+  }
+
+  @Test
   fun extractsProviderRefusalWhenAssistantContentIsNull() {
     val response = Json.decodeFromString<ChatCompletionResponse>(
       """

@@ -62,7 +62,7 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
       "\n\n",
       "\n```",
     ]),
-    chatMaxTokens: configuration.get<number>("chat.maxTokens", 1024),
+    chatMaxTokens: configuration.get<number>("chat.maxTokens", 4096),
     chatTemperature: configuration.get<number>("chat.temperature", 0.2),
   };
 }

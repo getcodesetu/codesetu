@@ -17,13 +17,14 @@ class CodeSetuProviderClient(
   private val httpClient: HttpClient = HttpClient.newHttpClient(),
   private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-  fun chat(messages: List<ChatMessage>, maxTokens: Int = 1024, temperature: Double = 0.2): String {
+  fun chat(messages: List<ChatMessage>, maxTokens: Int = 4096, temperature: Double = 0.2): String {
     val state = CodeSetuSettingsState.getInstance().state
     val body = buildChatCompletionRequestJson(
       model = resolveCodeSetuModel(state.model),
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
+      reasoningEffort = "low",
       json = json,
     )
     val request = HttpRequest.newBuilder()
@@ -43,7 +44,7 @@ class CodeSetuProviderClient(
 
   fun streamChat(
     messages: List<ChatMessage>,
-    maxTokens: Int = 1024,
+    maxTokens: Int = 4096,
     temperature: Double = 0.2,
     onChunk: (String) -> Unit,
   ): String {
@@ -53,6 +54,7 @@ class CodeSetuProviderClient(
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
+      reasoningEffort = "low",
       stream = true,
       json = json,
     )
@@ -113,6 +115,7 @@ fun buildChatCompletionRequestJson(
   messages: List<ChatMessage>,
   maxTokens: Int,
   temperature: Double,
+  reasoningEffort: String? = null,
   stream: Boolean = false,
   json: Json = Json,
 ): String =
@@ -122,6 +125,7 @@ fun buildChatCompletionRequestJson(
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
+      reasoningEffort = reasoningEffort,
       stream = stream,
     ),
   )

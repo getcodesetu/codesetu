@@ -15,6 +15,7 @@
  */
 
 export type {
+  ChatCompletion,
   ChatCompletionRequest,
   ChatMessage,
   FimCompletionRequest,

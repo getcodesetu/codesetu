@@ -60,6 +60,11 @@ export interface OpenAICompatibleProviderOptions {
   client?: OpenAICompatibleClient;
 }
 
+type ChatCompletionReasoningEffort = "low" | "medium" | "high";
+type ChatCompletionParams = Omit<ChatCompletionCreateParamsNonStreaming, "stream"> & {
+  reasoning_effort?: ChatCompletionReasoningEffort;
+};
+
 export class OpenAICompatibleProvider implements LlmProvider {
   public readonly providerId: string;
   public readonly baseURL: string;
@@ -144,14 +149,13 @@ export class OpenAICompatibleProvider implements LlmProvider {
     });
   }
 
-  private buildChatParams(
-    request: ChatCompletionRequest,
-  ): Omit<ChatCompletionCreateParamsNonStreaming, "stream"> {
+  private buildChatParams(request: ChatCompletionRequest): ChatCompletionParams {
     return {
       model: request.model ?? this.model,
       messages: request.messages,
       ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(this.providerId === "sarvam" ? { reasoning_effort: "low" as const } : {}),
       ...(request.tools === undefined ? {} : { tools: request.tools }),
       ...(request.toolChoice === undefined ? {} : { tool_choice: request.toolChoice }),
     };

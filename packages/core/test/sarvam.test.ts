@@ -194,6 +194,7 @@ describe("SarvamProvider", () => {
         messages: [{ role: "user", content: "Find the profile for health ID 123." }],
         max_tokens: 128,
         temperature: 0.2,
+        reasoning_effort: "low",
         tools,
         tool_choice: "auto",
       },
@@ -220,6 +221,7 @@ describe("SarvamProvider", () => {
         messages: [{ role: "user", content: "Say namaste." }],
         max_tokens: 64,
         temperature: 0.1,
+        reasoning_effort: "low",
         stream: true,
       },
     ]);

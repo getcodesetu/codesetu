@@ -18,7 +18,6 @@ import {
   buildCodeSetuSystemMessage,
   buildContextMarkdown,
   createProvider,
-  getAssistantText,
   type ChatCompletionRequest,
   type ChatMessage,
   type IdeContextPayload,
@@ -26,6 +25,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
@@ -143,7 +143,14 @@ async function sendChatRequest(
     };
 
     return await resolveAssistantResponse({
-      completeChat: async () => getAssistantText(await provider.chat(request)),
+      completeChat: async () =>
+        completeAssistantText({
+          complete: (maxTokens) => provider.chat({ ...request, maxTokens }),
+          emptyMessage: "CodeSetu did not return any text.",
+          initialMaxTokens: configuration.chatMaxTokens,
+          onRetry: (reason) => outputChannel.appendLine(`Retrying chat completion: ${reason}`),
+          retryMaxTokens: Math.max(configuration.chatMaxTokens * 2, 4096),
+        }),
       emptyMessage: "CodeSetu did not return any text.",
       onChunk,
       onStreamFallback: (error) => {

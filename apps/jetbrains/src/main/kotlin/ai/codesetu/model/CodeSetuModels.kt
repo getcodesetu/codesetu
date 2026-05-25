@@ -57,6 +57,7 @@ data class ChatCompletionRequest(
   val messages: List<ChatMessage>,
   val temperature: Double = 0.2,
   @SerialName("max_tokens") val maxTokens: Int = 1024,
+  @SerialName("reasoning_effort") val reasoningEffort: String? = null,
   val stream: Boolean = false,
 )
 

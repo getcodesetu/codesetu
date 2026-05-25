@@ -224,7 +224,7 @@
         },
         "codesetu.chat.maxTokens": {
           "type": "number",
-          "default": 1024,
+          "default": 4096,
           "minimum": 1,
           "description": "Maximum tokens to request for chat responses."
         },

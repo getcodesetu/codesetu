@@ -23,6 +23,14 @@ import type {
 } from "openai/resources/chat/completions";
 import type { Completion } from "openai/resources/completions";
 
+export type {
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+};
+
 export type ChatMessage = ChatCompletionMessageParam;
 export type ChatCompletionStream = AsyncIterable<string>;
 export type ChatCompletionChunkStream = AsyncIterable<ChatCompletionChunk>;
