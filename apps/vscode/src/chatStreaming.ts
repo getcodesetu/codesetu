@@ -18,7 +18,7 @@ export interface ResolveAssistantResponseOptions {
   completeChat: () => Promise<string>;
   emptyMessage: string;
   onChunk?: (chunk: string) => void;
-  onStreamFallback?: (error: unknown) => void;
+  onStreamFallback?: (reason: unknown) => void;
   streamChat: () => AsyncIterable<string>;
 }
 
@@ -30,6 +30,8 @@ export async function resolveAssistantResponse(
   }
 
   let text = "";
+  let bufferedText = "";
+  let didEmitChunk = false;
 
   try {
     for await (const chunk of options.streamChat()) {
@@ -38,7 +40,24 @@ export async function resolveAssistantResponse(
       }
 
       text += chunk;
-      options.onChunk(chunk);
+
+      if (didEmitChunk) {
+        options.onChunk(chunk);
+        continue;
+      }
+
+      bufferedText += chunk;
+
+      if (bufferedText.trim().length > 0) {
+        options.onChunk(bufferedText);
+        bufferedText = "";
+        didEmitChunk = true;
+      }
+    }
+
+    if (text.trim().length === 0) {
+      options.onStreamFallback?.(new Error("Streaming chat returned no text."));
+      return normalizeAssistantText(await options.completeChat(), options.emptyMessage);
     }
 
     return normalizeAssistantText(text, options.emptyMessage);

@@ -58,6 +58,34 @@ describe("resolveAssistantResponse", () => {
     expect(response).toBe("Fallback response");
     expect(chunks).toEqual([]);
   });
+
+  it("falls back to a non-streaming completion when streaming returns no text", async () => {
+    const chunks: string[] = [];
+
+    const response = await resolveAssistantResponse({
+      completeChat: async () => "Fallback response",
+      emptyMessage: "CodeSetu did not return any text.",
+      onChunk: (chunk) => chunks.push(chunk),
+      streamChat: () => toAsyncIterable([]),
+    });
+
+    expect(response).toBe("Fallback response");
+    expect(chunks).toEqual([]);
+  });
+
+  it("does not open a streaming message for whitespace-only stream chunks", async () => {
+    const chunks: string[] = [];
+
+    const response = await resolveAssistantResponse({
+      completeChat: async () => "Fallback response",
+      emptyMessage: "CodeSetu did not return any text.",
+      onChunk: (chunk) => chunks.push(chunk),
+      streamChat: () => toAsyncIterable([" ", "\n"]),
+    });
+
+    expect(response).toBe("Fallback response");
+    expect(chunks).toEqual([]);
+  });
 });
 
 async function* toAsyncIterable(chunks: readonly string[]): AsyncIterable<string> {
