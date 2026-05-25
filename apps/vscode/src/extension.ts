@@ -64,7 +64,8 @@ export function activate(context: vscode.ExtensionContext): void {
       statusBarItem,
       outputChannel,
       await loadInstructions(),
-      requestContext?.ideContext ?? (await collectVSCodeContext()),
+      requestContext?.ideContext ??
+        ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {}),
       requestContext?.onChunk,
     );
 
