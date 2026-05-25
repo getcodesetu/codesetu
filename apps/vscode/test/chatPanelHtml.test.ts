@@ -34,4 +34,20 @@ describe("renderChatPanelHtml", () => {
     expect(html).toContain("Work locally");
     expect(html).toContain('aria-label="Send message"');
   });
+
+  it("uses the composer shell as the focus surface with real icon markup", () => {
+    const html = renderChatPanelHtml({
+      cspSource: "vscode-resource:",
+      nonce: "test-nonce",
+    });
+
+    expect(html).toContain(".composer-shell:focus-within");
+    expect(html).toContain("textarea:focus-visible");
+    expect(html).toContain("outline: none;");
+    expect(html).toContain('data-icon="plus"');
+    expect(html).toContain('data-icon="send"');
+    expect(html).toContain('data-icon="chevron-down"');
+    expect(html).not.toContain('<span aria-hidden="true">o</span>');
+    expect(html).not.toContain('<span aria-hidden="true">[]</span>');
+  });
 });

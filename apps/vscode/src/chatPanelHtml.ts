@@ -66,9 +66,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       }
 
       .message {
-        border-radius: 8px;
+        border-radius: 10px;
         line-height: 1.5;
-        padding: 10px 12px;
+        padding: 11px 14px;
         white-space: pre-wrap;
       }
 
@@ -79,6 +79,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
       .assistant {
         background: var(--vscode-editor-inactiveSelectionBackground);
+        border: 1px solid rgba(127, 127, 127, 0.08);
       }
 
       .error {
@@ -89,30 +90,43 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .composer-wrap {
         position: relative;
         display: grid;
-        gap: 8px;
+        gap: 10px;
       }
 
       .composer-shell {
-        display: grid;
-        gap: 12px;
-        min-height: 160px;
-        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 132px;
+        padding: 16px 18px 14px;
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
-        border-radius: 18px;
+        border-radius: 20px;
         color: var(--vscode-input-foreground);
         background: var(--vscode-input-background);
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.08);
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease;
+      }
+
+      .composer-shell:focus-within {
+        border-color: var(--vscode-focusBorder);
+        box-shadow:
+          0 0 0 2px color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent),
+          0 16px 42px rgba(0, 0, 0, 0.1);
       }
 
       textarea {
         width: 100%;
-        min-height: 84px;
-        max-height: 240px;
-        resize: vertical;
+        flex: 1;
+        min-height: 64px;
+        max-height: 180px;
+        resize: none;
+        overflow-y: auto;
         color: var(--vscode-input-foreground);
         background: transparent;
         border: 0;
-        outline: 0;
+        outline: none;
         padding: 0;
         font: inherit;
         line-height: 1.45;
@@ -126,12 +140,23 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .toolbar-group {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
       }
 
       .composer-toolbar {
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
         min-height: 36px;
+      }
+
+      .toolbar-group {
+        min-width: 0;
+      }
+
+      .toolbar-group.secondary {
+        justify-self: end;
       }
 
       button {
@@ -153,15 +178,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .send-button {
         display: inline-grid;
         place-items: center;
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
         padding: 0;
         border-radius: 50%;
       }
 
       .icon-button {
         border: 1px solid transparent;
-        font-size: 24px;
+        color: var(--vscode-descriptionForeground);
       }
 
       .icon-button:hover,
@@ -177,29 +202,41 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .send-button:focus-visible,
       .local-button:focus-visible,
       .menu-row:focus-visible,
-      .menu-button:focus-visible,
-      textarea:focus-visible {
+      .menu-button:focus-visible {
         outline: 1px solid var(--vscode-focusBorder);
         outline-offset: 2px;
       }
 
+      textarea:focus-visible {
+        outline: none;
+      }
+
       .pill-button,
       .local-button {
-        min-height: 36px;
-        padding: 0 10px;
-        border-radius: 8px;
+        min-height: 34px;
+        padding: 0 9px;
+        border-radius: 9px;
       }
 
       .pill-button {
         display: inline-flex;
         align-items: center;
-        gap: 7px;
+        gap: 8px;
+        min-width: 0;
+        color: var(--vscode-descriptionForeground);
+        white-space: nowrap;
+      }
+
+      .pill-button strong {
+        color: var(--vscode-foreground);
+        font-weight: 500;
       }
 
       .send-button {
         color: var(--vscode-button-foreground);
         background: var(--vscode-button-background);
-        font-size: 20px;
+        width: 38px;
+        height: 38px;
       }
 
       .send-button:hover {
@@ -219,7 +256,37 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         display: inline-flex;
         align-items: center;
         gap: 8px;
+        min-height: 30px;
+        padding-inline: 8px;
         color: var(--vscode-descriptionForeground);
+      }
+
+      .composer-icon {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
+
+      .icon-button .composer-icon {
+        width: 21px;
+        height: 21px;
+      }
+
+      .send-button .composer-icon {
+        width: 22px;
+        height: 22px;
+        stroke-width: 2.4;
+      }
+
+      .chevron {
+        width: 14px;
+        height: 14px;
+        opacity: 0.86;
       }
 
       .menu {
@@ -299,9 +366,12 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       }
 
       .menu-icon {
-        width: 18px;
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
         color: var(--vscode-descriptionForeground);
-        text-align: center;
       }
 
       .switch {
@@ -365,17 +435,22 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         .composer-shell {
-          min-height: 150px;
+          min-height: 136px;
           border-radius: 14px;
         }
 
         .composer-toolbar {
+          display: flex;
           align-items: stretch;
           flex-direction: column;
         }
 
         .toolbar-group {
           justify-content: space-between;
+        }
+
+        .toolbar-group.secondary {
+          justify-self: stretch;
         }
 
         .pill-button {
@@ -409,15 +484,25 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 aria-label="Open composer menu"
                 aria-expanded="false"
               >
-                +
+                <svg class="composer-icon" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
               </button>
               <button class="pill-button" type="button" aria-label="Permissions">
-                <span aria-hidden="true">o</span>
-                <span>Default permissions</span>
-                <span aria-hidden="true">v</span>
+                <svg class="composer-icon" data-icon="permissions" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v6" />
+                  <path d="M8 7v6" />
+                  <path d="M16 8v5" />
+                  <path d="M5 11v5a7 7 0 0 0 14 0v-4" />
+                </svg>
+                <strong>Default permissions</strong>
+                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
               </button>
             </div>
-            <div class="toolbar-group">
+            <div class="toolbar-group secondary">
               <button
                 id="model-menu-toggle"
                 class="pill-button"
@@ -425,41 +510,89 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 aria-label="Model and reasoning"
                 aria-expanded="false"
               >
-                <span id="model-label">5.5&nbsp;&nbsp;Extra High</span>
-                <span aria-hidden="true">v</span>
+                <strong id="model-label">5.5&nbsp;&nbsp;Extra High</strong>
+                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
               </button>
               <button id="send" class="send-button" type="submit" aria-label="Send message">
-                &uarr;
+                <svg class="composer-icon" data-icon="send" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
               </button>
             </div>
           </div>
         </div>
         <button id="local-mode" class="local-button" type="button">
-          <span aria-hidden="true">[]</span>
+          <svg class="composer-icon" data-icon="work-local" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v11H4z" />
+            <path d="M8 20h8" />
+            <path d="M12 16v4" />
+          </svg>
           <span>Work locally</span>
-          <span aria-hidden="true">v</span>
+          <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
         </button>
         <div id="composer-menu" class="menu composer-menu" hidden>
           <button class="menu-button" type="button" aria-disabled="true">
-            <span class="menu-leading"><span class="menu-icon">+</span>Add photos &amp; files</span>
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m21 8-10 10a5 5 0 0 1-7-7L14 1a3 3 0 0 1 4 4L8 15a1 1 0 0 1-1-1L17 4" />
+                </svg>
+              </span>
+              Add photos &amp; files
+            </span>
           </button>
           <div class="menu-divider"></div>
           <label class="menu-row">
-            <span class="menu-leading"><span class="menu-icon">*</span>Include IDE context</span>
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="sparkle" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m12 3 1.6 5.2L19 10l-5.4 1.8L12 17l-1.6-5.2L5 10l5.4-1.8z" />
+                  <path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+                </svg>
+              </span>
+              Include IDE context
+            </span>
             <span class="switch">
               <input id="include-context" type="checkbox" checked />
               <span class="switch-track"></span>
             </span>
           </label>
           <label class="menu-row" aria-disabled="true">
-            <span class="menu-leading"><span class="menu-icon">/</span>Plan mode</span>
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="plan" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 6h13" />
+                  <path d="M8 12h13" />
+                  <path d="M8 18h13" />
+                  <path d="M3 6h.01" />
+                  <path d="M3 12h.01" />
+                  <path d="M3 18h.01" />
+                </svg>
+              </span>
+              Plan mode
+            </span>
             <span class="switch">
               <input type="checkbox" disabled />
               <span class="switch-track"></span>
             </span>
           </label>
           <label class="menu-row" aria-disabled="true">
-            <span class="menu-leading"><span class="menu-icon">@</span>Pursue goal</span>
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="target" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="8" />
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M12 2v3" />
+                  <path d="M22 12h-3" />
+                </svg>
+              </span>
+              Pursue goal
+            </span>
             <span class="switch">
               <input type="checkbox" disabled />
               <span class="switch-track"></span>
@@ -467,8 +600,20 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           </label>
           <div class="menu-divider"></div>
           <button id="plugins-menu-toggle" class="menu-button" type="button" aria-expanded="false">
-            <span class="menu-leading"><span class="menu-icon">::</span>Plugins</span>
-            <span aria-hidden="true">&gt;</span>
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="plugins" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="7" cy="7" r="3" />
+                  <circle cx="17" cy="7" r="3" />
+                  <circle cx="7" cy="17" r="3" />
+                  <circle cx="17" cy="17" r="3" />
+                </svg>
+              </span>
+              Plugins
+            </span>
+            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
           </button>
         </div>
         <div id="plugins-menu" class="menu plugins-menu" hidden>
@@ -498,11 +643,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           <div class="menu-divider"></div>
           <button class="menu-button" type="button" aria-disabled="true">
             <span>GPT-5.5</span>
-            <span aria-hidden="true">&gt;</span>
+            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
           </button>
           <button class="menu-button" type="button" aria-disabled="true">
             <span>Speed</span>
-            <span aria-hidden="true">&gt;</span>
+            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
           </button>
         </div>
       </form>
