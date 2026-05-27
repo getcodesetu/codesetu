@@ -10,6 +10,7 @@ import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
 import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
+import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -195,27 +196,82 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     ApplicationManager.getApplication().invokeLater {
       val state = CodeSetuSettingsState.getInstance().state
       val current = resolveCodeSetuModel(state.model)
+      val configure = "⚙  Configure provider / endpoint…"
       val custom = "Enter a custom model id…"
-      val items = (listOf(custom, current) + CodeSetuModelCatalog.suggestionsFor(state.provider)).distinct()
+      val items =
+        (listOf(configure, custom, current) + CodeSetuModelCatalog.suggestionsFor(state.provider))
+          .distinct()
 
       JBPopupFactory.getInstance()
         .createPopupChooserBuilder(items)
-        .setTitle("Select Model")
+        .setTitle("CodeSetu model")
         .setItemChosenCallback { choice ->
-          val picked = if (choice == custom) {
-            Messages.showInputDialog(project, "Model id", "Select Model", null, current, null)
-          } else {
-            choice
-          }
-          val trimmed = picked?.trim().orEmpty()
-          if (trimmed.isNotEmpty()) {
-            state.model = trimmed
-            pushModelLabel()
+          when (choice) {
+            configure -> configureProvider()
+            custom -> applyModel(Messages.showInputDialog(project, "Model id", "Select Model", null, current, null))
+            else -> applyModel(choice)
           }
         }
         .createPopup()
         .showInFocusCenter()
     }
+  }
+
+  private fun applyModel(model: String?) {
+    val trimmed = model?.trim().orEmpty()
+    if (trimmed.isEmpty()) return
+    CodeSetuSettingsState.getInstance().state.model = trimmed
+    pushModelLabel()
+  }
+
+  // Lets the user switch provider (Sarvam / OpenAI-compatible (Ollama, local) /
+  // Hugging Face) and set its base URL, model, and API key from the chat.
+  private fun configureProvider() {
+    val providers = listOf(
+      "Sarvam" to "sarvam",
+      "OpenAI-compatible (Ollama, vLLM, local)" to "openai-compatible",
+      "Hugging Face" to "huggingface",
+    )
+
+    JBPopupFactory.getInstance()
+      .createPopupChooserBuilder(providers.map { it.first })
+      .setTitle("Configure provider")
+      .setItemChosenCallback { label ->
+        providers.firstOrNull { it.first == label }?.let { applyProvider(it.second) }
+      }
+      .createPopup()
+      .showInFocusCenter()
+  }
+
+  private fun applyProvider(providerId: String) {
+    val state = CodeSetuSettingsState.getInstance().state
+    val defaults = providerDefaults(providerId)
+    val baseUrlSeed =
+      if (state.provider == providerId && state.baseUrl.isNotBlank()) state.baseUrl else defaults.baseUrl
+    val modelSeed =
+      if (state.provider == providerId && state.model.isNotBlank()) state.model else defaults.model
+
+    val baseUrl =
+      Messages.showInputDialog(project, "Base URL", "Configure Provider", null, baseUrlSeed, null)
+        ?: return
+    val model =
+      Messages.showInputDialog(project, "Model id", "Configure Provider", null, modelSeed, null)
+        ?: return
+    val token =
+      Messages.showPasswordDialog(
+        project,
+        "API key / token (leave blank to keep the current one)",
+        "Configure Provider",
+        null,
+      )
+
+    state.provider = providerId
+    state.baseUrl = baseUrl.trim().ifBlank { defaults.baseUrl }
+    state.model = model.trim().ifBlank { defaults.model }
+    if (!token.isNullOrBlank()) {
+      CodeSetuSettingsState.getInstance().setApiKey(token)
+    }
+    pushModelLabel()
   }
 
   private fun pushModelLabel() {

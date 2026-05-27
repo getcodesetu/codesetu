@@ -18,6 +18,7 @@ import * as vscode from "vscode";
 
 import { summarizeCodeSetuConfiguration } from "./configuration";
 
+const CONFIGURE_PROVIDER_LABEL = "$(gear) Configure provider (base URL, API key)…";
 const CUSTOM_ENTRY_LABEL = "$(edit) Enter a custom model id…";
 
 // A short, hand-picked set of chat models that the Hugging Face router reliably
@@ -40,6 +41,7 @@ export async function selectCodeSetuModel(): Promise<void> {
   const ordered = dedupeWithCurrentFirst(suggestions, current);
 
   const items: vscode.QuickPickItem[] = [
+    { label: CONFIGURE_PROVIDER_LABEL, alwaysShow: true },
     { label: CUSTOM_ENTRY_LABEL, alwaysShow: true },
     ...ordered.map(
       (model): vscode.QuickPickItem =>
@@ -53,6 +55,12 @@ export async function selectCodeSetuModel(): Promise<void> {
   });
 
   if (picked === undefined) {
+    return;
+  }
+
+  if (picked.label === CONFIGURE_PROVIDER_LABEL) {
+    // Hand off to the full provider setup (provider, base URL, model, token).
+    await vscode.commands.executeCommand("codesetu.setupProvider");
     return;
   }
 
