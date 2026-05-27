@@ -12,6 +12,12 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <h3>0.2.0</h3>
+    <ul>
+      <li>Chat tool window rendered with the CodeSetu webview design (markdown replies, model chip)</li>
+      <li>Hugging Face provider support, plus in-chat provider/model switching (Sarvam, OpenAI-compatible, Hugging Face)</li>
+      <li>API key stored securely in PasswordSafe; multi-turn chat history</li>
+    </ul>
     <h3>0.1.0</h3>
     <ul>
       <li>Initial JetBrains plugin scaffold</li>

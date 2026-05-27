@@ -1,6 +1,6 @@
 {
   "name": "@codesetu/jetbrains",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "JetBrains plugin for CodeSetu. This Kotlin/Gradle project is integrated into the pnpm workspace via thin script delegations — actual build/test runs through Gradle.",
   "license": "Apache-2.0",
