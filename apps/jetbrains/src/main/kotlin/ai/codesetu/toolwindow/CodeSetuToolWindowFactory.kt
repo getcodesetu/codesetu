@@ -8,14 +8,19 @@ import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
+import ai.codesetu.settings.CodeSetuModelCatalog
+import ai.codesetu.settings.CodeSetuSettingsState
+import ai.codesetu.settings.resolveCodeSetuModel
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 import java.awt.BorderLayout
 import javax.swing.JButton
+import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JTextArea
@@ -34,15 +39,44 @@ class CodeSetuChatPanel(private val project: Project) {
   private val transcript = JTextArea()
   private val input = JTextArea(4, 40)
   private val send = JButton("Send")
+  private val modelBox = ComboBox<String>()
   private val client = CodeSetuProviderClient()
   private val history = mutableListOf<ChatMessage>()
 
   init {
     transcript.isEditable = false
+
+    modelBox.isEditable = true
+    populateModelBox()
+    modelBox.addActionListener { onModelSelected() }
+
+    val header = JPanel(BorderLayout())
+    header.add(JLabel("Model: "), BorderLayout.WEST)
+    header.add(modelBox, BorderLayout.CENTER)
+
+    component.add(header, BorderLayout.NORTH)
     component.add(JScrollPane(transcript), BorderLayout.CENTER)
     component.add(JScrollPane(input), BorderLayout.SOUTH)
     component.add(send, BorderLayout.EAST)
     send.addActionListener { sendMessage(input.text) }
+  }
+
+  private fun populateModelBox() {
+    val state = CodeSetuSettingsState.getInstance().state
+    val current = resolveCodeSetuModel(state.model)
+    val items = (listOf(current) + CodeSetuModelCatalog.suggestionsFor(state.provider)).distinct()
+    modelBox.removeAllItems()
+    items.forEach { modelBox.addItem(it) }
+    modelBox.selectedItem = current
+  }
+
+  private fun onModelSelected() {
+    val selected = (modelBox.selectedItem as? String)?.trim().orEmpty()
+    if (selected.isEmpty()) return
+    val state = CodeSetuSettingsState.getInstance().state
+    if (selected != state.model) {
+      state.model = selected
+    }
   }
 
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
