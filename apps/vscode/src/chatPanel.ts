@@ -109,12 +109,31 @@ export class ChatPanel {
     await this.submitMessage(text, options);
   }
 
+  public static refreshModelLabel(): void {
+    ChatPanel.currentPanel?.postModelLabel();
+  }
+
   private async handleMessage(message: unknown): Promise<void> {
+    if (isSelectModelRequest(message)) {
+      // The command updates codesetu.model and calls refreshModelLabel(), which
+      // posts the new label back to this webview.
+      await vscode.commands.executeCommand("codesetu.selectModel");
+      return;
+    }
+
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
 
     await this.submitMessage(message.text, { includeIdeContext: message.includeIdeContext });
+  }
+
+  private postModelLabel(): void {
+    const summary = summarizeCodeSetuConfiguration();
+    void this.panel.webview.postMessage({
+      type: "modelLabel",
+      text: `${summary.provider} · ${summary.model ?? "default"}`,
+    });
   }
 
   private async submitMessage(
@@ -201,6 +220,14 @@ export class ChatPanel {
 
 function messageLength(message: ChatMessage): number {
   return typeof message.content === "string" ? message.content.length : 0;
+}
+
+function isSelectModelRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "selectModel"
+  );
 }
 
 function isSendMessageRequest(message: unknown): message is SendMessageRequest {

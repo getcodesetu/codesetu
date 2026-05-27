@@ -33,6 +33,7 @@ import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
 import { collectVSCodeContext } from "./ideContext";
+import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
 import { getStoredApiKey, migrateApiKeyFromConfiguration } from "./secretStorage";
@@ -101,6 +102,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const diagnoseProviderCommand = vscode.commands.registerCommand("codesetu.diagnoseProvider", () =>
     runCodeSetuProviderDiagnostics(outputChannel, apiKey),
   );
+  const selectModelCommand = vscode.commands.registerCommand("codesetu.selectModel", async () => {
+    await selectCodeSetuModel();
+    ChatPanel.refreshModelLabel();
+  });
 
   const editorActions = registerCodeSetuEditorActions({
     context,
@@ -120,6 +125,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openChatCommand,
     setupProviderCommand,
     diagnoseProviderCommand,
+    selectModelCommand,
     ...editorActions,
     homeView,
   );

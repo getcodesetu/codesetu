@@ -15,6 +15,8 @@
  */
 
 import {
+  DEFAULT_HUGGINGFACE_BASE_URL,
+  DEFAULT_HUGGINGFACE_MODEL,
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL,
   DEFAULT_SARVAM_BASE_URL,
@@ -73,8 +75,26 @@ export function summarizeCodeSetuConfiguration(
   secretApiKey?: string,
 ): CodeSetuConfigurationSummary {
   const configuration = readCodeSetuConfiguration();
-  const provider =
-    configuration.providerOptions.provider === "openai-compatible" ? "openai-compatible" : "sarvam";
+  const provider = normalizeProvider(configuration.providerOptions.provider);
+
+  if (provider === "huggingface") {
+    return {
+      provider,
+      baseURL:
+        firstConfigValue(
+          configuration.providerOptions.baseURL,
+          process.env.HF_BASE_URL,
+          DEFAULT_HUGGINGFACE_BASE_URL,
+        ) ?? DEFAULT_HUGGINGFACE_BASE_URL,
+      model:
+        firstConfigValue(
+          configuration.providerOptions.model,
+          process.env.HF_MODEL,
+          DEFAULT_HUGGINGFACE_MODEL,
+        ) ?? DEFAULT_HUGGINGFACE_MODEL,
+      hasApiKey: hasConfigValue(secretApiKey, process.env.HF_TOKEN, process.env.CODESETU_API_KEY),
+    };
+  }
 
   if (provider === "sarvam") {
     return {
@@ -120,9 +140,11 @@ export function summarizeCodeSetuConfiguration(
 }
 
 function readProvider(configuration: vscode.WorkspaceConfiguration): ProviderId {
-  const provider = configuration.get<string>("provider", "sarvam");
+  return normalizeProvider(configuration.get<string>("provider", "sarvam"));
+}
 
-  if (provider === "openai-compatible") {
+function normalizeProvider(provider: string | undefined): ProviderId {
+  if (provider === "openai-compatible" || provider === "huggingface") {
     return provider;
   }
 

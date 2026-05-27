@@ -74,6 +74,11 @@
         "category": "CodeSetu"
       },
       {
+        "command": "codesetu.selectModel",
+        "title": "CodeSetu: Select Model",
+        "category": "CodeSetu"
+      },
+      {
         "command": "codesetu.explainSelection",
         "title": "Explain with CodeSetu",
         "category": "CodeSetu"
@@ -160,7 +165,13 @@
           "type": "string",
           "enum": [
             "sarvam",
-            "openai-compatible"
+            "openai-compatible",
+            "huggingface"
+          ],
+          "enumDescriptions": [
+            "Sarvam hosted or compatible endpoint.",
+            "Any OpenAI-compatible API (Ollama, vLLM, SGLang, OpenRouter, local).",
+            "Hugging Face Inference — the hosted router, a dedicated Inference Endpoint, or self-hosted TGI."
           ],
           "default": "sarvam",
           "description": "Model provider used by CodeSetu."

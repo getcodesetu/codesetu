@@ -4,6 +4,7 @@ import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatMessage
+import ai.codesetu.model.ProviderKind
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.resolveCodeSetuModel
 import java.net.URI
@@ -24,7 +25,7 @@ class CodeSetuProviderClient(
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
-      reasoningEffort = "low",
+      reasoningEffort = reasoningEffortFor(state.provider),
       json = json,
     )
     val request = HttpRequest.newBuilder()
@@ -54,7 +55,7 @@ class CodeSetuProviderClient(
       messages = messages,
       maxTokens = maxTokens,
       temperature = temperature,
-      reasoningEffort = "low",
+      reasoningEffort = reasoningEffortFor(state.provider),
       stream = true,
       json = json,
     )
@@ -104,6 +105,11 @@ class CodeSetuProviderClient(
     return assistantText.toString()
   }
 }
+
+// Sarvam needs a low reasoning effort to avoid exhausting its token budget;
+// other providers (OpenAI-compatible, Hugging Face) may reject an unknown field.
+private fun reasoningEffortFor(providerId: String): String? =
+  if (ProviderKind.fromId(providerId) == ProviderKind.SARVAM) "low" else null
 
 fun getAssistantText(response: ChatCompletionResponse): String {
   val message = response.choices.firstOrNull()?.message

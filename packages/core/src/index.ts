@@ -22,6 +22,14 @@ export type {
   LlmProvider,
 } from "./providers/base.js";
 export {
+  DEFAULT_HUGGINGFACE_BASE_URL,
+  DEFAULT_HUGGINGFACE_MODEL,
+  DEFAULT_HUGGINGFACE_PROVIDER,
+  HuggingFaceProvider,
+  type HuggingFaceOpenAIClient,
+  type HuggingFaceProviderOptions,
+} from "./providers/huggingface.js";
+export {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL,
   DEFAULT_OPENAI_COMPATIBLE_PROVIDER,

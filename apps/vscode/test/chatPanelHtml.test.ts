@@ -30,9 +30,22 @@ describe("renderChatPanelHtml", () => {
     expect(html).toContain('id="composer-menu-toggle"');
     expect(html).toContain("Include IDE context");
     expect(html).toContain('id="include-context"');
-    expect(html).toContain('class="model-chip"');
+    expect(html).toContain('id="model-chip"');
+    expect(html).toContain('aria-label="Select model"');
     expect(html).toContain("sarvam · sarvam-30b");
     expect(html).toContain('aria-label="Send message"');
+  });
+
+  it("makes the model chip request a model switch", () => {
+    const html = renderChatPanelHtml({
+      cspSource: "vscode-resource:",
+      nonce: "test-nonce",
+      modelLabel: "huggingface · meta-llama/Llama-3.3-70B-Instruct",
+    });
+
+    expect(html).toContain('type: "selectModel"');
+    expect(html).toContain('id="model-label"');
+    expect(html).toContain('message.type === "modelLabel"');
   });
 
   it("does not advertise non-functional or fictional controls", () => {

@@ -246,16 +246,36 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .model-chip {
         display: inline-flex;
         align-items: center;
+        gap: 6px;
         min-height: 30px;
-        padding: 0 10px;
+        padding: 0 8px;
+        border: 0;
         border-radius: 9px;
         color: var(--vscode-descriptionForeground);
+        background: transparent;
         white-space: nowrap;
+        cursor: pointer;
+        font: inherit;
       }
 
-      .model-chip strong {
-        color: var(--vscode-foreground);
-        font-weight: 500;
+      .model-chip:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .model-chip:focus-visible {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: 2px;
+      }
+
+      .model-chip:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .chevron {
+        width: 14px;
+        height: 14px;
+        opacity: 0.8;
       }
 
       .send-button {
@@ -433,7 +453,12 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               </button>
             </div>
             <div class="toolbar-group secondary">
-              <span class="model-chip" title="Configured provider and model">${modelLabel}</span>
+              <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
+                <span id="model-label">${modelLabel}</span>
+                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
               <button id="send" class="send-button" type="submit" aria-label="Send message">
                 <svg class="composer-icon" data-icon="send" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 19V5" />
@@ -471,6 +496,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
       const includeContext = document.getElementById("include-context");
+      const modelChip = document.getElementById("model-chip");
+      const modelLabel = document.getElementById("model-label");
       let activeAssistantMessage;
       let activeAssistantRaw = "";
 
@@ -592,6 +619,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         setMenuOpen(composerMenu.hidden);
       });
 
+      modelChip.addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "selectModel" });
+      });
+
       document.addEventListener("click", (event) => {
         const target = event.target;
 
@@ -656,11 +688,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           appendMessage("error", message.text);
         }
 
+        if (message.type === "modelLabel") {
+          modelLabel.textContent = message.text;
+        }
+
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
           send.disabled = isBusy;
           textarea.disabled = isBusy;
           composerMenuToggle.disabled = isBusy;
+          modelChip.disabled = isBusy;
         }
       });
     </script>

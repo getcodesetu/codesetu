@@ -15,6 +15,11 @@
  */
 
 import {
+  DEFAULT_HUGGINGFACE_BASE_URL,
+  DEFAULT_HUGGINGFACE_MODEL,
+  DEFAULT_HUGGINGFACE_PROVIDER,
+} from "../providers/huggingface.js";
+import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL,
   DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
@@ -124,6 +129,24 @@ function resolveDiagnosticMetadata(providerOptions: {
     };
   }
 
+  if (provider === DEFAULT_HUGGINGFACE_PROVIDER) {
+    return {
+      provider,
+      baseURL:
+        firstConfigValue(
+          providerOptions.baseURL,
+          process.env.HF_BASE_URL,
+          DEFAULT_HUGGINGFACE_BASE_URL,
+        ) ?? DEFAULT_HUGGINGFACE_BASE_URL,
+      model: resolveModel(providerOptions.model, process.env.HF_MODEL, DEFAULT_HUGGINGFACE_MODEL),
+      hasApiKey: hasConfigValue(
+        providerOptions.apiKey,
+        process.env.HF_TOKEN,
+        process.env.CODESETU_API_KEY,
+      ),
+    };
+  }
+
   return {
     provider,
     baseURL: firstConfigValue(providerOptions.baseURL, process.env.CODESETU_BASE_URL) ?? "",
@@ -148,6 +171,12 @@ function getMissingConfigMessage(metadata: DiagnosticMetadata): string | undefin
   if (provider === DEFAULT_OPENAI_COMPATIBLE_PROVIDER) {
     if (!metadata.hasApiKey) {
       return "API key is required before CodeSetu can create the provider.";
+    }
+  }
+
+  if (provider === DEFAULT_HUGGINGFACE_PROVIDER) {
+    if (!metadata.hasApiKey) {
+      return "A Hugging Face token is required before CodeSetu can create the provider.";
     }
   }
 

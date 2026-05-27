@@ -18,9 +18,12 @@ import { describe, expect, it } from "vitest";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 
 import {
+  DEFAULT_HUGGINGFACE_BASE_URL,
+  DEFAULT_HUGGINGFACE_MODEL,
   DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
   DEFAULT_SARVAM_BASE_URL,
   DEFAULT_SARVAM_MODEL,
+  HuggingFaceProvider,
   OpenAICompatibleProvider,
   SarvamProvider,
   createProvider,
@@ -50,7 +53,7 @@ const assistantResponse: ChatCompletion = {
 
 describe("provider factory", () => {
   it("lists built-in provider ids", () => {
-    expect(listProviderIds()).toEqual(["sarvam", "openai-compatible"]);
+    expect(listProviderIds()).toEqual(["sarvam", "openai-compatible", "huggingface"]);
   });
 
   it("creates Sarvam by default", () => {
@@ -73,6 +76,28 @@ describe("provider factory", () => {
     expect(provider.providerId).toBe(DEFAULT_OPENAI_COMPATIBLE_PROVIDER);
     expect(provider.model).toBe("local-code-model");
     expect(provider.baseURL).toBe("http://localhost:8000/v1");
+  });
+
+  it("creates a Hugging Face provider with router defaults", () => {
+    const provider = createProvider({ provider: "huggingface", apiKey: "hf_test-token" });
+
+    expect(provider).toBeInstanceOf(HuggingFaceProvider);
+    expect(provider.providerId).toBe("huggingface");
+    expect(provider.baseURL).toBe(DEFAULT_HUGGINGFACE_BASE_URL);
+    expect(provider.model).toBe(DEFAULT_HUGGINGFACE_MODEL);
+  });
+
+  it("lets a Hugging Face provider target a dedicated endpoint and model", () => {
+    const provider = createProvider({
+      provider: "huggingface",
+      apiKey: "hf_test-token",
+      baseURL: "https://abc123.endpoints.huggingface.cloud/v1",
+      model: "Qwen/Qwen2.5-Coder-32B-Instruct",
+    });
+
+    expect(provider).toBeInstanceOf(HuggingFaceProvider);
+    expect(provider.baseURL).toBe("https://abc123.endpoints.huggingface.cloud/v1");
+    expect(provider.model).toBe("Qwen/Qwen2.5-Coder-32B-Instruct");
   });
 
   it("rejects unknown providers", () => {
