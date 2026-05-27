@@ -56,3 +56,39 @@ jobs:
           path: artifacts/*.vsix
           if-no-files-found: error
           retention-days: 14
+
+  jetbrains:
+    name: JetBrains build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/jetbrains/**/*.gradle.kts', 'apps/jetbrains/gradle.properties', 'apps/jetbrains/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Compile, test, and package plugin
+        working-directory: apps/jetbrains
+        run: ./gradlew compileKotlin compileTestKotlin test buildPlugin --no-daemon
+
+      - name: Upload plugin zip (smoke build)
+        uses: actions/upload-artifact@v4
+        with:
+          name: codesetu-jetbrains-zip
+          path: apps/jetbrains/build/distributions/*.zip
+          if-no-files-found: error
+          retention-days: 14
