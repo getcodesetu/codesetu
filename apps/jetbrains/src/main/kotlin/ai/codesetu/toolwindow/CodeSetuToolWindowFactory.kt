@@ -11,232 +11,259 @@ import ai.codesetu.prompts.buildSystemMessage
 import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.resolveCodeSetuModel
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
-import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.content.ContentFactory
-import com.intellij.util.ui.JBUI
-import java.awt.BorderLayout
-import java.awt.Dimension
-import java.awt.event.ActionEvent
-import java.awt.event.InputEvent
-import java.awt.event.KeyEvent
-import javax.swing.AbstractAction
-import javax.swing.JButton
+import com.intellij.ui.jcef.JBCefApp
+import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefBrowserBase
+import com.intellij.ui.jcef.JBCefJSQuery
+import javax.swing.JComponent
 import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.KeyStroke
-import javax.swing.JTextArea
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 class CodeSetuToolWindowFactory : ToolWindowFactory {
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+    val contentFactory = ContentFactory.getInstance()
+
+    if (!JBCefApp.isSupported()) {
+      val fallback = JLabel("CodeSetu chat requires JCEF, which is unavailable in this IDE.")
+      toolWindow.contentManager.addContent(contentFactory.createContent(fallback, "", false))
+      return
+    }
+
     val panel = CodeSetuChatPanel(project)
     CodeSetuChatService.getInstance(project).register(panel)
-    val content = ContentFactory.getInstance().createContent(panel.component, "", false)
+    val content = contentFactory.createContent(panel.component, "", false)
+    content.setDisposer(panel)
     toolWindow.contentManager.addContent(content)
   }
 }
 
-class CodeSetuChatPanel(private val project: Project) {
-  val component: JPanel = JPanel(BorderLayout())
-  private val transcript = JTextArea()
-  private val input = JBTextArea(4, 40)
-  private val send = JButton("Send")
-  private val modelBox = ComboBox<String>()
+/**
+ * JCEF-backed chat panel that renders the shared CodeSetu chat design (the same
+ * markup, CSS, and markdown rendering as the VS Code webview). Communication
+ * uses a JBCefJSQuery bridge: the page posts sendMessage/selectModel/ready, and
+ * the host pushes streamed deltas, the model label, busy state, and errors back.
+ */
+class CodeSetuChatPanel(private val project: Project) : Disposable {
+  private val browser = JBCefBrowser()
+  private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
   private val history = mutableListOf<ChatMessage>()
+
+  // EDT-only state: outgoing messages buffered until the page signals "ready".
+  private val pending = mutableListOf<String>()
+  private var ready = false
   private var inFlight = false
 
-  private fun setBusy(busy: Boolean) {
-    inFlight = busy
-    send.isEnabled = !busy
-    input.isEnabled = !busy
-    modelBox.isEnabled = !busy
-  }
+  val component: JComponent
+    get() = browser.component
 
   init {
-    transcript.isEditable = false
-    transcript.lineWrap = true
-    transcript.wrapStyleWord = true
-    transcript.border = JBUI.Borders.empty(8)
-
-    input.lineWrap = true
-    input.wrapStyleWord = true
-    input.border = JBUI.Borders.empty(4)
-    input.emptyText.text = "Ask CodeSetu  (⌘/Ctrl+Enter to send)"
-
-    modelBox.isEditable = true
-    populateModelBox()
-    modelBox.addActionListener { onModelSelected() }
-
-    // Top bar: model selector.
-    val header = JPanel(BorderLayout())
-    header.border = JBUI.Borders.empty(6, 8)
-    header.add(JLabel("Model: "), BorderLayout.WEST)
-    header.add(modelBox, BorderLayout.CENTER)
-
-    // Bottom composer: input grows; Send sits at its natural size, bottom-right.
-    val sendBar = JPanel(BorderLayout())
-    sendBar.border = JBUI.Borders.emptyLeft(6)
-    sendBar.add(send, BorderLayout.SOUTH)
-
-    val composer = JPanel(BorderLayout())
-    composer.border = JBUI.Borders.empty(6, 8, 8, 8)
-    val inputScroll = JBScrollPane(input)
-    inputScroll.preferredSize = Dimension(0, 92)
-    composer.add(inputScroll, BorderLayout.CENTER)
-    composer.add(sendBar, BorderLayout.EAST)
-
-    component.add(header, BorderLayout.NORTH)
-    component.add(JBScrollPane(transcript), BorderLayout.CENTER)
-    component.add(composer, BorderLayout.SOUTH)
-
-    send.addActionListener { sendMessage(input.text) }
-    registerSendShortcut()
-  }
-
-  private fun registerSendShortcut() {
-    val action = object : AbstractAction() {
-      override fun actionPerformed(e: ActionEvent) {
-        sendMessage(input.text)
-      }
+    jsQuery.addHandler { request ->
+      handlePost(request)
+      null
     }
-    input.actionMap.put("codesetu.send", action)
-    input.inputMap.put(
-      KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
-      "codesetu.send",
-    )
-    input.inputMap.put(
-      KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.META_DOWN_MASK),
-      "codesetu.send",
-    )
+    browser.loadHTML(ChatWebviewHtml.render(modelLabelText(), jsQuery.inject("payload")))
   }
 
-  private fun populateModelBox() {
-    val state = CodeSetuSettingsState.getInstance().state
-    val current = resolveCodeSetuModel(state.model)
-    val items = (listOf(current) + CodeSetuModelCatalog.suggestionsFor(state.provider)).distinct()
-    modelBox.removeAllItems()
-    items.forEach { modelBox.addItem(it) }
-    modelBox.selectedItem = current
-  }
-
-  private fun onModelSelected() {
-    val selected = (modelBox.selectedItem as? String)?.trim().orEmpty()
-    if (selected.isEmpty()) return
-    val state = CodeSetuSettingsState.getInstance().state
-    if (selected != state.model) {
-      state.model = selected
-    }
-  }
-
+  /** Entry point for editor actions (Explain/Refactor/...) with pre-captured context. */
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
-    val trimmed = text.trim()
-    if (trimmed.isEmpty() || inFlight) return
+    runChat(text, includeContext = true, captured = capturedIdeContext)
+  }
 
-    append("You", trimmed)
-    input.text = ""
-    setBusy(true)
+  private fun handlePost(request: String) {
+    val obj = try {
+      Json.parseToJsonElement(request).jsonObject
+    } catch (error: Exception) {
+      return
+    }
 
-    // Capture editor/document context on the EDT (this method runs on the EDT);
-    // reading the selected editor or document text off the EDT is unsafe.
-    val ideContext = capturedIdeContext ?: collectIdeContext(project)
-
-    ApplicationManager.getApplication().executeOnPooledThread {
-      val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
-        loadWorkspaceInstructions(project)
-      }
-      val contextMarkdown = buildContextMarkdown(ideContext)
-      val userMessage = if (contextMarkdown.isBlank()) {
-        trimmed
-      } else {
-        "$trimmed\n\nCurrent IDE context:\n\n$contextMarkdown"
-      }
-      history.add(ChatMessage("user", userMessage))
-      val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
-
-      var receivedChunk = false
-      val response = try {
-        client.streamChat(messages) { chunk ->
-          if (!receivedChunk) {
-            receivedChunk = true
-            ApplicationManager.getApplication().invokeLater {
-              beginAppend("CodeSetu")
-              appendChunk(chunk)
-            }
-          } else {
-            ApplicationManager.getApplication().invokeLater {
-              appendChunk(chunk)
-            }
-          }
-        }
-      } catch (error: Exception) {
-        if (receivedChunk) {
-          // Partial stream then failure: drop the user turn so the next message
-          // doesn't stack two consecutive user turns.
-          history.removeLastOrNull()
-          val message = "\n\nCodeSetu could not complete that request: ${error.message ?: error}"
-          ApplicationManager.getApplication().invokeLater {
-            appendChunk(message)
-            endAppend()
-            setBusy(false)
-          }
-          return@executeOnPooledThread
-        }
-
-        try {
-          client.chat(messages)
-        } catch (fallbackError: Exception) {
-          history.removeLastOrNull()
-          ApplicationManager.getApplication().invokeLater {
-            append(
-              "CodeSetu",
-              "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}",
-            )
-            setBusy(false)
-          }
-          return@executeOnPooledThread
-        }
-      }
-
-      if (response.isNotBlank()) {
-        history.add(ChatMessage("assistant", response))
-      } else {
-        history.removeLastOrNull()
-      }
-
-      ApplicationManager.getApplication().invokeLater {
-        if (receivedChunk) {
-          if (response.isBlank()) {
-            appendChunk("CodeSetu did not return any text.")
-          }
-          endAppend()
-        } else {
-          append("CodeSetu", response.ifBlank { "CodeSetu did not return any text." })
-        }
-        setBusy(false)
+    when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+      "ready" -> onReady()
+      "selectModel" -> showModelPicker()
+      "sendMessage" -> {
+        val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
+        val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
+        runChat(text, include, null)
       }
     }
   }
 
-  private fun append(role: String, text: String) {
-    transcript.append("$role:\n$text\n\n")
+  private fun runChat(text: String, includeContext: Boolean, captured: IdeContextPayload?) {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return
+
+    ApplicationManager.getApplication().invokeLater {
+      if (inFlight) return@invokeLater
+      inFlight = true
+
+      push(message("userMessage") { put("text", trimmed) })
+      push(busy(true))
+
+      // Capture editor context on the EDT before going to a background thread.
+      val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
+
+      ApplicationManager.getApplication().executeOnPooledThread {
+        runRequest(trimmed, ideContext)
+      }
+    }
   }
 
-  private fun beginAppend(role: String) {
-    transcript.append("$role:\n")
+  private fun runRequest(userText: String, ideContext: IdeContextPayload) {
+    val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
+      loadWorkspaceInstructions(project)
+    }
+    val contextMarkdown = buildContextMarkdown(ideContext)
+    val userMessage = if (contextMarkdown.isBlank()) {
+      userText
+    } else {
+      "$userText\n\nCurrent IDE context:\n\n$contextMarkdown"
+    }
+    history.add(ChatMessage("user", userMessage))
+    val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
+
+    var started = false
+    val response = try {
+      client.streamChat(messages) { chunk ->
+        if (!started) {
+          started = true
+          push(message("assistantMessageStart"))
+        }
+        push(message("assistantMessageDelta") { put("text", chunk) })
+      }
+    } catch (error: Exception) {
+      if (started) {
+        history.removeLastOrNull()
+        push(
+          message("assistantMessageDelta") {
+            put("text", "\n\nCodeSetu could not complete that request: ${error.message ?: error}")
+          },
+        )
+        push(message("assistantMessageDone"))
+        finish()
+        return
+      }
+
+      try {
+        client.chat(messages)
+      } catch (fallbackError: Exception) {
+        history.removeLastOrNull()
+        push(
+          message("error") {
+            put("text", "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}")
+          },
+        )
+        finish()
+        return
+      }
+    }
+
+    if (response.isNotBlank()) {
+      history.add(ChatMessage("assistant", response))
+    } else {
+      history.removeLastOrNull()
+    }
+
+    if (started) {
+      if (response.isBlank()) {
+        push(message("assistantMessageDelta") { put("text", "CodeSetu did not return any text.") })
+      }
+      push(message("assistantMessageDone"))
+    } else {
+      push(message("assistantMessage") { put("text", response.ifBlank { "CodeSetu did not return any text." }) })
+    }
+    finish()
   }
 
-  private fun appendChunk(text: String) {
-    transcript.append(text)
+  private fun showModelPicker() {
+    ApplicationManager.getApplication().invokeLater {
+      val state = CodeSetuSettingsState.getInstance().state
+      val current = resolveCodeSetuModel(state.model)
+      val custom = "Enter a custom model id…"
+      val items = (listOf(custom, current) + CodeSetuModelCatalog.suggestionsFor(state.provider)).distinct()
+
+      JBPopupFactory.getInstance()
+        .createPopupChooserBuilder(items)
+        .setTitle("Select Model")
+        .setItemChosenCallback { choice ->
+          val picked = if (choice == custom) {
+            Messages.showInputDialog(project, "Model id", "Select Model", null, current, null)
+          } else {
+            choice
+          }
+          val trimmed = picked?.trim().orEmpty()
+          if (trimmed.isNotEmpty()) {
+            state.model = trimmed
+            pushModelLabel()
+          }
+        }
+        .createPopup()
+        .showInFocusCenter()
+    }
   }
 
-  private fun endAppend() {
-    transcript.append("\n\n")
+  private fun pushModelLabel() {
+    push(message("modelLabel") { put("text", modelLabelText()) })
+  }
+
+  private fun modelLabelText(): String {
+    val state = CodeSetuSettingsState.getInstance().state
+    return "${state.provider} · ${resolveCodeSetuModel(state.model)}"
+  }
+
+  private fun finish() {
+    ApplicationManager.getApplication().invokeLater { inFlight = false }
+    push(busy(false))
+  }
+
+  private fun push(json: String) {
+    ApplicationManager.getApplication().invokeLater {
+      if (ready) {
+        executeJs(json)
+      } else {
+        pending.add(json)
+      }
+    }
+  }
+
+  private fun onReady() {
+    ApplicationManager.getApplication().invokeLater {
+      ready = true
+      pending.forEach { executeJs(it) }
+      pending.clear()
+    }
+  }
+
+  private fun executeJs(json: String) {
+    browser.cefBrowser.executeJavaScript("window.__codesetuReceive($json)", browser.cefBrowser.url ?: "", 0)
+  }
+
+  private fun message(type: String, build: JsonObjectBuilder.() -> Unit = {}): String =
+    buildJsonObject {
+      put("type", type)
+      build()
+    }.toString()
+
+  private fun busy(value: Boolean): String = message("busy") { put("value", value) }
+
+  override fun dispose() {
+    Disposer.dispose(jsQuery)
+    Disposer.dispose(browser)
   }
 }
