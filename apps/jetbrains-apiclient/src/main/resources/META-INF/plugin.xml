@@ -1,0 +1,29 @@
+<idea-plugin>
+  <id>ai.codesetu.apiclient</id>
+  <name>CodeSetu API Client</name>
+  <vendor url="https://github.com/getcodesetu/codesetu">CodeSetu Maintainers</vendor>
+
+  <description><![CDATA[
+    A Postman-style REST and WebSocket client for JetBrains IDEs.<br/><br/>
+    Build, send, and organize HTTP requests; manage environments and variables; apply auth;
+    and import existing Postman, OpenAPI, Insomnia, HAR, and cURL collections — all inside your IDE.<br/><br/>
+    Part of the open-source <a href="https://github.com/getcodesetu/codesetu">CodeSetu</a> project.
+    Community: <a href="https://discord.gg/sjVKU8cpC6">Discord</a>
+  ]]></description>
+
+  <change-notes><![CDATA[
+    <h3>0.1.0</h3>
+    <ul>
+      <li>Initial release: REST request builder, response viewer, collections, environments, and variables.</li>
+    </ul>
+  ]]></change-notes>
+
+  <depends>com.intellij.modules.platform</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow
+      id="CodeSetu API"
+      anchor="right"
+      factoryClass="ai.codesetu.apiclient.toolwindow.ApiClientToolWindowFactory"/>
+  </extensions>
+</idea-plugin>

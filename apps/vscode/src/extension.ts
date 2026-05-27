@@ -14,12 +14,27 @@
  * limitations under the License.
  */
 
-import { createProvider, getAssistantText, type ChatMessage } from "@codesetu/core";
+import {
+  buildCodeSetuSystemMessage,
+  buildContextMarkdown,
+  createProvider,
+  type ChatCompletionRequest,
+  type ChatMessage,
+  type IdeContextPayload,
+  type WorkspaceInstruction,
+} from "@codesetu/core";
 import * as vscode from "vscode";
 
-import { ChatPanel } from "./chatPanel";
+import { completeAssistantText } from "./chatCompletionRetry";
+import { ChatPanel, type ChatResponder } from "./chatPanel";
+import { resolveAssistantResponse } from "./chatStreaming";
+import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
-import { readCodeSetuConfiguration } from "./configuration";
+import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
+import { collectVSCodeContext } from "./ideContext";
+import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
+import { setupCodeSetuProvider } from "./providerSetup";
+import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
 export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel("CodeSetu");
@@ -38,12 +53,37 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
-    ChatPanel.createOrShow(
-      context.extensionUri,
-      async (messages) => sendChatRequest(messages, statusBarItem, outputChannel),
+  const loadInstructions = async (): Promise<WorkspaceInstruction[]> => {
+    const result = await loadWorkspaceInstructions(outputChannel);
+    return [...result.skills, ...result.checks];
+  };
+
+  const responder: ChatResponder = async (messages, requestContext) =>
+    sendChatRequest(
+      messages,
+      statusBarItem,
       outputChannel,
+      await loadInstructions(),
+      requestContext?.ideContext ??
+        ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {}),
+      requestContext?.onChunk,
     );
+
+  const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
+  });
+  const setupProviderCommand = vscode.commands.registerCommand(
+    "codesetu.setupProvider",
+    setupCodeSetuProvider,
+  );
+  const diagnoseProviderCommand = vscode.commands.registerCommand("codesetu.diagnoseProvider", () =>
+    runCodeSetuProviderDiagnostics(outputChannel),
+  );
+
+  const editorActions = registerCodeSetuEditorActions({
+    context,
+    responder,
+    outputChannel,
   });
 
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
@@ -56,6 +96,9 @@ export function activate(context: vscode.ExtensionContext): void {
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    setupProviderCommand,
+    diagnoseProviderCommand,
+    ...editorActions,
     homeView,
   );
 }
@@ -68,27 +111,55 @@ async function sendChatRequest(
   messages: ChatMessage[],
   statusBarItem: vscode.StatusBarItem,
   outputChannel: vscode.OutputChannel,
+  instructions: readonly WorkspaceInstruction[] = [],
+  ideContext: IdeContextPayload = {},
+  onChunk?: (chunk: string) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
+  outputChannel.appendLine(formatChatProviderLine(summarizeCodeSetuConfiguration()));
   const provider = createProvider(configuration.providerOptions);
   statusBarItem.text = "CodeSetu: Thinking";
+  const contextualMessages = hasIdeContext(ideContext)
+    ? [
+        {
+          role: "user" as const,
+          content: `Current IDE context:\n\n${buildContextMarkdown(ideContext)}`,
+        },
+        ...messages,
+      ]
+    : messages;
 
   try {
-    const completion = await provider.chat({
+    const request: ChatCompletionRequest = {
       messages: [
         {
           role: "system",
-          content:
-            "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, and practical.",
+          content: buildCodeSetuSystemMessage([...instructions]),
         },
-        ...messages,
+        ...contextualMessages,
       ],
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
-    });
-    const text = getAssistantText(completion).trim();
+    };
 
-    return text.length === 0 ? "CodeSetu did not return any text." : text;
+    return await resolveAssistantResponse({
+      completeChat: async () =>
+        completeAssistantText({
+          complete: (maxTokens) => provider.chat({ ...request, maxTokens }),
+          emptyMessage: "CodeSetu did not return any text.",
+          initialMaxTokens: configuration.chatMaxTokens,
+          onRetry: (reason) => outputChannel.appendLine(`Retrying chat completion: ${reason}`),
+          retryMaxTokens: Math.max(configuration.chatMaxTokens * 2, 4096),
+        }),
+      emptyMessage: "CodeSetu did not return any text.",
+      onChunk,
+      onStreamFallback: (error) => {
+        outputChannel.appendLine(
+          `Streaming chat failed before response text; retrying without streaming: ${formatErrorMessage(error)}`,
+        );
+      },
+      streamChat: () => provider.streamChat(request),
+    });
   } catch (error: unknown) {
     outputChannel.appendLine(`Chat completion failed: ${formatErrorMessage(error)}`);
     throw error;
@@ -99,4 +170,16 @@ async function sendChatRequest(
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function hasIdeContext(context: IdeContextPayload): boolean {
+  return (
+    context.activeFilePath !== undefined ||
+    context.activeFileText !== undefined ||
+    context.languageId !== undefined ||
+    context.selectedText !== undefined ||
+    context.cursorPrefix !== undefined ||
+    context.cursorSuffix !== undefined ||
+    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0)
+  );
 }

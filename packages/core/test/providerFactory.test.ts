@@ -93,4 +93,24 @@ describe("getAssistantText", () => {
   it("returns an empty string when the response has no text", () => {
     expect(getAssistantText({ ...assistantResponse, choices: [] })).toBe("");
   });
+
+  it("returns refusal text when the provider omits assistant content", () => {
+    expect(
+      getAssistantText({
+        ...assistantResponse,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            logprobs: null,
+            message: {
+              role: "assistant",
+              content: null,
+              refusal: "I cannot inspect secret values.",
+            },
+          },
+        ],
+      }),
+    ).toBe("I cannot inspect secret values.");
+  });
 });

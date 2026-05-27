@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {
@@ -62,8 +62,72 @@
         "command": "codesetu.openChat",
         "title": "CodeSetu: Open Chat",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.setupProvider",
+        "title": "CodeSetu: Setup Provider",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.diagnoseProvider",
+        "title": "CodeSetu: Diagnose Provider",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.explainSelection",
+        "title": "Explain with CodeSetu",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.refactorSelection",
+        "title": "Refactor with CodeSetu",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.writeTestsForSelection",
+        "title": "Write Tests with CodeSetu",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.fixBugInSelection",
+        "title": "Fix Bug with CodeSetu",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.addDocsToSelection",
+        "title": "Add Docs with CodeSetu",
+        "category": "CodeSetu"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codesetu.explainSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@30"
+        },
+        {
+          "command": "codesetu.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@31"
+        },
+        {
+          "command": "codesetu.writeTestsForSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@32"
+        },
+        {
+          "command": "codesetu.fixBugInSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@33"
+        },
+        {
+          "command": "codesetu.addDocsToSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@34"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -160,7 +224,7 @@
         },
         "codesetu.chat.maxTokens": {
           "type": "number",
-          "default": 1024,
+          "default": 4096,
           "minimum": 1,
           "description": "Maximum tokens to request for chat responses."
         },

@@ -7,16 +7,16 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/sjVKU8cpC6)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
+A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, repo-aware context, selected-code actions, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
 
-**Highlights**: AI chat in IDE · Inline (FIM) code completions · Tool-calling · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
+**Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
 
 ## Status
 
 This repository is a pnpm + Gradle monorepo organized as:
 
-- `apps/vscode` — VSCode extension with chat and inline completion flows
-- `apps/jetbrains` — placeholder for the future Kotlin plugin (Gradle, outside the pnpm graph)
+- `apps/vscode` — VSCode extension with chat, repo-aware context, selected-code actions, setup diagnostics, and inline completions
+- `apps/jetbrains` — JetBrains plugin with chat, selected-code actions, provider settings, and diagnostics
 - `packages/core` — shared providers, provider factory, and tool-call registry (`@codesetu/core`)
 - `packages/plugin-sdk` — plugin and skill type contracts for first- and third-party extensions (`@codesetu/plugin-sdk`)
 - `skills/` — AI skill manifests (`SKILL.md` per skill) loaded by hosts at activation

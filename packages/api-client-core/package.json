@@ -1,0 +1,57 @@
+{
+  "name": "@codesetu/api-client-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared engine for the CodeSetu API Client — REST and WebSocket request execution, variable resolution, auth, and collection import/export. Postman-style API tooling for VSCode and JetBrains.",
+  "keywords": [
+    "api-client",
+    "rest",
+    "websocket",
+    "postman",
+    "openapi",
+    "http",
+    "insomnia",
+    "har",
+    "curl",
+    "codesetu"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcodesetu/codesetu.git",
+    "directory": "packages/api-client-core"
+  },
+  "homepage": "https://github.com/getcodesetu/codesetu#readme",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./model": {
+      "types": "./dist/model.d.ts",
+      "default": "./dist/model.js"
+    },
+    "./factory": {
+      "types": "./dist/factory.d.ts",
+      "default": "./dist/factory.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2"
+  }
+}

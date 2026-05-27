@@ -74,6 +74,17 @@ Reload VS Code after install.
 For an installed extension, prefer VS Code settings over `.env` files. Open
 Settings JSON and add one of these configurations.
 
+### VS Code guided setup
+
+Run `CodeSetu: Setup Provider` from the command palette, choose Sarvam or
+OpenAI-compatible, enter the base URL, model, and API key, then run
+`CodeSetu: Diagnose Provider`.
+
+### JetBrains guided setup
+
+Open `Settings -> Tools -> CodeSetu`, enter provider, base URL, model, and API
+key, then use the CodeSetu diagnostics action from the Tools menu.
+
 ### Sarvam
 
 Set `codesetu.model` to the model id provided by your Sarvam account.

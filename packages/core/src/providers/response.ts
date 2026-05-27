@@ -17,7 +17,8 @@
 import type { ChatCompletion } from "openai/resources/chat/completions";
 
 export function getAssistantText(completion: ChatCompletion): string {
-  const content: unknown = completion.choices[0]?.message.content;
+  const message = completion.choices[0]?.message;
+  const content: unknown = message?.content;
 
   if (typeof content === "string") {
     return content;
@@ -25,6 +26,10 @@ export function getAssistantText(completion: ChatCompletion): string {
 
   if (Array.isArray(content)) {
     return content.map(readTextPart).join("");
+  }
+
+  if (typeof message?.refusal === "string") {
+    return message.refusal;
   }
 
   return "";

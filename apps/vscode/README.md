@@ -7,23 +7,28 @@ fill-in-the-middle completions.
 
 - `CodeSetu: Open Chat` command
 - Status bar entry
+- Repo-aware chat context from the active editor and workspace snippets
+- Selected-code actions: Explain, Refactor, Write Tests, Fix Bug, Add Docs
+- `CodeSetu: Setup Provider` guided provider configuration
+- `CodeSetu: Diagnose Provider` connection test and friendly errors
 - Inline completions for code files
 - Sarvam provider support
 - Generic OpenAI-compatible provider support for Ollama, OpenRouter, vLLM,
   SGLang, and similar endpoints
+- Workspace skills/checks from `.codesetu/skills/*.md` and `.codesetu/checks/*.md`
 
 ## Provider Settings
 
 Open VS Code Settings JSON and configure one provider.
 
-Sarvam (set `codesetu.model` to the model id from your Sarvam account):
+Sarvam (`sarvam-30b` is the default; use `sarvam-105b` if your account/workload needs it):
 
 ```json
 {
   "codesetu.provider": "sarvam",
   "codesetu.apiKey": "YOUR_SARVAM_API_KEY",
   "codesetu.baseUrl": "https://api.sarvam.ai/v1",
-  "codesetu.model": "<your-sarvam-model-id>"
+  "codesetu.model": "sarvam-30b"
 }
 ```
 

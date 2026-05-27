@@ -125,21 +125,41 @@ Host implementations (in `apps/*`) construct a `HostCapabilities` object and a
 Registers:
 
 - `CodeSetu: Open Chat` command
+- Selected-code commands for Explain, Refactor, Write Tests, Fix Bug, and Add
+  Docs
+- Provider setup and diagnostics commands
 - `CodeSetu: Ready` status bar item
 - File-scheme inline completion provider
 
 The chat webview posts user messages to the extension host. The host reads
 VSCode settings, creates the configured provider via `@codesetu/core`, calls
-chat completions, extracts the assistant text, and posts the response back.
+chat completions with bounded IDE context, extracts the assistant text, and
+posts the response back.
 
 Inline completions build a bounded FIM context around the cursor, call the
 provider's completions endpoint, and return a VSCode `InlineCompletionItem`.
 
 ## apps/jetbrains
 
-Placeholder. The eventual Kotlin/Gradle project will live here and call into a
-Kotlin port of `@codesetu/core` (or a JVM-side HTTP client that mirrors it).
+Kotlin/Gradle plugin with a CodeSetu tool window, provider-backed chat,
+selected-code actions, provider settings, and diagnostics. JetBrains mirrors the
+shared IDE assistant contract in Kotlin so it can run without a Node.js sidecar.
 JetBrains is **not** part of the pnpm workspace — it has its own Gradle build.
+
+## IDE feature foundation
+
+CodeSetu hosts share a language-neutral IDE assistant contract:
+
+- action ids for Explain, Refactor, Write Tests, Fix Bug, and Add Docs
+- bounded editor context with selection, active file, cursor neighborhood, and
+  workspace snippets
+- provider diagnostics with missing-config, ok, and error states
+- workspace skills and checks loaded from `.codesetu/skills/*.md` and
+  `.codesetu/checks/*.md`
+
+VSCode imports the TypeScript implementation from `@codesetu/core`. JetBrains
+mirrors the same payload shapes in Kotlin so it can run without a Node.js
+sidecar.
 
 ## Tool calling
 

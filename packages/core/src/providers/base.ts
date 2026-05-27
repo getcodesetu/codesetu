@@ -16,13 +16,24 @@
 
 import type {
   ChatCompletion,
+  ChatCompletionChunk,
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { Completion } from "openai/resources/completions";
 
+export type {
+  ChatCompletion,
+  ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+};
+
 export type ChatMessage = ChatCompletionMessageParam;
+export type ChatCompletionStream = AsyncIterable<string>;
+export type ChatCompletionChunkStream = AsyncIterable<ChatCompletionChunk>;
 
 export interface ChatCompletionRequest {
   messages: ChatMessage[];
@@ -44,5 +55,6 @@ export interface FimCompletionRequest {
 
 export interface LlmProvider {
   chat(request: ChatCompletionRequest): Promise<ChatCompletion>;
+  streamChat(request: ChatCompletionRequest): ChatCompletionStream;
   completeFim(request: FimCompletionRequest): Promise<Completion>;
 }

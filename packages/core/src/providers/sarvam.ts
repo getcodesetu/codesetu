@@ -17,9 +17,7 @@
 import { OpenAICompatibleProvider, type OpenAICompatibleClient } from "./openaiCompatible.js";
 
 export const DEFAULT_SARVAM_BASE_URL = "https://api.sarvam.ai/v1";
-// No default model — Sarvam offers multiple models and the right one depends on
-// the user's account/use case. Users must set codesetu.model or SARVAM_MODEL.
-export const DEFAULT_SARVAM_MODEL = "";
+export const DEFAULT_SARVAM_MODEL = "sarvam-30b";
 
 export type SarvamOpenAIClient = OpenAICompatibleClient;
 

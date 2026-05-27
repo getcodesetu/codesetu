@@ -29,9 +29,46 @@
         class="ai.codesetu.actions.OpenChatAction"
         text="Open Chat"
         description="Open the CodeSetu chat panel"/>
+      <action
+        id="ai.codesetu.DiagnoseProviderAction"
+        class="ai.codesetu.actions.DiagnoseProviderAction"
+        text="Diagnose Provider"
+        description="Test the configured CodeSetu provider"/>
+      <action
+        id="ai.codesetu.ExplainSelectionAction"
+        class="ai.codesetu.actions.ExplainSelectionAction"
+        text="Explain Selection"
+        description="Explain the selected code"/>
+      <action
+        id="ai.codesetu.RefactorSelectionAction"
+        class="ai.codesetu.actions.RefactorSelectionAction"
+        text="Refactor Selection"
+        description="Suggest a focused refactor"/>
+      <action
+        id="ai.codesetu.WriteTestsForSelectionAction"
+        class="ai.codesetu.actions.WriteTestsForSelectionAction"
+        text="Write Tests for Selection"
+        description="Write focused tests for the selected code"/>
+      <action
+        id="ai.codesetu.FixBugInSelectionAction"
+        class="ai.codesetu.actions.FixBugInSelectionAction"
+        text="Fix Bug in Selection"
+        description="Find and fix a bug in the selected code"/>
+      <action
+        id="ai.codesetu.AddDocsToSelectionAction"
+        class="ai.codesetu.actions.AddDocsToSelectionAction"
+        text="Add Docs to Selection"
+        description="Add useful documentation for the selected code"/>
     </group>
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
+    <toolWindow
+      id="CodeSetu"
+      anchor="right"
+      factoryClass="ai.codesetu.toolwindow.CodeSetuToolWindowFactory"/>
+    <applicationConfigurable
+      instance="ai.codesetu.settings.CodeSetuSettingsConfigurable"
+      displayName="CodeSetu"/>
   </extensions>
 </idea-plugin>

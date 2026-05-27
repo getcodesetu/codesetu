@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-import type { ProviderFactoryOptions, ProviderId } from "@codesetu/core";
+import {
+  DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+  DEFAULT_OPENAI_COMPATIBLE_MODEL,
+  DEFAULT_SARVAM_BASE_URL,
+  DEFAULT_SARVAM_MODEL,
+  type ProviderFactoryOptions,
+  type ProviderId,
+} from "@codesetu/core";
 import * as vscode from "vscode";
 
 export interface CodeSetuConfiguration {
@@ -27,6 +34,13 @@ export interface CodeSetuConfiguration {
   fimStopSequences: string[];
   chatMaxTokens: number;
   chatTemperature: number;
+}
+
+export interface CodeSetuConfigurationSummary {
+  provider: ProviderId;
+  baseURL?: string;
+  model?: string;
+  hasApiKey: boolean;
 }
 
 export function readCodeSetuConfiguration(): CodeSetuConfiguration {
@@ -48,8 +62,56 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
       "\n\n",
       "\n```",
     ]),
-    chatMaxTokens: configuration.get<number>("chat.maxTokens", 1024),
+    chatMaxTokens: configuration.get<number>("chat.maxTokens", 4096),
     chatTemperature: configuration.get<number>("chat.temperature", 0.2),
+  };
+}
+
+export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
+  const configuration = readCodeSetuConfiguration();
+  const provider =
+    configuration.providerOptions.provider === "openai-compatible" ? "openai-compatible" : "sarvam";
+
+  if (provider === "sarvam") {
+    return {
+      provider,
+      baseURL:
+        firstConfigValue(
+          configuration.providerOptions.baseURL,
+          process.env.SARVAM_BASE_URL,
+          process.env.CODESETU_BASE_URL,
+          DEFAULT_SARVAM_BASE_URL,
+        ) ?? DEFAULT_SARVAM_BASE_URL,
+      model:
+        firstConfigValue(
+          configuration.providerOptions.model,
+          process.env.SARVAM_MODEL,
+          process.env.CODESETU_MODEL,
+          DEFAULT_SARVAM_MODEL,
+        ) ?? DEFAULT_SARVAM_MODEL,
+      hasApiKey: hasConfigValue(
+        configuration.providerOptions.apiKey,
+        process.env.SARVAM_API_KEY,
+        process.env.CODESETU_API_KEY,
+      ),
+    };
+  }
+
+  return {
+    provider,
+    baseURL:
+      firstConfigValue(
+        configuration.providerOptions.baseURL,
+        process.env.CODESETU_BASE_URL,
+        DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+      ) ?? DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+    model:
+      firstConfigValue(
+        configuration.providerOptions.model,
+        process.env.CODESETU_MODEL,
+        DEFAULT_OPENAI_COMPATIBLE_MODEL,
+      ) ?? DEFAULT_OPENAI_COMPATIBLE_MODEL,
+    hasApiKey: hasConfigValue(configuration.providerOptions.apiKey, process.env.CODESETU_API_KEY),
   };
 }
 
@@ -70,4 +132,18 @@ function readOptionalString(
   const value = configuration.get<string>(key, "").trim();
 
   return value.length === 0 ? undefined : value;
+}
+
+function hasConfigValue(...values: Array<string | undefined>): boolean {
+  return values.some((value) => value !== undefined && value.trim().length > 0);
+}
+
+function firstConfigValue(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }

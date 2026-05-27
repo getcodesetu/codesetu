@@ -15,6 +15,7 @@
  */
 
 export type {
+  ChatCompletion,
   ChatCompletionRequest,
   ChatMessage,
   FimCompletionRequest,
@@ -37,6 +38,22 @@ export {
   type ProviderId,
 } from "./providers/registry.js";
 export { getAssistantText } from "./providers/response.js";
+export { IDE_ACTIONS, buildActionUserMessage, buildCodeSetuSystemMessage } from "./ide/actions.js";
+export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
+export { diagnoseProvider } from "./ide/diagnostics.js";
+export {
+  IDE_ACTION_IDS,
+  type DiagnoseProviderOptions,
+  type IdeActionId,
+  type IdeContextPayload,
+  type ProviderDiagnostic,
+  type ProviderDiagnosticStatus,
+  type WorkspaceInstruction,
+  type WorkspaceInstructionParseResult,
+  type WorkspaceInstructionSource,
+  type WorkspaceSnippet,
+} from "./ide/types.js";
+export { parseWorkspaceInstructions } from "./ide/workspaceInstructions.js";
 export {
   DEFAULT_SARVAM_BASE_URL,
   DEFAULT_SARVAM_MODEL,
