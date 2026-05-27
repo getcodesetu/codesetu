@@ -58,8 +58,13 @@ jobs:
           retention-days: 14
 
   jetbrains:
-    name: JetBrains build and test
+    name: JetBrains build, test, verify
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [jetbrains, jetbrains-apiclient]
 
     steps:
       - name: Check out repository
@@ -77,18 +82,19 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('apps/jetbrains/**/*.gradle.kts', 'apps/jetbrains/gradle.properties', 'apps/jetbrains/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-${{ runner.os }}-${{ matrix.project }}-${{ hashFiles(format('apps/{0}/**/*.gradle.kts', matrix.project), format('apps/{0}/gradle.properties', matrix.project), format('apps/{0}/gradle/wrapper/gradle-wrapper.properties', matrix.project)) }}
           restore-keys: |
+            gradle-${{ runner.os }}-${{ matrix.project }}-
             gradle-${{ runner.os }}-
 
-      - name: Compile, test, and package plugin
-        working-directory: apps/jetbrains
-        run: ./gradlew compileKotlin compileTestKotlin test buildPlugin --no-daemon
+      - name: Compile, test, build, and verify plugin
+        working-directory: apps/${{ matrix.project }}
+        run: ./gradlew compileKotlin compileTestKotlin test buildPlugin verifyPlugin --no-daemon
 
       - name: Upload plugin zip (smoke build)
         uses: actions/upload-artifact@v4
         with:
-          name: codesetu-jetbrains-zip
-          path: apps/jetbrains/build/distributions/*.zip
+          name: codesetu-${{ matrix.project }}-zip
+          path: apps/${{ matrix.project }}/build/distributions/*.zip
           if-no-files-found: error
           retention-days: 14
