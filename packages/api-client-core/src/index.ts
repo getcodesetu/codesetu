@@ -83,8 +83,4 @@ export { buildBody, type BuiltBody, type FileReader } from "./engine/body.js";
 export { isTextualContentType, mimeOf } from "./engine/contentType.js";
 export { parseSetCookie, parseSetCookies } from "./engine/cookies.js";
 export { executeHttpRequest, type ExecuteOptions } from "./engine/http.js";
-export {
-  buildVariableMap,
-  hasUnresolvedVariables,
-  resolveVariables,
-} from "./engine/variables.js";
+export { buildVariableMap, hasUnresolvedVariables, resolveVariables } from "./engine/variables.js";

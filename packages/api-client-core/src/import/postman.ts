@@ -114,14 +114,20 @@ function mapItem(item: PostmanItem): CollectionNode {
   }
 
   const request = createDefaultHttpRequest();
-  const source = typeof item.request === "string" ? { url: item.request } : item.request ?? {};
+  const source = typeof item.request === "string" ? { url: item.request } : (item.request ?? {});
   request.method = source.method ?? "GET";
   request.headers = mapHeaders(source.header);
   applyUrl(request, source.url);
   request.body = mapBody(source.body);
   request.auth = mapAuth(source.auth);
 
-  return { kind: "request", id: newId(), name: item.name ?? request.url, protocol: "http", http: request };
+  return {
+    kind: "request",
+    id: newId(),
+    name: item.name ?? request.url,
+    protocol: "http",
+    http: request,
+  };
 }
 
 function mapHeaders(headers: PostmanHeader[] | undefined): KeyValue[] {
@@ -132,7 +138,10 @@ function mapHeaders(headers: PostmanHeader[] | undefined): KeyValue[] {
   }));
 }
 
-function applyUrl(request: ReturnType<typeof createDefaultHttpRequest>, url: PostmanUrl | string | undefined): void {
+function applyUrl(
+  request: ReturnType<typeof createDefaultHttpRequest>,
+  url: PostmanUrl | string | undefined,
+): void {
   if (url === undefined) {
     return;
   }
@@ -156,7 +165,7 @@ function applyUrl(request: ReturnType<typeof createDefaultHttpRequest>, url: Pos
 
 function buildUrlString(url: PostmanUrl): string {
   const host = Array.isArray(url.host) ? url.host.join(".") : "";
-  const path = Array.isArray(url.path) ? url.path.join("/") : url.path ?? "";
+  const path = Array.isArray(url.path) ? url.path.join("/") : (url.path ?? "");
   if (!host && !path) {
     return "";
   }
@@ -188,8 +197,18 @@ function mapBody(body: PostmanBody | undefined): RequestBody {
         mode: "form-data",
         formData: (body.formdata ?? []).map((entry) =>
           entry.type === "file"
-            ? { key: entry.key ?? "", kind: "file", filePath: entry.src ?? "", enabled: entry.disabled !== true }
-            : { key: entry.key ?? "", kind: "text", value: entry.value ?? "", enabled: entry.disabled !== true },
+            ? {
+                key: entry.key ?? "",
+                kind: "file",
+                filePath: entry.src ?? "",
+                enabled: entry.disabled !== true,
+              }
+            : {
+                key: entry.key ?? "",
+                kind: "text",
+                value: entry.value ?? "",
+                enabled: entry.disabled !== true,
+              },
         ),
       };
     case "graphql":
@@ -243,7 +262,10 @@ function mapAuth(auth: PostmanAuth | undefined): Auth {
   }
 }
 
-function readAuthValue(entries: { key?: string; value?: string }[] | undefined, key: string): string {
+function readAuthValue(
+  entries: { key?: string; value?: string }[] | undefined,
+  key: string,
+): string {
   return entries?.find((entry) => entry.key === key)?.value ?? "";
 }
 

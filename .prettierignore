@@ -4,3 +4,5 @@ dist/
 packages/*/dist/
 node_modules/
 .claude/
+# Generated lockfile — not Prettier-managed.
+pnpm-lock.yaml

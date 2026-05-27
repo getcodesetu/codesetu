@@ -10,7 +10,7 @@
   Shared chat design with the VS Code webview, rendered here in JCEF. The host
   substitutes __THEME_CSS__, __MODEL_LABEL__, and __BRIDGE_POST__ before loading.
 -->
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -385,7 +385,7 @@
     <title>CodeSetu</title>
     <script>
       function __codesetuPost(payload) {
-        __BRIDGE_POST__
+        __BRIDGE_POST__;
       }
     </script>
   </head>
@@ -411,9 +411,20 @@
               </button>
             </div>
             <div class="toolbar-group secondary">
-              <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
+              <button
+                id="model-chip"
+                class="model-chip"
+                type="button"
+                aria-label="Select model"
+                title="Click to switch model"
+              >
                 <span id="model-label">__MODEL_LABEL__</span>
-                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+                <svg
+                  class="composer-icon chevron"
+                  data-icon="chevron-down"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
                   <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
@@ -430,7 +441,12 @@
           <label class="menu-row">
             <span class="menu-leading">
               <span class="menu-icon">
-                <svg class="composer-icon" data-icon="sparkle" viewBox="0 0 24 24" aria-hidden="true">
+                <svg
+                  class="composer-icon"
+                  data-icon="sparkle"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
                   <path d="m12 3 1.6 5.2L19 10l-5.4 1.8L12 17l-1.6-5.2L5 10l5.4-1.8z" />
                   <path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
                 </svg>
@@ -468,9 +484,12 @@
 
       function escapeHtml(value) {
         return String(value)
-          .split("&").join("&amp;")
-          .split("<").join("&lt;")
-          .split(">").join("&gt;");
+          .split("&")
+          .join("&amp;")
+          .split("<")
+          .join("&lt;")
+          .split(">")
+          .join("&gt;");
       }
 
       function renderInline(escaped) {
@@ -478,9 +497,15 @@
         let rest = escaped;
         while (true) {
           const open = rest.indexOf("**");
-          if (open === -1) { bolded += rest; break; }
+          if (open === -1) {
+            bolded += rest;
+            break;
+          }
           const close = rest.indexOf("**", open + 2);
-          if (close === -1) { bolded += rest; break; }
+          if (close === -1) {
+            bolded += rest;
+            break;
+          }
           bolded += rest.slice(0, open) + "<strong>" + rest.slice(open + 2, close) + "</strong>";
           rest = rest.slice(close + 2);
         }
@@ -489,9 +514,15 @@
         let seg = bolded;
         while (true) {
           const start = seg.indexOf(TICK);
-          if (start === -1) { out += seg; break; }
+          if (start === -1) {
+            out += seg;
+            break;
+          }
           const end = seg.indexOf(TICK, start + 1);
-          if (end === -1) { out += seg; break; }
+          if (end === -1) {
+            out += seg;
+            break;
+          }
           out += seg.slice(0, start) + "<code>" + seg.slice(start + 1, end) + "</code>";
           seg = seg.slice(end + 1);
         }
@@ -509,14 +540,22 @@
           const trimmed = line.trimStart();
           const isItem = trimmed.indexOf("- ") === 0 || trimmed.indexOf("* ") === 0;
           if (isItem) {
-            if (!inList) { out += "<ul>"; inList = true; }
+            if (!inList) {
+              out += "<ul>";
+              inList = true;
+            }
             out += "<li>" + renderInline(trimmed.slice(2)) + "</li>";
           } else {
-            if (inList) { out += "</ul>"; inList = false; }
+            if (inList) {
+              out += "</ul>";
+              inList = false;
+            }
             out += line.trim() === "" ? "<br>" : renderInline(line) + "<br>";
           }
         }
-        if (inList) { out += "</ul>"; }
+        if (inList) {
+          out += "</ul>";
+        }
         return out;
       }
 

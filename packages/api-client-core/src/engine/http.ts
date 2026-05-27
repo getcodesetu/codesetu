@@ -85,17 +85,16 @@ export async function executeHttpRequest(
     last = await performHop(currentUrl, method, headers, body, request.settings, options.signal);
     cookies.push(...parseSetCookies(last.setCookies));
 
-    if (
-      !request.settings.followRedirects ||
-      !REDIRECT_STATUS.has(last.status) ||
-      !last.location
-    ) {
+    if (!request.settings.followRedirects || !REDIRECT_STATUS.has(last.status) || !last.location) {
       break;
     }
 
     redirected = true;
     currentUrl = new URL(last.location, currentUrl);
-    if (last.status === 303 || ((last.status === 301 || last.status === 302) && method !== "GET" && method !== "HEAD")) {
+    if (
+      last.status === 303 ||
+      ((last.status === 301 || last.status === 302) && method !== "GET" && method !== "HEAD")
+    ) {
       method = "GET";
       body = undefined;
       removeHeader(headers, "content-type");
@@ -310,7 +309,12 @@ function resolveAuth(auth: Auth, scope: VariableScope): Auth {
   return {
     type: auth.type,
     ...(auth.basic
-      ? { basic: { username: resolve(auth.basic.username) ?? "", password: resolve(auth.basic.password) ?? "" } }
+      ? {
+          basic: {
+            username: resolve(auth.basic.username) ?? "",
+            password: resolve(auth.basic.password) ?? "",
+          },
+        }
       : {}),
     ...(auth.bearer ? { bearer: { token: resolve(auth.bearer.token) ?? "" } } : {}),
     ...(auth.apikey

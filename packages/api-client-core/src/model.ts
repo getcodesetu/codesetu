@@ -98,11 +98,7 @@ export interface ApiKeyAuth {
   location: ApiKeyLocation;
 }
 
-export type OAuth2GrantType =
-  | "authorization_code"
-  | "client_credentials"
-  | "password"
-  | "implicit";
+export type OAuth2GrantType = "authorization_code" | "client_credentials" | "password" | "implicit";
 
 export interface OAuth2Auth {
   grantType: OAuth2GrantType;

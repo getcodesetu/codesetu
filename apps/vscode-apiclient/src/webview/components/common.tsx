@@ -56,7 +56,9 @@ export function KeyValueEditor({
   const display = [...rows, blankRow()];
 
   const commit = (next: KeyValue[]): void => {
-    onChange(next.filter((row, index) => index < next.length && (row.key !== "" || row.value !== "")));
+    onChange(
+      next.filter((row, index) => index < next.length && (row.key !== "" || row.value !== "")),
+    );
   };
 
   const updateRow = (index: number, patch: Partial<KeyValue>): void => {

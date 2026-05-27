@@ -81,10 +81,7 @@ export function createDefaultWebSocketRequest(
   };
 }
 
-export function createRequestNode(
-  name: string,
-  protocol: RequestProtocol = "http",
-): RequestNode {
+export function createRequestNode(name: string, protocol: RequestProtocol = "http"): RequestNode {
   return {
     kind: "request",
     id: newId(),

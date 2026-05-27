@@ -55,7 +55,11 @@ export function ResponseViewer({
 
       <div className="response-body">
         {tab === "body" && (
-          <BodyPane response={response} pretty={pretty} onTogglePretty={() => setPretty((v) => !v)} />
+          <BodyPane
+            response={response}
+            pretty={pretty}
+            onTogglePretty={() => setPretty((v) => !v)}
+          />
         )}
         {tab === "headers" && <HeaderTable response={response} />}
         {tab === "cookies" && <CookieTable response={response} />}
@@ -143,7 +147,10 @@ function TestList({ response }: { response: HttpResponse }): JSX.Element {
 }
 
 function prettyPrint(body: string, contentType: string | undefined): string {
-  if (contentType && (contentType.includes("json") || body.trim().startsWith("{") || body.trim().startsWith("["))) {
+  if (
+    contentType &&
+    (contentType.includes("json") || body.trim().startsWith("{") || body.trim().startsWith("["))
+  ) {
     try {
       return JSON.stringify(JSON.parse(body), null, 2);
     } catch {

@@ -125,9 +125,7 @@ export function RequestEditor({
         {tab === "headers" && (
           <KeyValueEditor rows={request.headers} onChange={(rows) => patch({ headers: rows })} />
         )}
-        {tab === "body" && (
-          <BodyTab body={request.body} onChange={(body) => patch({ body })} />
-        )}
+        {tab === "body" && <BodyTab body={request.body} onChange={(body) => patch({ body })} />}
         {tab === "auth" && <AuthTab auth={request.auth} onChange={(auth) => patch({ auth })} />}
         {tab === "settings" && (
           <SettingsTab settings={request.settings} onChange={(settings) => patch({ settings })} />
@@ -227,7 +225,10 @@ function BodyTab({
             value={body.graphql?.query ?? ""}
             placeholder="query { ... }"
             onChange={(event) =>
-              onChange({ ...body, graphql: { ...(body.graphql ?? { query: "" }), query: event.target.value } })
+              onChange({
+                ...body,
+                graphql: { ...(body.graphql ?? { query: "" }), query: event.target.value },
+              })
             }
           />
           <textarea
@@ -264,7 +265,9 @@ function FormDataEditor({
 }): JSX.Element {
   const display = [...fields, { key: "", kind: "text" as const, value: "", enabled: true }];
   const commit = (next: FormDataField[]): void => {
-    onChange(next.filter((field) => field.key !== "" || (field.value ?? "") !== "" || field.filePath));
+    onChange(
+      next.filter((field) => field.key !== "" || (field.value ?? "") !== "" || field.filePath),
+    );
   };
   const update = (index: number, partial: Partial<FormDataField>): void => {
     commit(display.map((field, i) => (i === index ? { ...field, ...partial } : field)));
@@ -292,7 +295,10 @@ function FormDataEditor({
                   value={field.key}
                   placeholder="Key"
                   onChange={(event) =>
-                    update(index, { key: event.target.value, ...(isBlank ? { enabled: true } : {}) })
+                    update(index, {
+                      key: event.target.value,
+                      ...(isBlank ? { enabled: true } : {}),
+                    })
                   }
                 />
               </td>
@@ -311,7 +317,7 @@ function FormDataEditor({
               <td>
                 <input
                   className="kv__input"
-                  value={field.kind === "file" ? field.filePath ?? "" : field.value ?? ""}
+                  value={field.kind === "file" ? (field.filePath ?? "") : (field.value ?? "")}
                   placeholder={field.kind === "file" ? "File path" : "Value"}
                   onChange={(event) =>
                     update(

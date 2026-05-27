@@ -134,7 +134,8 @@ export function parseCurl(command: string): RequestNode {
     }
   }
 
-  request.method = explicitMethod ?? (dataParts.length > 0 || request.body.mode === "form-data" ? "POST" : "GET");
+  request.method =
+    explicitMethod ?? (dataParts.length > 0 || request.body.mode === "form-data" ? "POST" : "GET");
 
   return { kind: "request", id: newId(), name: deriveName(url), protocol: "http", http: request };
 }

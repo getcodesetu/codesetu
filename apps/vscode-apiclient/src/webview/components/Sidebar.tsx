@@ -7,11 +7,7 @@
 
 import { useState } from "react";
 
-import type {
-  Collection,
-  CollectionNode,
-  Environment,
-} from "@codesetu/api-client-core/model";
+import type { Collection, CollectionNode, Environment } from "@codesetu/api-client-core/model";
 
 import type { HistoryEntry } from "../../protocol";
 
@@ -88,7 +84,11 @@ export function Sidebar({
       </div>
 
       <div className="sidebar__history">
-        <button type="button" className="sidebar__section-toggle" onClick={() => setShowHistory((v) => !v)}>
+        <button
+          type="button"
+          className="sidebar__section-toggle"
+          onClick={() => setShowHistory((v) => !v)}
+        >
           {showHistory ? "▾" : "▸"} History
         </button>
         {showHistory && (
@@ -96,7 +96,9 @@ export function Sidebar({
             {history.length === 0 && <li className="hint">No requests sent yet.</li>}
             {history.slice(0, 30).map((entry) => (
               <li key={entry.id} className="history-item">
-                <span className={`method method--${entry.method.toLowerCase()}`}>{entry.method}</span>
+                <span className={`method method--${entry.method.toLowerCase()}`}>
+                  {entry.method}
+                </span>
                 <span className="history-item__url">{entry.url}</span>
                 {entry.status !== undefined && (
                   <span className="history-item__status">{entry.status}</span>
@@ -134,10 +136,20 @@ function CollectionView({
         </button>
         <span className="tree-row__label">{collection.name}</span>
         <span className="tree-row__actions">
-          <button type="button" className="icon-button" title="Add request" onClick={() => onAddRequest(collection.id, undefined)}>
+          <button
+            type="button"
+            className="icon-button"
+            title="Add request"
+            onClick={() => onAddRequest(collection.id, undefined)}
+          >
             +
           </button>
-          <button type="button" className="icon-button" title="Add folder" onClick={() => onAddFolder(collection.id, undefined)}>
+          <button
+            type="button"
+            className="icon-button"
+            title="Add folder"
+            onClick={() => onAddFolder(collection.id, undefined)}
+          >
             ▸+
           </button>
         </span>
@@ -202,12 +214,17 @@ function NodeList({
           >
             <button type="button" className="tree-row__open" onClick={() => onOpenRequest(node.id)}>
               <span className={`method method--${(node.http?.method ?? "get").toLowerCase()}`}>
-                {node.protocol === "websocket" ? "WS" : node.http?.method ?? "GET"}
+                {node.protocol === "websocket" ? "WS" : (node.http?.method ?? "GET")}
               </span>
               <span className="tree-row__label">{node.name}</span>
             </button>
             <span className="tree-row__actions">
-              <button type="button" className="icon-button" title="Delete" onClick={() => onDeleteNode(node.id)}>
+              <button
+                type="button"
+                className="icon-button"
+                title="Delete"
+                onClick={() => onDeleteNode(node.id)}
+              >
                 ×
               </button>
             </span>
@@ -250,10 +267,20 @@ function FolderView({
         </button>
         <span className="tree-row__label tree-row__label--folder">{name}</span>
         <span className="tree-row__actions">
-          <button type="button" className="icon-button" title="Add request" onClick={() => onAddRequest(collectionId, folderId)}>
+          <button
+            type="button"
+            className="icon-button"
+            title="Add request"
+            onClick={() => onAddRequest(collectionId, folderId)}
+          >
             +
           </button>
-          <button type="button" className="icon-button" title="Delete" onClick={() => onDeleteNode(folderId)}>
+          <button
+            type="button"
+            className="icon-button"
+            title="Delete"
+            onClick={() => onDeleteNode(folderId)}
+          >
             ×
           </button>
         </span>
