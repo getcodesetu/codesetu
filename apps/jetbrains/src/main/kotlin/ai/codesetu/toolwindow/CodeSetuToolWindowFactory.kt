@@ -17,12 +17,20 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.content.ContentFactory
+import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Dimension
+import java.awt.event.ActionEvent
+import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
+import javax.swing.AbstractAction
 import javax.swing.JButton
 import javax.swing.JLabel
 import javax.swing.JPanel
-import javax.swing.JScrollPane
+import javax.swing.KeyStroke
 import javax.swing.JTextArea
 
 class CodeSetuToolWindowFactory : ToolWindowFactory {
@@ -37,28 +45,76 @@ class CodeSetuToolWindowFactory : ToolWindowFactory {
 class CodeSetuChatPanel(private val project: Project) {
   val component: JPanel = JPanel(BorderLayout())
   private val transcript = JTextArea()
-  private val input = JTextArea(4, 40)
+  private val input = JBTextArea(4, 40)
   private val send = JButton("Send")
   private val modelBox = ComboBox<String>()
   private val client = CodeSetuProviderClient()
   private val history = mutableListOf<ChatMessage>()
+  private var inFlight = false
+
+  private fun setBusy(busy: Boolean) {
+    inFlight = busy
+    send.isEnabled = !busy
+    input.isEnabled = !busy
+    modelBox.isEnabled = !busy
+  }
 
   init {
     transcript.isEditable = false
+    transcript.lineWrap = true
+    transcript.wrapStyleWord = true
+    transcript.border = JBUI.Borders.empty(8)
+
+    input.lineWrap = true
+    input.wrapStyleWord = true
+    input.border = JBUI.Borders.empty(4)
+    input.emptyText.text = "Ask CodeSetu  (⌘/Ctrl+Enter to send)"
 
     modelBox.isEditable = true
     populateModelBox()
     modelBox.addActionListener { onModelSelected() }
 
+    // Top bar: model selector.
     val header = JPanel(BorderLayout())
+    header.border = JBUI.Borders.empty(6, 8)
     header.add(JLabel("Model: "), BorderLayout.WEST)
     header.add(modelBox, BorderLayout.CENTER)
 
+    // Bottom composer: input grows; Send sits at its natural size, bottom-right.
+    val sendBar = JPanel(BorderLayout())
+    sendBar.border = JBUI.Borders.emptyLeft(6)
+    sendBar.add(send, BorderLayout.SOUTH)
+
+    val composer = JPanel(BorderLayout())
+    composer.border = JBUI.Borders.empty(6, 8, 8, 8)
+    val inputScroll = JBScrollPane(input)
+    inputScroll.preferredSize = Dimension(0, 92)
+    composer.add(inputScroll, BorderLayout.CENTER)
+    composer.add(sendBar, BorderLayout.EAST)
+
     component.add(header, BorderLayout.NORTH)
-    component.add(JScrollPane(transcript), BorderLayout.CENTER)
-    component.add(JScrollPane(input), BorderLayout.SOUTH)
-    component.add(send, BorderLayout.EAST)
+    component.add(JBScrollPane(transcript), BorderLayout.CENTER)
+    component.add(composer, BorderLayout.SOUTH)
+
     send.addActionListener { sendMessage(input.text) }
+    registerSendShortcut()
+  }
+
+  private fun registerSendShortcut() {
+    val action = object : AbstractAction() {
+      override fun actionPerformed(e: ActionEvent) {
+        sendMessage(input.text)
+      }
+    }
+    input.actionMap.put("codesetu.send", action)
+    input.inputMap.put(
+      KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
+      "codesetu.send",
+    )
+    input.inputMap.put(
+      KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.META_DOWN_MASK),
+      "codesetu.send",
+    )
   }
 
   private fun populateModelBox() {
@@ -81,11 +137,11 @@ class CodeSetuChatPanel(private val project: Project) {
 
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
     val trimmed = text.trim()
-    if (trimmed.isEmpty()) return
+    if (trimmed.isEmpty() || inFlight) return
 
     append("You", trimmed)
     input.text = ""
-    send.isEnabled = false
+    setBusy(true)
 
     // Capture editor/document context on the EDT (this method runs on the EDT);
     // reading the selected editor or document text off the EDT is unsafe.
@@ -128,7 +184,7 @@ class CodeSetuChatPanel(private val project: Project) {
           ApplicationManager.getApplication().invokeLater {
             appendChunk(message)
             endAppend()
-            send.isEnabled = true
+            setBusy(false)
           }
           return@executeOnPooledThread
         }
@@ -142,7 +198,7 @@ class CodeSetuChatPanel(private val project: Project) {
               "CodeSetu",
               "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}",
             )
-            send.isEnabled = true
+            setBusy(false)
           }
           return@executeOnPooledThread
         }
@@ -163,7 +219,7 @@ class CodeSetuChatPanel(private val project: Project) {
         } else {
           append("CodeSetu", response.ifBlank { "CodeSetu did not return any text." })
         }
-        send.isEnabled = true
+        setBusy(false)
       }
     }
   }
