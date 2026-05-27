@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/plugin-sdk" },
+    { "path": "./packages/api-client-core" },
     { "path": "./apps/vscode" }
   ]
 }

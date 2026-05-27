@@ -1,0 +1,12 @@
+{
+  "name": "@codesetu/jetbrains-apiclient",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JetBrains plugin for the CodeSetu API Client (Postman-style REST + WebSocket). Kotlin/Gradle project integrated into the pnpm workspace via thin script delegations — actual build/test runs through Gradle.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "echo 'CodeSetu API Client (JetBrains): run ./gradlew buildPlugin from this directory (requires JDK 21+).'",
+    "lint": "echo 'CodeSetu API Client (JetBrains): lint is handled by Gradle/IntelliJ; no Node-side linting.'",
+    "test": "echo 'CodeSetu API Client (JetBrains): run ./gradlew test from this directory.'"
+  }
+}

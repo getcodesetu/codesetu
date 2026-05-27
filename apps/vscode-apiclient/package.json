@@ -1,0 +1,140 @@
+{
+  "name": "codesetu-api-client",
+  "displayName": "CodeSetu API Client",
+  "description": "Postman-style REST and WebSocket client inside VSCode. Import Postman, OpenAPI, Insomnia, HAR, and cURL collections; build, send, and test requests with environments, variables, auth, and scripts.",
+  "version": "0.1.0",
+  "publisher": "codesetu",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getcodesetu/codesetu.git",
+    "directory": "apps/vscode-apiclient"
+  },
+  "bugs": {
+    "url": "https://github.com/getcodesetu/codesetu/issues"
+  },
+  "homepage": "https://github.com/getcodesetu/codesetu#readme",
+  "type": "commonjs",
+  "main": "./dist/extension.cjs",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Testing"
+  ],
+  "keywords": [
+    "rest",
+    "api",
+    "api-client",
+    "http",
+    "websocket",
+    "postman",
+    "openapi",
+    "insomnia",
+    "har",
+    "curl",
+    "graphql",
+    "rest-client",
+    "open-source"
+  ],
+  "galleryBanner": {
+    "color": "#5865F2",
+    "theme": "dark"
+  },
+  "qna": "https://discord.gg/sjVKU8cpC6",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "codesetuApi.open",
+        "title": "Open API Client",
+        "category": "CodeSetu API"
+      },
+      {
+        "command": "codesetuApi.newRequest",
+        "title": "New Request",
+        "category": "CodeSetu API"
+      },
+      {
+        "command": "codesetuApi.importCollection",
+        "title": "Import Collection",
+        "category": "CodeSetu API"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codesetuApiClient",
+          "title": "CodeSetu API",
+          "icon": "media/api-activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "codesetuApiClient": [
+        {
+          "id": "codesetuApiHome",
+          "name": "API Client",
+          "icon": "media/api-activitybar.svg",
+          "contextualTitle": "CodeSetu API"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "codesetuApiHome",
+        "contents": "A Postman-style REST and WebSocket client for VSCode.\n\n[Open API Client](command:codesetuApi.open)\n\n[Import a Collection](command:codesetuApi.importCollection)\n\nSupports Postman, OpenAPI, Insomnia, HAR, and cURL."
+      }
+    ],
+    "configuration": {
+      "title": "CodeSetu API Client",
+      "properties": {
+        "codesetuApiClient.request.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 0,
+          "description": "Default request timeout in milliseconds (0 disables the timeout)."
+        },
+        "codesetuApiClient.request.followRedirects": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow HTTP redirects by default."
+        },
+        "codesetuApiClient.request.maxRedirects": {
+          "type": "number",
+          "default": 10,
+          "minimum": 0,
+          "description": "Maximum number of redirects to follow."
+        },
+        "codesetuApiClient.request.verifyTls": {
+          "type": "boolean",
+          "default": true,
+          "description": "Verify TLS certificates. Disable only for trusted development endpoints."
+        },
+        "codesetuApiClient.history.maxEntries": {
+          "type": "number",
+          "default": 100,
+          "minimum": 0,
+          "description": "Maximum number of requests kept in history."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "dev": "node esbuild.mjs --watch",
+    "lint": "eslint \"src/**/*.ts\" \"src/**/*.tsx\"",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@codesetu/api-client-core": "workspace:*",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
