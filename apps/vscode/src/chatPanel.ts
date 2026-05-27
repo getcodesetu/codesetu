@@ -20,6 +20,11 @@ import type { ChatMessage, IdeContextPayload } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { renderChatPanelHtml } from "./chatPanelHtml";
+import { summarizeCodeSetuConfiguration } from "./configuration";
+
+// Cap the rolling transcript sent to the provider so long sessions don't
+// overflow the context window. The most recent turns are always kept.
+const MAX_HISTORY_CHARS = 100_000;
 
 export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
@@ -130,6 +135,7 @@ export class ChatPanel {
     void this.panel.webview.postMessage({ type: "busy", value: true });
     void this.panel.webview.postMessage({ type: "userMessage", text });
     this.history.push({ role: "user", content: text });
+    this.trimHistory();
 
     try {
       let isStreamingAssistantMessage = false;
@@ -152,6 +158,11 @@ export class ChatPanel {
           : { type: "assistantMessage", text: response },
       );
     } catch (error: unknown) {
+      // Drop the optimistic user turn so a retry doesn't stack two user
+      // messages with no assistant reply between them.
+      if (this.history[this.history.length - 1]?.role === "user") {
+        this.history.pop();
+      }
       this.outputChannel.appendLine(`Chat request failed: ${formatErrorMessage(error)}`);
       void this.panel.webview.postMessage({
         type: "error",
@@ -163,12 +174,33 @@ export class ChatPanel {
     }
   }
 
+  private trimHistory(): void {
+    let total = this.history.reduce((sum, message) => sum + messageLength(message), 0);
+
+    while (this.history.length > 1 && total > MAX_HISTORY_CHARS) {
+      const removed = this.history.shift();
+
+      if (removed === undefined) {
+        break;
+      }
+
+      total -= messageLength(removed);
+    }
+  }
+
   private renderHtml(webview: vscode.Webview): string {
+    const summary = summarizeCodeSetuConfiguration();
+
     return renderChatPanelHtml({
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
+      modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
     });
   }
+}
+
+function messageLength(message: ChatMessage): number {
+  return typeof message.content === "string" ? message.content.length : 0;
 }
 
 function isSendMessageRequest(message: unknown): message is SendMessageRequest {

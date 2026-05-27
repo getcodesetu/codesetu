@@ -21,6 +21,7 @@ import {
   type ChatCompletionRequest,
   type ChatMessage,
   type IdeContextPayload,
+  type ProviderFactoryOptions,
   type WorkspaceInstruction,
 } from "@codesetu/core";
 import * as vscode from "vscode";
@@ -34,9 +35,10 @@ import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./con
 import { collectVSCodeContext } from "./ideContext";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
+import { getStoredApiKey, migrateApiKeyFromConfiguration } from "./secretStorage";
 import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
-export function activate(context: vscode.ExtensionContext): void {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const outputChannel = vscode.window.createOutputChannel("CodeSetu");
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = "CodeSetu: Ready";
@@ -44,10 +46,30 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBarItem.command = "codesetu.openChat";
   statusBarItem.show();
 
+  // The API key lives in the OS secret store. Migrate any legacy plaintext value
+  // out of settings.json, then keep an in-memory copy refreshed on change so the
+  // synchronous provider-creation hot paths (inline completions) stay fast.
+  await migrateApiKeyFromConfiguration(context.secrets);
+  let apiKey = await getStoredApiKey(context.secrets);
+  context.subscriptions.push(
+    context.secrets.onDidChange((event) => {
+      if (event.key === "codesetu.apiKey") {
+        void getStoredApiKey(context.secrets).then((value) => {
+          apiKey = value;
+        });
+      }
+    }),
+  );
+
+  const buildProviderOptions = (): ProviderFactoryOptions => ({
+    ...readCodeSetuConfiguration().providerOptions,
+    apiKey,
+  });
+
   const inlineCompletionProvider = vscode.languages.registerInlineCompletionItemProvider(
     { scheme: "file" },
     new CodeSetuInlineCompletionProvider({
-      createProvider: () => createProvider(readCodeSetuConfiguration().providerOptions),
+      createProvider: () => createProvider(buildProviderOptions()),
       getConfiguration: readCodeSetuConfiguration,
       outputChannel,
     }),
@@ -61,6 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const responder: ChatResponder = async (messages, requestContext) =>
     sendChatRequest(
       messages,
+      buildProviderOptions(),
       statusBarItem,
       outputChannel,
       await loadInstructions(),
@@ -72,12 +95,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
   });
-  const setupProviderCommand = vscode.commands.registerCommand(
-    "codesetu.setupProvider",
-    setupCodeSetuProvider,
+  const setupProviderCommand = vscode.commands.registerCommand("codesetu.setupProvider", () =>
+    setupCodeSetuProvider(context.secrets),
   );
   const diagnoseProviderCommand = vscode.commands.registerCommand("codesetu.diagnoseProvider", () =>
-    runCodeSetuProviderDiagnostics(outputChannel),
+    runCodeSetuProviderDiagnostics(outputChannel, apiKey),
   );
 
   const editorActions = registerCodeSetuEditorActions({
@@ -109,6 +131,7 @@ export function deactivate(): void {
 
 async function sendChatRequest(
   messages: ChatMessage[],
+  providerOptions: ProviderFactoryOptions,
   statusBarItem: vscode.StatusBarItem,
   outputChannel: vscode.OutputChannel,
   instructions: readonly WorkspaceInstruction[] = [],
@@ -116,8 +139,10 @@ async function sendChatRequest(
   onChunk?: (chunk: string) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
-  outputChannel.appendLine(formatChatProviderLine(summarizeCodeSetuConfiguration()));
-  const provider = createProvider(configuration.providerOptions);
+  outputChannel.appendLine(
+    formatChatProviderLine(summarizeCodeSetuConfiguration(providerOptions.apiKey)),
+  );
+  const provider = createProvider(providerOptions);
   statusBarItem.text = "CodeSetu: Thinking";
   const contextualMessages = hasIdeContext(ideContext)
     ? [

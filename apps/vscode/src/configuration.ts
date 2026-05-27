@@ -49,7 +49,9 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
   return {
     providerOptions: {
       provider: readProvider(configuration),
-      apiKey: readOptionalString(configuration, "apiKey"),
+      // The API key is intentionally NOT read from settings. It lives in the OS
+      // secret store and is injected by the extension host (see secretStorage.ts).
+      // The core provider falls back to env vars when apiKey is undefined.
       baseURL: readOptionalString(configuration, "baseUrl"),
       model: readOptionalString(configuration, "model"),
     },
@@ -67,7 +69,9 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
   };
 }
 
-export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
+export function summarizeCodeSetuConfiguration(
+  secretApiKey?: string,
+): CodeSetuConfigurationSummary {
   const configuration = readCodeSetuConfiguration();
   const provider =
     configuration.providerOptions.provider === "openai-compatible" ? "openai-compatible" : "sarvam";
@@ -90,7 +94,7 @@ export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
           DEFAULT_SARVAM_MODEL,
         ) ?? DEFAULT_SARVAM_MODEL,
       hasApiKey: hasConfigValue(
-        configuration.providerOptions.apiKey,
+        secretApiKey,
         process.env.SARVAM_API_KEY,
         process.env.CODESETU_API_KEY,
       ),
@@ -111,7 +115,7 @@ export function summarizeCodeSetuConfiguration(): CodeSetuConfigurationSummary {
         process.env.CODESETU_MODEL,
         DEFAULT_OPENAI_COMPATIBLE_MODEL,
       ) ?? DEFAULT_OPENAI_COMPATIBLE_MODEL,
-    hasApiKey: hasConfigValue(configuration.providerOptions.apiKey, process.env.CODESETU_API_KEY),
+    hasApiKey: hasConfigValue(secretApiKey, process.env.CODESETU_API_KEY),
   };
 }
 

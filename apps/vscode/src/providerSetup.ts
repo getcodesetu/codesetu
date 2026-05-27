@@ -10,9 +10,11 @@
 
 import * as vscode from "vscode";
 
+import { storeApiKey } from "./secretStorage";
+
 const DEFAULT_SARVAM_CHAT_MODEL = "sarvam-30b";
 
-export async function setupCodeSetuProvider(): Promise<void> {
+export async function setupCodeSetuProvider(secrets: vscode.SecretStorage): Promise<void> {
   const provider = await vscode.window.showQuickPick(
     [
       { label: "sarvam", description: "Sarvam hosted or compatible endpoint" },
@@ -60,7 +62,8 @@ export async function setupCodeSetuProvider(): Promise<void> {
   await configuration.update("provider", provider.label, vscode.ConfigurationTarget.Global);
   await configuration.update("baseUrl", baseUrl.trim(), vscode.ConfigurationTarget.Global);
   await configuration.update("model", model.trim(), vscode.ConfigurationTarget.Global);
-  await configuration.update("apiKey", apiKey.trim(), vscode.ConfigurationTarget.Global);
+  // The API key goes to the OS secret store, never to settings.json.
+  await storeApiKey(secrets, apiKey);
 
   void vscode.window.showInformationMessage("CodeSetu provider settings updated.");
 }

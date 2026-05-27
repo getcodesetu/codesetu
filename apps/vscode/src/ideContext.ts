@@ -78,7 +78,8 @@ async function collectWorkspaceSnippets(
 ): Promise<WorkspaceSnippet[]> {
   const files = await vscode.workspace.findFiles(
     "**/*.{ts,tsx,js,jsx,py,java,kt,go,rs,md,json,yml,yaml}",
-    "{**/node_modules/**,**/dist/**,**/build/**,**/.git/**}",
+    // Skip build output and likely-secret files so they aren't auto-sent to the provider.
+    "{**/node_modules/**,**/dist/**,**/build/**,**/.git/**,**/.env*,**/*.pem,**/*.key,**/*.pfx,**/*.p12,**/secrets/**,**/.aws/**,**/id_rsa*}",
     8,
   );
   const snippets: WorkspaceSnippet[] = [];

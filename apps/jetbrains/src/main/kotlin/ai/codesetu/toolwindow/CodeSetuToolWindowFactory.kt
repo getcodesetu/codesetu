@@ -4,10 +4,12 @@ import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
+import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -33,6 +35,7 @@ class CodeSetuChatPanel(private val project: Project) {
   private val input = JTextArea(4, 40)
   private val send = JButton("Send")
   private val client = CodeSetuProviderClient()
+  private val history = mutableListOf<ChatMessage>()
 
   init {
     transcript.isEditable = false
@@ -50,18 +53,23 @@ class CodeSetuChatPanel(private val project: Project) {
     input.text = ""
     send.isEnabled = false
 
+    // Capture editor/document context on the EDT (this method runs on the EDT);
+    // reading the selected editor or document text off the EDT is unsafe.
+    val ideContext = capturedIdeContext ?: collectIdeContext(project)
+
     ApplicationManager.getApplication().executeOnPooledThread {
-      val instructions = loadWorkspaceInstructions(project)
-      val ideContext = buildContextMarkdown(capturedIdeContext ?: collectIdeContext(project))
-      val userMessage = if (ideContext.isBlank()) {
+      val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
+        loadWorkspaceInstructions(project)
+      }
+      val contextMarkdown = buildContextMarkdown(ideContext)
+      val userMessage = if (contextMarkdown.isBlank()) {
         trimmed
       } else {
-        "$trimmed\n\nCurrent IDE context:\n\n$ideContext"
+        "$trimmed\n\nCurrent IDE context:\n\n$contextMarkdown"
       }
-      val messages = listOf(
-        ChatMessage("system", buildSystemMessage(instructions)),
-        ChatMessage("user", userMessage),
-      )
+      history.add(ChatMessage("user", userMessage))
+      val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
+
       var receivedChunk = false
       val response = try {
         client.streamChat(messages) { chunk ->
@@ -79,6 +87,9 @@ class CodeSetuChatPanel(private val project: Project) {
         }
       } catch (error: Exception) {
         if (receivedChunk) {
+          // Partial stream then failure: drop the user turn so the next message
+          // doesn't stack two consecutive user turns.
+          history.removeLastOrNull()
           val message = "\n\nCodeSetu could not complete that request: ${error.message ?: error}"
           ApplicationManager.getApplication().invokeLater {
             appendChunk(message)
@@ -91,8 +102,22 @@ class CodeSetuChatPanel(private val project: Project) {
         try {
           client.chat(messages)
         } catch (fallbackError: Exception) {
-          "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}"
+          history.removeLastOrNull()
+          ApplicationManager.getApplication().invokeLater {
+            append(
+              "CodeSetu",
+              "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}",
+            )
+            send.isEnabled = true
+          }
+          return@executeOnPooledThread
         }
+      }
+
+      if (response.isNotBlank()) {
+        history.add(ChatMessage("assistant", response))
+      } else {
+        history.removeLastOrNull()
       }
 
       ApplicationManager.getApplication().invokeLater {

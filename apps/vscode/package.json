@@ -168,7 +168,8 @@
         "codesetu.apiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for the configured provider. If empty, CodeSetu reads provider environment variables."
+          "markdownDeprecationMessage": "Storing the API key in settings is insecure — it is saved in plaintext and synced by Settings Sync. CodeSetu now keeps it in the OS secret store. Run **CodeSetu: Setup Provider**; any value left here is migrated to secure storage and cleared automatically.",
+          "description": "Deprecated. Use the CodeSetu: Setup Provider command (the key is stored in the OS secret store). If empty, CodeSetu reads provider environment variables."
         },
         "codesetu.baseUrl": {
           "type": "string",

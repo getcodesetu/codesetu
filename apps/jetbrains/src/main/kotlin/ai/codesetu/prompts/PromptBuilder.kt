@@ -4,12 +4,26 @@ import ai.codesetu.model.IdeActionId
 import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.model.WorkspaceInstruction
 
-fun buildSystemMessage(instructions: List<WorkspaceInstruction>): String =
-  if (instructions.isEmpty()) {
-    "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware."
-  } else {
-    "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware.\n\nFollow applicable workspace guidance when it helps the user's request."
+fun buildSystemMessage(instructions: List<WorkspaceInstruction>): String {
+  val parts = mutableListOf(
+    "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware.",
+    "Use the supplied IDE context as the source of truth. Ask for missing context when needed.",
+  )
+
+  if (instructions.isNotEmpty()) {
+    parts.add(formatWorkspaceInstructions(instructions))
   }
+
+  return parts.joinToString("\n\n")
+}
+
+private fun formatWorkspaceInstructions(instructions: List<WorkspaceInstruction>): String {
+  val rendered = instructions.joinToString("\n\n") { instruction ->
+    listOf("${instruction.name} (${instruction.id})", instruction.description, instruction.body)
+      .joinToString("\n")
+  }
+  return "Workspace instructions\n\n$rendered"
+}
 
 fun buildActionInstruction(actionId: IdeActionId): String =
   when (actionId) {

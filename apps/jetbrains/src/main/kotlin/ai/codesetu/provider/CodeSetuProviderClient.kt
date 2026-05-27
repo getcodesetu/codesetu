@@ -29,7 +29,7 @@ class CodeSetuProviderClient(
     )
     val request = HttpRequest.newBuilder()
       .uri(URI.create(state.baseUrl.trimEnd('/') + "/chat/completions"))
-      .header("Authorization", "Bearer ${state.apiKey}")
+      .header("Authorization", "Bearer ${CodeSetuSettingsState.getInstance().getApiKey()}")
       .header("Content-Type", "application/json")
       .POST(HttpRequest.BodyPublishers.ofString(body))
       .build()
@@ -60,7 +60,7 @@ class CodeSetuProviderClient(
     )
     val request = HttpRequest.newBuilder()
       .uri(URI.create(state.baseUrl.trimEnd('/') + "/chat/completions"))
-      .header("Authorization", "Bearer ${state.apiKey}")
+      .header("Authorization", "Bearer ${CodeSetuSettingsState.getInstance().getApiKey()}")
       .header("Content-Type", "application/json")
       .POST(HttpRequest.BodyPublishers.ofString(body))
       .build()
@@ -87,7 +87,12 @@ class CodeSetuProviderClient(
           break
         }
 
-        val text = getAssistantChunkText(json.decodeFromString<ChatCompletionChunk>(data))
+        // Skip malformed/partial SSE payloads instead of aborting the whole stream.
+        val text = try {
+          getAssistantChunkText(json.decodeFromString<ChatCompletionChunk>(data))
+        } catch (error: Exception) {
+          ""
+        }
 
         if (text.isNotEmpty()) {
           assistantText.append(text)
