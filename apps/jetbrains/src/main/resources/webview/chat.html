@@ -1,0 +1,657 @@
+<!--
+  Copyright 2026 CodeSetu Contributors
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Shared chat design with the VS Code webview, rendered here in JCEF. The host
+  substitutes __THEME_CSS__, __MODEL_LABEL__, and __BRIDGE_POST__ before loading.
+-->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;"
+    />
+    <style>
+      __THEME_CSS__
+    </style>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        font-family: var(--vscode-font-family);
+        font-size: 13px;
+        margin: 0;
+        padding: 10px;
+        color: var(--vscode-foreground);
+        background: var(--vscode-editor-background);
+      }
+
+      main {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: calc(100vh - 20px);
+      }
+
+      #transcript {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        flex: 1;
+        min-height: 40px;
+      }
+
+      .message {
+        border-radius: 8px;
+        line-height: 1.45;
+        padding: 8px 11px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+
+      .user {
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+      }
+
+      .assistant {
+        background: var(--vscode-editor-inactiveSelectionBackground);
+        border: 1px solid rgba(127, 127, 127, 0.08);
+        white-space: normal;
+      }
+
+      .assistant > :first-child {
+        margin-top: 0;
+      }
+
+      .assistant pre {
+        margin: 8px 0;
+        padding: 10px 12px;
+        overflow-x: auto;
+        border-radius: 8px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+        white-space: pre;
+      }
+
+      .assistant pre code {
+        padding: 0;
+        background: none;
+      }
+
+      .assistant code {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.95em;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+      }
+
+      .assistant ul {
+        margin: 6px 0;
+        padding-left: 22px;
+      }
+
+      .error {
+        background: var(--vscode-inputValidation-errorBackground);
+        border: 1px solid var(--vscode-inputValidation-errorBorder);
+      }
+
+      .composer-wrap {
+        position: relative;
+        display: grid;
+        gap: 8px;
+      }
+
+      .composer-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-height: 72px;
+        padding: 9px 11px;
+        border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+        border-radius: 12px;
+        color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+        transition:
+          border-color 120ms ease,
+          box-shadow 120ms ease;
+      }
+
+      .composer-shell:focus-within {
+        border-color: var(--vscode-focusBorder);
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.1);
+      }
+
+      textarea {
+        width: 100%;
+        flex: 1;
+        min-height: 38px;
+        max-height: 140px;
+        resize: none;
+        overflow-y: auto;
+        color: var(--vscode-input-foreground);
+        background: transparent;
+        border: 0;
+        outline: none;
+        padding: 0;
+        font: inherit;
+        line-height: 1.45;
+      }
+
+      textarea::placeholder {
+        color: var(--vscode-input-placeholderForeground);
+      }
+
+      .composer-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .toolbar-group.secondary {
+        justify-self: end;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .icon-button,
+      .send-button,
+      .menu-row {
+        border: 0;
+        color: var(--vscode-foreground);
+        background: transparent;
+      }
+
+      .icon-button,
+      .send-button {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border-radius: 50%;
+      }
+
+      .icon-button {
+        border: 1px solid transparent;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .icon-button:hover,
+      .menu-row:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .icon-button:focus-visible,
+      .send-button:focus-visible,
+      .menu-row:focus-visible {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: 2px;
+      }
+
+      textarea:focus-visible {
+        outline: none;
+      }
+
+      .model-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 9px;
+        color: var(--vscode-descriptionForeground);
+        background: transparent;
+        white-space: nowrap;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .model-chip:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .model-chip:focus-visible {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: 2px;
+      }
+
+      .model-chip:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .chevron {
+        width: 14px;
+        height: 14px;
+        opacity: 0.8;
+      }
+
+      .send-button {
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+        width: 32px;
+        height: 32px;
+      }
+
+      .send-button:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+
+      .send-button:disabled,
+      textarea:disabled,
+      .icon-button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .composer-icon {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 auto;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
+
+      .icon-button .composer-icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .send-button .composer-icon {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2.4;
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 10;
+        min-width: 268px;
+        padding: 8px;
+        border: 1px solid var(--vscode-widget-border);
+        border-radius: 12px;
+        color: var(--vscode-menu-foreground, var(--vscode-foreground));
+        background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+        box-shadow: 0 16px 42px rgba(0, 0, 0, 0.22);
+      }
+
+      .menu[hidden] {
+        display: none;
+      }
+
+      .composer-menu {
+        left: 0;
+        bottom: 54px;
+      }
+
+      .menu-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        width: 100%;
+        min-height: 36px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        text-align: left;
+      }
+
+      .menu-leading {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .menu-icon {
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        flex: 0 0 auto;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .switch {
+        position: relative;
+        display: inline-flex;
+        width: 38px;
+        height: 22px;
+      }
+
+      .switch input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+
+      .switch-track {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: var(--vscode-inputOption-activeBorder, var(--vscode-widget-border));
+        opacity: 0.45;
+      }
+
+      .switch-track::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--vscode-input-background);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+        transition: transform 120ms ease;
+      }
+
+      .switch input:checked + .switch-track {
+        background: var(--vscode-button-background);
+        opacity: 1;
+      }
+
+      .switch input:checked + .switch-track::after {
+        transform: translateX(16px);
+      }
+    </style>
+    <title>CodeSetu</title>
+    <script>
+      function __codesetuPost(payload) {
+        __BRIDGE_POST__
+      }
+    </script>
+  </head>
+  <body>
+    <main>
+      <section id="transcript" aria-live="polite"></section>
+      <form id="chat-form" class="composer-wrap">
+        <div class="composer-shell">
+          <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu"></textarea>
+          <div class="composer-toolbar">
+            <div class="toolbar-group">
+              <button
+                id="composer-menu-toggle"
+                class="icon-button"
+                type="button"
+                aria-label="Open composer menu"
+                aria-expanded="false"
+              >
+                <svg class="composer-icon" data-icon="plus" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </button>
+            </div>
+            <div class="toolbar-group secondary">
+              <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
+                <span id="model-label">__MODEL_LABEL__</span>
+                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <button id="send" class="send-button" type="submit" aria-label="Send message">
+                <svg class="composer-icon" data-icon="send" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="composer-menu" class="menu composer-menu" hidden>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="sparkle" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m12 3 1.6 5.2L19 10l-5.4 1.8L12 17l-1.6-5.2L5 10l5.4-1.8z" />
+                  <path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z" />
+                </svg>
+              </span>
+              Include IDE context
+            </span>
+            <span class="switch">
+              <input id="include-context" type="checkbox" checked />
+              <span class="switch-track"></span>
+            </span>
+          </label>
+        </div>
+      </form>
+    </main>
+    <script>
+      const form = document.getElementById("chat-form");
+      const textarea = document.getElementById("message");
+      const send = document.getElementById("send");
+      const transcript = document.getElementById("transcript");
+      const composerMenuToggle = document.getElementById("composer-menu-toggle");
+      const composerMenu = document.getElementById("composer-menu");
+      const includeContext = document.getElementById("include-context");
+      const modelChip = document.getElementById("model-chip");
+      const modelLabel = document.getElementById("model-label");
+      let activeAssistantMessage;
+      let activeAssistantRaw = "";
+
+      const NEWLINE = String.fromCharCode(10);
+      const FENCE = String.fromCharCode(96, 96, 96);
+      const TICK = String.fromCharCode(96);
+
+      function post(message) {
+        __codesetuPost(JSON.stringify(message));
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .split("&").join("&amp;")
+          .split("<").join("&lt;")
+          .split(">").join("&gt;");
+      }
+
+      function renderInline(escaped) {
+        let bolded = "";
+        let rest = escaped;
+        while (true) {
+          const open = rest.indexOf("**");
+          if (open === -1) { bolded += rest; break; }
+          const close = rest.indexOf("**", open + 2);
+          if (close === -1) { bolded += rest; break; }
+          bolded += rest.slice(0, open) + "<strong>" + rest.slice(open + 2, close) + "</strong>";
+          rest = rest.slice(close + 2);
+        }
+
+        let out = "";
+        let seg = bolded;
+        while (true) {
+          const start = seg.indexOf(TICK);
+          if (start === -1) { out += seg; break; }
+          const end = seg.indexOf(TICK, start + 1);
+          if (end === -1) { out += seg; break; }
+          out += seg.slice(0, start) + "<code>" + seg.slice(start + 1, end) + "</code>";
+          seg = seg.slice(end + 1);
+        }
+        return out;
+      }
+
+      function renderProse(escaped) {
+        if (escaped.split(NEWLINE).join("").trim() === "") {
+          return "";
+        }
+        const lines = escaped.split(NEWLINE);
+        let out = "";
+        let inList = false;
+        for (const line of lines) {
+          const trimmed = line.trimStart();
+          const isItem = trimmed.indexOf("- ") === 0 || trimmed.indexOf("* ") === 0;
+          if (isItem) {
+            if (!inList) { out += "<ul>"; inList = true; }
+            out += "<li>" + renderInline(trimmed.slice(2)) + "</li>";
+          } else {
+            if (inList) { out += "</ul>"; inList = false; }
+            out += line.trim() === "" ? "<br>" : renderInline(line) + "<br>";
+          }
+        }
+        if (inList) { out += "</ul>"; }
+        return out;
+      }
+
+      // Renders a safe subset of markdown. All model text is HTML-escaped before
+      // any tags are introduced, so this never injects untrusted markup.
+      function renderMarkdown(raw) {
+        const parts = String(raw).split(FENCE);
+        let html = "";
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 1) {
+            let block = parts[i];
+            const firstNewline = block.indexOf(NEWLINE);
+            let code = firstNewline === -1 ? block : block.slice(firstNewline + 1);
+            if (code.length > 0 && code.charAt(code.length - 1) === NEWLINE) {
+              code = code.slice(0, code.length - 1);
+            }
+            html += "<pre><code>" + escapeHtml(code) + "</code></pre>";
+          } else {
+            html += renderProse(escapeHtml(parts[i]));
+          }
+        }
+        return html;
+      }
+
+      function appendMessage(kind, text) {
+        const message = document.createElement("article");
+        message.className = "message " + kind;
+        if (kind === "assistant") {
+          message.innerHTML = renderMarkdown(text);
+        } else {
+          message.textContent = text;
+        }
+        transcript.appendChild(message);
+        message.scrollIntoView({ block: "end", behavior: "smooth" });
+        return message;
+      }
+
+      function startAssistantMessage() {
+        activeAssistantRaw = "";
+        activeAssistantMessage = appendMessage("assistant", "");
+        return activeAssistantMessage;
+      }
+
+      function appendAssistantDelta(text) {
+        if (!activeAssistantMessage) {
+          startAssistantMessage();
+        }
+        activeAssistantRaw += text;
+        activeAssistantMessage.innerHTML = renderMarkdown(activeAssistantRaw);
+        activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
+      function setMenuOpen(isOpen) {
+        composerMenu.hidden = !isOpen;
+        composerMenuToggle.setAttribute("aria-expanded", String(isOpen));
+      }
+
+      composerMenuToggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setMenuOpen(composerMenu.hidden);
+      });
+
+      modelChip.addEventListener("click", () => {
+        setMenuOpen(false);
+        post({ type: "selectModel" });
+      });
+
+      document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        if (!target.closest(".menu") && !target.closest(".icon-button")) {
+          setMenuOpen(false);
+        }
+      });
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = textarea.value.trim();
+        if (text.length === 0) {
+          return;
+        }
+        textarea.value = "";
+        setMenuOpen(false);
+        post({ type: "sendMessage", text: text, includeIdeContext: includeContext.checked });
+      });
+
+      window.__codesetuReceive = function (message) {
+        if (message.type === "assistantMessage") {
+          if (activeAssistantMessage) {
+            activeAssistantMessage.innerHTML = renderMarkdown(message.text);
+            activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
+            activeAssistantMessage = undefined;
+            activeAssistantRaw = "";
+          } else {
+            appendMessage("assistant", message.text);
+          }
+        }
+
+        if (message.type === "assistantMessageStart") {
+          startAssistantMessage();
+        }
+
+        if (message.type === "assistantMessageDelta") {
+          appendAssistantDelta(message.text);
+        }
+
+        if (message.type === "assistantMessageDone") {
+          activeAssistantMessage = undefined;
+          activeAssistantRaw = "";
+        }
+
+        if (message.type === "userMessage") {
+          appendMessage("user", message.text);
+        }
+
+        if (message.type === "error") {
+          appendMessage("error", message.text);
+        }
+
+        if (message.type === "modelLabel") {
+          modelLabel.textContent = message.text;
+        }
+
+        if (message.type === "busy") {
+          const isBusy = Boolean(message.value);
+          send.disabled = isBusy;
+          textarea.disabled = isBusy;
+          composerMenuToggle.disabled = isBusy;
+          modelChip.disabled = isBusy;
+        }
+      };
+
+      post({ type: "ready" });
+    </script>
+  </body>
+</html>

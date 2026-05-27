@@ -48,9 +48,9 @@ jobs:
           echo "tag=jetbrains-v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Computed version: ${VERSION}"
 
-      - name: Build plugin
+      - name: Build and verify plugin
         working-directory: apps/jetbrains
-        run: ./gradlew -PpluginVersion=${{ steps.version.outputs.version }} buildPlugin --no-daemon
+        run: ./gradlew -PpluginVersion=${{ steps.version.outputs.version }} buildPlugin verifyPlugin --no-daemon
 
       - name: Verify plugin zip exists
         run: |

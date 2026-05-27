@@ -10,15 +10,45 @@
 
 import * as vscode from "vscode";
 
-const DEFAULT_SARVAM_CHAT_MODEL = "sarvam-30b";
+import { storeApiKey } from "./secretStorage";
 
-export async function setupCodeSetuProvider(): Promise<void> {
+interface ProviderSetupDefaults {
+  baseUrl: string;
+  model: string;
+  apiKeyPrompt: string;
+}
+
+const SARVAM_DEFAULTS: ProviderSetupDefaults = {
+  baseUrl: "https://api.sarvam.ai/v1",
+  model: "sarvam-30b",
+  apiKeyPrompt: "Sarvam API key",
+};
+
+const PROVIDER_DEFAULTS: Record<string, ProviderSetupDefaults> = {
+  sarvam: SARVAM_DEFAULTS,
+  "openai-compatible": {
+    baseUrl: "http://localhost:11434/v1",
+    model: "qwen2.5-coder:7b",
+    apiKeyPrompt: "API key (use 'ollama' for a local Ollama server)",
+  },
+  huggingface: {
+    baseUrl: "https://router.huggingface.co/v1",
+    model: "meta-llama/Llama-3.3-70B-Instruct",
+    apiKeyPrompt: "Hugging Face token (hf_...)",
+  },
+};
+
+export async function setupCodeSetuProvider(secrets: vscode.SecretStorage): Promise<void> {
   const provider = await vscode.window.showQuickPick(
     [
       { label: "sarvam", description: "Sarvam hosted or compatible endpoint" },
       {
         label: "openai-compatible",
         description: "Ollama, vLLM, SGLang, OpenRouter, or compatible API",
+      },
+      {
+        label: "huggingface",
+        description: "Hugging Face router, a dedicated Inference Endpoint, or self-hosted TGI",
       },
     ],
     { placeHolder: "Choose a CodeSetu provider" },
@@ -28,9 +58,11 @@ export async function setupCodeSetuProvider(): Promise<void> {
     return;
   }
 
+  const defaults = PROVIDER_DEFAULTS[provider.label] ?? SARVAM_DEFAULTS;
+
   const baseUrl = await vscode.window.showInputBox({
     prompt: "Base URL",
-    value: provider.label === "sarvam" ? "https://api.sarvam.ai/v1" : "http://localhost:11434/v1",
+    value: defaults.baseUrl,
   });
 
   if (baseUrl === undefined) {
@@ -38,8 +70,8 @@ export async function setupCodeSetuProvider(): Promise<void> {
   }
 
   const model = await vscode.window.showInputBox({
-    prompt: "Model id",
-    value: provider.label === "openai-compatible" ? "qwen2.5-coder:7b" : DEFAULT_SARVAM_CHAT_MODEL,
+    prompt: provider.label === "huggingface" ? "Model id (Hugging Face repo id)" : "Model id",
+    value: defaults.model,
   });
 
   if (model === undefined) {
@@ -48,7 +80,7 @@ export async function setupCodeSetuProvider(): Promise<void> {
 
   const apiKey = await vscode.window.showInputBox({
     password: true,
-    prompt: "API key",
+    prompt: defaults.apiKeyPrompt,
     value: provider.label === "openai-compatible" && baseUrl.includes("localhost") ? "ollama" : "",
   });
 
@@ -60,7 +92,8 @@ export async function setupCodeSetuProvider(): Promise<void> {
   await configuration.update("provider", provider.label, vscode.ConfigurationTarget.Global);
   await configuration.update("baseUrl", baseUrl.trim(), vscode.ConfigurationTarget.Global);
   await configuration.update("model", model.trim(), vscode.ConfigurationTarget.Global);
-  await configuration.update("apiKey", apiKey.trim(), vscode.ConfigurationTarget.Global);
+  // The API key goes to the OS secret store, never to settings.json.
+  await storeApiKey(secrets, apiKey);
 
   void vscode.window.showInformationMessage("CodeSetu provider settings updated.");
 }

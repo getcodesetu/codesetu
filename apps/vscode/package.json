@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {
@@ -71,6 +71,11 @@
       {
         "command": "codesetu.diagnoseProvider",
         "title": "CodeSetu: Diagnose Provider",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.selectModel",
+        "title": "CodeSetu: Select Model",
         "category": "CodeSetu"
       },
       {
@@ -160,7 +165,13 @@
           "type": "string",
           "enum": [
             "sarvam",
-            "openai-compatible"
+            "openai-compatible",
+            "huggingface"
+          ],
+          "enumDescriptions": [
+            "Sarvam hosted or compatible endpoint.",
+            "Any OpenAI-compatible API (Ollama, vLLM, SGLang, OpenRouter, local).",
+            "Hugging Face Inference — the hosted router, a dedicated Inference Endpoint, or self-hosted TGI."
           ],
           "default": "sarvam",
           "description": "Model provider used by CodeSetu."
@@ -168,7 +179,8 @@
         "codesetu.apiKey": {
           "type": "string",
           "default": "",
-          "description": "API key for the configured provider. If empty, CodeSetu reads provider environment variables."
+          "markdownDeprecationMessage": "Storing the API key in settings is insecure — it is saved in plaintext and synced by Settings Sync. CodeSetu now keeps it in the OS secret store. Run **CodeSetu: Setup Provider**; any value left here is migrated to secure storage and cleared automatically.",
+          "description": "Deprecated. Use the CodeSetu: Setup Provider command (the key is stored in the OS secret store). If empty, CodeSetu reads provider environment variables."
         },
         "codesetu.baseUrl": {
           "type": "string",

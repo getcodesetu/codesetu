@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { DEFAULT_HUGGINGFACE_PROVIDER, HuggingFaceProvider } from "./huggingface.js";
 import {
   DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
   DEFAULT_OPENAI_COMPATIBLE_MODEL,
@@ -24,7 +25,10 @@ import { SarvamProvider } from "./sarvam.js";
 
 export const DEFAULT_PROVIDER_ID = "sarvam";
 
-export type ProviderId = typeof DEFAULT_PROVIDER_ID | typeof DEFAULT_OPENAI_COMPATIBLE_PROVIDER;
+export type ProviderId =
+  | typeof DEFAULT_PROVIDER_ID
+  | typeof DEFAULT_OPENAI_COMPATIBLE_PROVIDER
+  | typeof DEFAULT_HUGGINGFACE_PROVIDER;
 
 export interface ProviderFactoryOptions {
   provider?: string;
@@ -33,9 +37,13 @@ export interface ProviderFactoryOptions {
   model?: string;
 }
 
-export type ConfiguredProvider = SarvamProvider | OpenAICompatibleProvider;
+export type ConfiguredProvider = SarvamProvider | OpenAICompatibleProvider | HuggingFaceProvider;
 
-const providerIds = [DEFAULT_PROVIDER_ID, DEFAULT_OPENAI_COMPATIBLE_PROVIDER] as const;
+const providerIds = [
+  DEFAULT_PROVIDER_ID,
+  DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
+  DEFAULT_HUGGINGFACE_PROVIDER,
+] as const;
 
 export function listProviderIds(): ProviderId[] {
   return [...providerIds];
@@ -56,6 +64,14 @@ export function createProvider(options: ProviderFactoryOptions = {}): Configured
       defaultBaseURL: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
       model: options.model,
       defaultModel: DEFAULT_OPENAI_COMPATIBLE_MODEL,
+    });
+  }
+
+  if (provider === DEFAULT_HUGGINGFACE_PROVIDER) {
+    return new HuggingFaceProvider({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+      model: options.model,
     });
   }
 

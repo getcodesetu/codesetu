@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 
 enum class ProviderKind(val id: String) {
   SARVAM("sarvam"),
-  OPENAI_COMPATIBLE("openai-compatible");
+  OPENAI_COMPATIBLE("openai-compatible"),
+  HUGGING_FACE("huggingface");
 
   companion object {
     fun fromId(id: String): ProviderKind =

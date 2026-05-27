@@ -33,6 +33,7 @@ describe("VS Code command contributions", () => {
         "codesetu.openChat",
         "codesetu.setupProvider",
         "codesetu.diagnoseProvider",
+        "codesetu.selectModel",
         "codesetu.explainSelection",
         "codesetu.refactorSelection",
         "codesetu.writeTestsForSelection",

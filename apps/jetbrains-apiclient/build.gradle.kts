@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
   // Kotlin version must be >= the version bundled in the target IntelliJ Platform.
   // IDEA 2025.2 (IC-252.x) ships with Kotlin 2.2.x.
@@ -36,6 +38,8 @@ dependencies {
       intellijIdeaCommunity("2025.2.5")
     }
     instrumentationTools()
+    // CLI used by the `verifyPlugin` task (JetBrains Plugin Verifier).
+    pluginVerifier()
   }
 }
 
@@ -61,6 +65,14 @@ intellijPlatform {
     }
   }
   buildSearchableOptions = false
+  // `verifyPlugin` runs the JetBrains Plugin Verifier. Pin it to the build
+  // target so it's deterministic and always resolvable (recommended() can pick
+  // an unreleased IDE that fails to download).
+  pluginVerification {
+    ides {
+      ide(IntelliJPlatformType.IntellijIdeaCommunity, "2025.2.5")
+    }
+  }
   publishing {
     token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN")
   }

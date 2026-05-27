@@ -40,14 +40,15 @@ export function formatChatProviderLine(summary: CodeSetuConfigurationSummary): s
 
 export async function runCodeSetuProviderDiagnostics(
   outputChannel: vscodeTypes.OutputChannel,
+  secretApiKey?: string,
 ): Promise<void> {
   const vscode: VSCodeApi = await import("vscode");
   const { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } =
     await import("./configuration");
   const configuration = readCodeSetuConfiguration();
-  const summary = summarizeCodeSetuConfiguration();
+  const summary = summarizeCodeSetuConfiguration(secretApiKey);
   const result = await diagnoseProvider({
-    providerOptions: configuration.providerOptions,
+    providerOptions: { ...configuration.providerOptions, apiKey: secretApiKey },
     createProvider: (providerOptions) => createProvider(providerOptions),
   });
 

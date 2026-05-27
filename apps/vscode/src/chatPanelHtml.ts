@@ -17,9 +17,21 @@
 export interface RenderChatPanelHtmlOptions {
   cspSource: string;
   nonce: string;
+  /** Human-readable "provider · model" shown in the composer (real, configured values). */
+  modelLabel: string;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string {
+  const modelLabel = escapeHtml(options.modelLabel);
+
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -70,6 +82,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         line-height: 1.5;
         padding: 11px 14px;
         white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
       .user {
@@ -80,6 +93,38 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       .assistant {
         background: var(--vscode-editor-inactiveSelectionBackground);
         border: 1px solid rgba(127, 127, 127, 0.08);
+        white-space: normal;
+      }
+
+      .assistant > :first-child {
+        margin-top: 0;
+      }
+
+      .assistant pre {
+        margin: 8px 0;
+        padding: 10px 12px;
+        overflow-x: auto;
+        border-radius: 8px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+        white-space: pre;
+      }
+
+      .assistant pre code {
+        padding: 0;
+        background: none;
+      }
+
+      .assistant code {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.95em;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+      }
+
+      .assistant ul {
+        margin: 6px 0;
+        padding-left: 22px;
       }
 
       .error {
@@ -97,7 +142,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         display: flex;
         flex-direction: column;
         gap: 10px;
-        min-height: 132px;
+        min-height: 120px;
         padding: 16px 18px 14px;
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
         border-radius: 20px;
@@ -136,13 +181,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         color: var(--vscode-input-placeholderForeground);
       }
 
-      .composer-toolbar,
-      .toolbar-group {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
       .composer-toolbar {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -152,6 +190,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       }
 
       .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         min-width: 0;
       }
 
@@ -164,11 +205,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       }
 
       .icon-button,
-      .pill-button,
       .send-button,
-      .local-button,
-      .menu-row,
-      .menu-button {
+      .menu-row {
         border: 0;
         color: var(--vscode-foreground);
         background: transparent;
@@ -190,19 +228,13 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       }
 
       .icon-button:hover,
-      .pill-button:hover,
-      .local-button:hover,
-      .menu-row:hover,
-      .menu-button:hover {
+      .menu-row:hover {
         background: var(--vscode-toolbar-hoverBackground);
       }
 
       .icon-button:focus-visible,
-      .pill-button:focus-visible,
       .send-button:focus-visible,
-      .local-button:focus-visible,
-      .menu-row:focus-visible,
-      .menu-button:focus-visible {
+      .menu-row:focus-visible {
         outline: 1px solid var(--vscode-focusBorder);
         outline-offset: 2px;
       }
@@ -211,25 +243,39 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         outline: none;
       }
 
-      .pill-button,
-      .local-button {
-        min-height: 34px;
-        padding: 0 9px;
-        border-radius: 9px;
-      }
-
-      .pill-button {
+      .model-chip {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        min-width: 0;
+        gap: 6px;
+        min-height: 30px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 9px;
         color: var(--vscode-descriptionForeground);
+        background: transparent;
         white-space: nowrap;
+        cursor: pointer;
+        font: inherit;
       }
 
-      .pill-button strong {
-        color: var(--vscode-foreground);
-        font-weight: 500;
+      .model-chip:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .model-chip:focus-visible {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: 2px;
+      }
+
+      .model-chip:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .chevron {
+        width: 14px;
+        height: 14px;
+        opacity: 0.8;
       }
 
       .send-button {
@@ -245,20 +291,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
       .send-button:disabled,
       textarea:disabled,
-      .pill-button:disabled,
       .icon-button:disabled {
         cursor: not-allowed;
         opacity: 0.55;
-      }
-
-      .local-button {
-        justify-self: start;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        min-height: 30px;
-        padding-inline: 8px;
-        color: var(--vscode-descriptionForeground);
       }
 
       .composer-icon {
@@ -283,12 +318,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         stroke-width: 2.4;
       }
 
-      .chevron {
-        width: 14px;
-        height: 14px;
-        opacity: 0.86;
-      }
-
       .menu {
         position: absolute;
         z-index: 10;
@@ -310,53 +339,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         bottom: 54px;
       }
 
-      .plugins-menu {
-        left: 254px;
-        bottom: 56px;
-        min-width: 220px;
-      }
-
-      .model-menu {
-        right: 50px;
-        bottom: 54px;
-        min-width: 280px;
-      }
-
-      .menu-title {
-        padding: 7px 10px;
-        color: var(--vscode-descriptionForeground);
-      }
-
-      .menu-divider {
-        height: 1px;
-        margin: 6px 8px;
-        background: var(--vscode-widget-border);
-      }
-
-      .menu-row,
-      .menu-button {
+      .menu-row {
         display: flex;
         align-items: center;
+        justify-content: space-between;
+        gap: 16px;
         width: 100%;
         min-height: 36px;
         padding: 7px 10px;
         border-radius: 8px;
         text-align: left;
-      }
-
-      .menu-row {
-        justify-content: space-between;
-        gap: 16px;
-      }
-
-      .menu-button {
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .menu-row[aria-disabled="true"],
-      .menu-button[aria-disabled="true"] {
-        opacity: 0.52;
       }
 
       .menu-leading {
@@ -417,10 +409,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         transform: translateX(16px);
       }
 
-      .checkmark {
-        color: var(--vscode-button-background);
-      }
-
       @media (max-width: 520px) {
         body {
           padding: 12px;
@@ -435,34 +423,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         .composer-shell {
-          min-height: 136px;
+          min-height: 124px;
           border-radius: 14px;
-        }
-
-        .composer-toolbar {
-          display: flex;
-          align-items: stretch;
-          flex-direction: column;
-        }
-
-        .toolbar-group {
-          justify-content: space-between;
-        }
-
-        .toolbar-group.secondary {
-          justify-self: stretch;
-        }
-
-        .pill-button {
-          min-width: 0;
-        }
-
-        .model-menu,
-        .plugins-menu {
-          left: 0;
-          right: auto;
-          bottom: 54px;
-          width: min(100%, 300px);
         }
       }
     </style>
@@ -489,28 +451,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="M5 12h14" />
                 </svg>
               </button>
-              <button class="pill-button" type="button" aria-label="Permissions">
-                <svg class="composer-icon" data-icon="permissions" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3v6" />
-                  <path d="M8 7v6" />
-                  <path d="M16 8v5" />
-                  <path d="M5 11v5a7 7 0 0 0 14 0v-4" />
-                </svg>
-                <strong>Default permissions</strong>
-                <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </button>
             </div>
             <div class="toolbar-group secondary">
-              <button
-                id="model-menu-toggle"
-                class="pill-button"
-                type="button"
-                aria-label="Model and reasoning"
-                aria-expanded="false"
-              >
-                <strong id="model-label">5.5&nbsp;&nbsp;Extra High</strong>
+              <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
+                <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="m6 9 6 6 6-6" />
                 </svg>
@@ -524,29 +468,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
             </div>
           </div>
         </div>
-        <button id="local-mode" class="local-button" type="button">
-          <svg class="composer-icon" data-icon="work-local" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16v11H4z" />
-            <path d="M8 20h8" />
-            <path d="M12 16v4" />
-          </svg>
-          <span>Work locally</span>
-          <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
         <div id="composer-menu" class="menu composer-menu" hidden>
-          <button class="menu-button" type="button" aria-disabled="true">
-            <span class="menu-leading">
-              <span class="menu-icon">
-                <svg class="composer-icon" data-icon="paperclip" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m21 8-10 10a5 5 0 0 1-7-7L14 1a3 3 0 0 1 4 4L8 15a1 1 0 0 1-1-1L17 4" />
-                </svg>
-              </span>
-              Add photos &amp; files
-            </span>
-          </button>
-          <div class="menu-divider"></div>
           <label class="menu-row">
             <span class="menu-leading">
               <span class="menu-icon">
@@ -562,97 +484,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
-          <label class="menu-row" aria-disabled="true">
-            <span class="menu-leading">
-              <span class="menu-icon">
-                <svg class="composer-icon" data-icon="plan" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M8 6h13" />
-                  <path d="M8 12h13" />
-                  <path d="M8 18h13" />
-                  <path d="M3 6h.01" />
-                  <path d="M3 12h.01" />
-                  <path d="M3 18h.01" />
-                </svg>
-              </span>
-              Plan mode
-            </span>
-            <span class="switch">
-              <input type="checkbox" disabled />
-              <span class="switch-track"></span>
-            </span>
-          </label>
-          <label class="menu-row" aria-disabled="true">
-            <span class="menu-leading">
-              <span class="menu-icon">
-                <svg class="composer-icon" data-icon="target" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="12" r="8" />
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M12 2v3" />
-                  <path d="M22 12h-3" />
-                </svg>
-              </span>
-              Pursue goal
-            </span>
-            <span class="switch">
-              <input type="checkbox" disabled />
-              <span class="switch-track"></span>
-            </span>
-          </label>
-          <div class="menu-divider"></div>
-          <button id="plugins-menu-toggle" class="menu-button" type="button" aria-expanded="false">
-            <span class="menu-leading">
-              <span class="menu-icon">
-                <svg class="composer-icon" data-icon="plugins" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="7" cy="7" r="3" />
-                  <circle cx="17" cy="7" r="3" />
-                  <circle cx="7" cy="17" r="3" />
-                  <circle cx="17" cy="17" r="3" />
-                </svg>
-              </span>
-              Plugins
-            </span>
-            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
-        </div>
-        <div id="plugins-menu" class="menu plugins-menu" hidden>
-          <div class="menu-title">2 installed plugins</div>
-          <button class="menu-button" type="button" aria-disabled="true">
-            <span class="menu-leading"><span class="menu-icon">HF</span>Hugging Face</span>
-          </button>
-          <button class="menu-button" type="button" aria-disabled="true">
-            <span class="menu-leading"><span class="menu-icon">SP</span>Superpowers</span>
-          </button>
-        </div>
-        <div id="model-menu" class="menu model-menu" hidden>
-          <div class="menu-title">Reasoning</div>
-          <button class="menu-button reasoning-option" type="button" data-reasoning="Low">
-            <span>Low</span>
-          </button>
-          <button class="menu-button reasoning-option" type="button" data-reasoning="Medium">
-            <span>Medium</span>
-          </button>
-          <button class="menu-button reasoning-option" type="button" data-reasoning="High">
-            <span>High</span>
-          </button>
-          <button class="menu-button reasoning-option" type="button" data-reasoning="Extra High">
-            <span>Extra High</span>
-            <span class="checkmark" aria-hidden="true">&#10003;</span>
-          </button>
-          <div class="menu-divider"></div>
-          <button class="menu-button" type="button" aria-disabled="true">
-            <span>GPT-5.5</span>
-            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
-          <button class="menu-button" type="button" aria-disabled="true">
-            <span>Speed</span>
-            <svg class="composer-icon chevron" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m9 6 6 6-6 6" />
-            </svg>
-          </button>
         </div>
       </form>
     </main>
@@ -664,61 +495,133 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const transcript = document.getElementById("transcript");
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
-      const pluginsMenuToggle = document.getElementById("plugins-menu-toggle");
-      const pluginsMenu = document.getElementById("plugins-menu");
-      const modelMenuToggle = document.getElementById("model-menu-toggle");
-      const modelMenu = document.getElementById("model-menu");
-      const modelLabel = document.getElementById("model-label");
       const includeContext = document.getElementById("include-context");
-      const reasoningOptions = [...document.querySelectorAll(".reasoning-option")];
+      const modelChip = document.getElementById("model-chip");
+      const modelLabel = document.getElementById("model-label");
       let activeAssistantMessage;
+      let activeAssistantRaw = "";
+
+      const NEWLINE = String.fromCharCode(10);
+      const FENCE = String.fromCharCode(96, 96, 96);
+      const TICK = String.fromCharCode(96);
+
+      function escapeHtml(value) {
+        return String(value)
+          .split("&").join("&amp;")
+          .split("<").join("&lt;")
+          .split(">").join("&gt;");
+      }
+
+      function renderInline(escaped) {
+        let bolded = "";
+        let rest = escaped;
+        while (true) {
+          const open = rest.indexOf("**");
+          if (open === -1) { bolded += rest; break; }
+          const close = rest.indexOf("**", open + 2);
+          if (close === -1) { bolded += rest; break; }
+          bolded += rest.slice(0, open) + "<strong>" + rest.slice(open + 2, close) + "</strong>";
+          rest = rest.slice(close + 2);
+        }
+
+        let out = "";
+        let seg = bolded;
+        while (true) {
+          const start = seg.indexOf(TICK);
+          if (start === -1) { out += seg; break; }
+          const end = seg.indexOf(TICK, start + 1);
+          if (end === -1) { out += seg; break; }
+          out += seg.slice(0, start) + "<code>" + seg.slice(start + 1, end) + "</code>";
+          seg = seg.slice(end + 1);
+        }
+        return out;
+      }
+
+      function renderProse(escaped) {
+        if (escaped.split(NEWLINE).join("").trim() === "") {
+          return "";
+        }
+        const lines = escaped.split(NEWLINE);
+        let out = "";
+        let inList = false;
+        for (const line of lines) {
+          const trimmed = line.trimStart();
+          const isItem = trimmed.indexOf("- ") === 0 || trimmed.indexOf("* ") === 0;
+          if (isItem) {
+            if (!inList) { out += "<ul>"; inList = true; }
+            out += "<li>" + renderInline(trimmed.slice(2)) + "</li>";
+          } else {
+            if (inList) { out += "</ul>"; inList = false; }
+            out += line.trim() === "" ? "<br>" : renderInline(line) + "<br>";
+          }
+        }
+        if (inList) { out += "</ul>"; }
+        return out;
+      }
+
+      // Renders a safe subset of markdown. All model text is HTML-escaped before
+      // any tags are introduced, so this never injects untrusted markup.
+      function renderMarkdown(raw) {
+        const parts = String(raw).split(FENCE);
+        let html = "";
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 1) {
+            let block = parts[i];
+            const firstNewline = block.indexOf(NEWLINE);
+            let code = firstNewline === -1 ? block : block.slice(firstNewline + 1);
+            if (code.length > 0 && code.charAt(code.length - 1) === NEWLINE) {
+              code = code.slice(0, code.length - 1);
+            }
+            html += "<pre><code>" + escapeHtml(code) + "</code></pre>";
+          } else {
+            html += renderProse(escapeHtml(parts[i]));
+          }
+        }
+        return html;
+      }
 
       function appendMessage(kind, text) {
         const message = document.createElement("article");
         message.className = "message " + kind;
-        message.textContent = text;
+        if (kind === "assistant") {
+          message.innerHTML = renderMarkdown(text);
+        } else {
+          message.textContent = text;
+        }
         transcript.appendChild(message);
         message.scrollIntoView({ block: "end", behavior: "smooth" });
         return message;
       }
 
+      function startAssistantMessage() {
+        activeAssistantRaw = "";
+        activeAssistantMessage = appendMessage("assistant", "");
+        return activeAssistantMessage;
+      }
+
       function appendAssistantDelta(text) {
         if (!activeAssistantMessage) {
-          activeAssistantMessage = appendMessage("assistant", "");
+          startAssistantMessage();
         }
 
-        activeAssistantMessage.textContent += text;
+        activeAssistantRaw += text;
+        activeAssistantMessage.innerHTML = renderMarkdown(activeAssistantRaw);
         activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
       }
 
-      function setMenuOpen(menu, toggle, isOpen) {
-        menu.hidden = !isOpen;
-        toggle.setAttribute("aria-expanded", String(isOpen));
-      }
-
-      function closeMenus() {
-        setMenuOpen(composerMenu, composerMenuToggle, false);
-        setMenuOpen(pluginsMenu, pluginsMenuToggle, false);
-        setMenuOpen(modelMenu, modelMenuToggle, false);
+      function setMenuOpen(isOpen) {
+        composerMenu.hidden = !isOpen;
+        composerMenuToggle.setAttribute("aria-expanded", String(isOpen));
       }
 
       composerMenuToggle.addEventListener("click", (event) => {
         event.stopPropagation();
-        const isOpen = composerMenu.hidden;
-        closeMenus();
-        setMenuOpen(composerMenu, composerMenuToggle, isOpen);
+        setMenuOpen(composerMenu.hidden);
       });
 
-      pluginsMenuToggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        setMenuOpen(pluginsMenu, pluginsMenuToggle, pluginsMenu.hidden);
-      });
-
-      modelMenuToggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const isOpen = modelMenu.hidden;
-        closeMenus();
-        setMenuOpen(modelMenu, modelMenuToggle, isOpen);
+      modelChip.addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "selectModel" });
       });
 
       document.addEventListener("click", (event) => {
@@ -728,28 +631,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           return;
         }
 
-        if (!target.closest(".menu") && !target.closest(".pill-button") && !target.closest(".icon-button")) {
-          closeMenus();
+        if (!target.closest(".menu") && !target.closest(".icon-button")) {
+          setMenuOpen(false);
         }
-      });
-
-      reasoningOptions.forEach((option) => {
-        option.addEventListener("click", () => {
-          const reasoning = option.dataset.reasoning;
-          modelLabel.innerHTML = "5.5&nbsp;&nbsp;" + reasoning;
-          reasoningOptions.forEach((candidate) => {
-            const marker = candidate.querySelector(".checkmark");
-            if (marker) {
-              marker.remove();
-            }
-          });
-          const marker = document.createElement("span");
-          marker.className = "checkmark";
-          marker.setAttribute("aria-hidden", "true");
-          marker.textContent = "\\u2713";
-          option.appendChild(marker);
-          closeMenus();
-        });
       });
 
       form.addEventListener("submit", (event) => {
@@ -761,7 +645,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         textarea.value = "";
-        closeMenus();
+        setMenuOpen(false);
         vscode.postMessage({
           type: "sendMessage",
           text,
@@ -774,16 +658,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "assistantMessage") {
           if (activeAssistantMessage) {
-            activeAssistantMessage.textContent = message.text;
+            activeAssistantMessage.innerHTML = renderMarkdown(message.text);
             activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
             activeAssistantMessage = undefined;
+            activeAssistantRaw = "";
           } else {
             appendMessage("assistant", message.text);
           }
         }
 
         if (message.type === "assistantMessageStart") {
-          activeAssistantMessage = appendMessage("assistant", "");
+          startAssistantMessage();
         }
 
         if (message.type === "assistantMessageDelta") {
@@ -792,6 +677,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "assistantMessageDone") {
           activeAssistantMessage = undefined;
+          activeAssistantRaw = "";
         }
 
         if (message.type === "userMessage") {
@@ -802,12 +688,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           appendMessage("error", message.text);
         }
 
+        if (message.type === "modelLabel") {
+          modelLabel.textContent = message.text;
+        }
+
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
           send.disabled = isBusy;
           textarea.disabled = isBusy;
           composerMenuToggle.disabled = isBusy;
-          modelMenuToggle.disabled = isBusy;
+          modelChip.disabled = isBusy;
         }
       });
     </script>

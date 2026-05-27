@@ -19,26 +19,69 @@ import { describe, expect, it } from "vitest";
 import { renderChatPanelHtml } from "../src/chatPanelHtml";
 
 describe("renderChatPanelHtml", () => {
-  it("renders the polished composer controls", () => {
+  it("renders the composer with the real configured model and the IDE-context toggle", () => {
     const html = renderChatPanelHtml({
       cspSource: "vscode-resource:",
       nonce: "test-nonce",
+      modelLabel: "sarvam · sarvam-30b",
     });
 
     expect(html).toContain('class="composer-shell"');
     expect(html).toContain('id="composer-menu-toggle"');
     expect(html).toContain("Include IDE context");
     expect(html).toContain('id="include-context"');
-    expect(html).toContain('id="model-menu-toggle"');
-    expect(html).toContain("Extra High");
-    expect(html).toContain("Work locally");
+    expect(html).toContain('id="model-chip"');
+    expect(html).toContain('aria-label="Select model"');
+    expect(html).toContain("sarvam · sarvam-30b");
     expect(html).toContain('aria-label="Send message"');
+  });
+
+  it("makes the model chip request a model switch", () => {
+    const html = renderChatPanelHtml({
+      cspSource: "vscode-resource:",
+      nonce: "test-nonce",
+      modelLabel: "huggingface · meta-llama/Llama-3.3-70B-Instruct",
+    });
+
+    expect(html).toContain('type: "selectModel"');
+    expect(html).toContain('id="model-label"');
+    expect(html).toContain('message.type === "modelLabel"');
+  });
+
+  it("does not advertise non-functional or fictional controls", () => {
+    const html = renderChatPanelHtml({
+      cspSource: "vscode-resource:",
+      nonce: "test-nonce",
+      modelLabel: "sarvam · sarvam-30b",
+    });
+
+    expect(html).not.toContain("Extra High");
+    expect(html).not.toContain("GPT-5.5");
+    expect(html).not.toContain("Work locally");
+    expect(html).not.toContain("Default permissions");
+    expect(html).not.toContain("Plan mode");
+    expect(html).not.toContain('id="model-menu-toggle"');
+    expect(html).not.toContain('id="plugins-menu-toggle"');
+  });
+
+  it("escapes the model label and renders assistant text through safe markdown", () => {
+    const html = renderChatPanelHtml({
+      cspSource: "vscode-resource:",
+      nonce: "test-nonce",
+      modelLabel: "<script>evil</script>",
+    });
+
+    expect(html).not.toContain("<script>evil</script>");
+    expect(html).toContain("&lt;script&gt;evil&lt;/script&gt;");
+    expect(html).toContain("function renderMarkdown");
+    expect(html).toContain(".assistant pre");
   });
 
   it("uses the composer shell as the focus surface with real icon markup", () => {
     const html = renderChatPanelHtml({
       cspSource: "vscode-resource:",
       nonce: "test-nonce",
+      modelLabel: "sarvam · sarvam-30b",
     });
 
     expect(html).toContain(".composer-shell:focus-within");
@@ -46,8 +89,5 @@ describe("renderChatPanelHtml", () => {
     expect(html).toContain("outline: none;");
     expect(html).toContain('data-icon="plus"');
     expect(html).toContain('data-icon="send"');
-    expect(html).toContain('data-icon="chevron-down"');
-    expect(html).not.toContain('<span aria-hidden="true">o</span>');
-    expect(html).not.toContain('<span aria-hidden="true">[]</span>');
   });
 });

@@ -7,7 +7,7 @@
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/sjVKU8cpC6)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, repo-aware context, selected-code actions, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
+A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, Hugging Face (any served chat model, dedicated endpoints, or self-hosted TGI), OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, repo-aware context, selected-code actions, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
 
 **Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
 
@@ -27,7 +27,7 @@ This repository is a pnpm + Gradle monorepo organized as:
 
 - Node.js 18+
 - pnpm 9+
-- A provider — Sarvam API key, OpenRouter key, or a local OpenAI-compatible endpoint (Ollama, vLLM, SGLang)
+- A provider — Sarvam API key, a Hugging Face token (`hf_…`), OpenRouter key, or a local OpenAI-compatible endpoint (Ollama, vLLM, SGLang)
 
 ## Setup
 
@@ -50,10 +50,10 @@ Marketplace, Open VSX, and private VSIX hosting, see
 
 The VSCode extension reads these settings:
 
-- `codesetu.provider` - `sarvam` or `openai-compatible`
-- `codesetu.apiKey` - optional provider API key
-- `codesetu.baseUrl` - optional OpenAI-compatible base URL
-- `codesetu.model` - optional model name
+- `codesetu.provider` - `sarvam`, `openai-compatible`, or `huggingface`
+- `codesetu.baseUrl` - optional base URL (e.g. `https://router.huggingface.co/v1`, a dedicated HF endpoint, or a local server)
+- `codesetu.model` - optional model name (for Hugging Face, the model repo id, e.g. `meta-llama/Llama-3.3-70B-Instruct`)
+- API key — set via the **CodeSetu: Setup Provider** command (stored in the OS secret store), or the `SARVAM_API_KEY` / `HF_TOKEN` / `CODESETU_API_KEY` environment variables
 - `codesetu.inlineCompletions.enabled` - enable FIM inline completions
 - `codesetu.chat.maxTokens` / `codesetu.chat.temperature`
 

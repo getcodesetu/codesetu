@@ -4,124 +4,322 @@ import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
+import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
+import ai.codesetu.settings.CodeSetuModelCatalog
+import ai.codesetu.settings.CodeSetuSettingsState
+import ai.codesetu.settings.providerDefaults
+import ai.codesetu.settings.resolveCodeSetuModel
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
-import java.awt.BorderLayout
-import javax.swing.JButton
-import javax.swing.JPanel
-import javax.swing.JScrollPane
-import javax.swing.JTextArea
+import com.intellij.ui.jcef.JBCefApp
+import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefBrowserBase
+import com.intellij.ui.jcef.JBCefJSQuery
+import javax.swing.JComponent
+import javax.swing.JLabel
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.put
 
 class CodeSetuToolWindowFactory : ToolWindowFactory {
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
+    val contentFactory = ContentFactory.getInstance()
+
+    if (!JBCefApp.isSupported()) {
+      val fallback = JLabel("CodeSetu chat requires JCEF, which is unavailable in this IDE.")
+      toolWindow.contentManager.addContent(contentFactory.createContent(fallback, "", false))
+      return
+    }
+
     val panel = CodeSetuChatPanel(project)
     CodeSetuChatService.getInstance(project).register(panel)
-    val content = ContentFactory.getInstance().createContent(panel.component, "", false)
+    val content = contentFactory.createContent(panel.component, "", false)
+    content.setDisposer(panel)
     toolWindow.contentManager.addContent(content)
   }
 }
 
-class CodeSetuChatPanel(private val project: Project) {
-  val component: JPanel = JPanel(BorderLayout())
-  private val transcript = JTextArea()
-  private val input = JTextArea(4, 40)
-  private val send = JButton("Send")
+/**
+ * JCEF-backed chat panel that renders the shared CodeSetu chat design (the same
+ * markup, CSS, and markdown rendering as the VS Code webview). Communication
+ * uses a JBCefJSQuery bridge: the page posts sendMessage/selectModel/ready, and
+ * the host pushes streamed deltas, the model label, busy state, and errors back.
+ */
+class CodeSetuChatPanel(private val project: Project) : Disposable {
+  private val browser = JBCefBrowser()
+  private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
+  private val history = mutableListOf<ChatMessage>()
+
+  // EDT-only state: outgoing messages buffered until the page signals "ready".
+  private val pending = mutableListOf<String>()
+  private var ready = false
+  private var inFlight = false
+
+  val component: JComponent
+    get() = browser.component
 
   init {
-    transcript.isEditable = false
-    component.add(JScrollPane(transcript), BorderLayout.CENTER)
-    component.add(JScrollPane(input), BorderLayout.SOUTH)
-    component.add(send, BorderLayout.EAST)
-    send.addActionListener { sendMessage(input.text) }
+    jsQuery.addHandler { request ->
+      handlePost(request)
+      null
+    }
+    browser.loadHTML(ChatWebviewHtml.render(modelLabelText(), jsQuery.inject("payload")))
   }
 
+  /** Entry point for editor actions (Explain/Refactor/...) with pre-captured context. */
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
-    val trimmed = text.trim()
-    if (trimmed.isEmpty()) return
+    runChat(text, includeContext = true, captured = capturedIdeContext)
+  }
 
-    append("You", trimmed)
-    input.text = ""
-    send.isEnabled = false
+  private fun handlePost(request: String) {
+    val obj = try {
+      Json.parseToJsonElement(request).jsonObject
+    } catch (error: Exception) {
+      return
+    }
 
-    ApplicationManager.getApplication().executeOnPooledThread {
-      val instructions = loadWorkspaceInstructions(project)
-      val ideContext = buildContextMarkdown(capturedIdeContext ?: collectIdeContext(project))
-      val userMessage = if (ideContext.isBlank()) {
-        trimmed
-      } else {
-        "$trimmed\n\nCurrent IDE context:\n\n$ideContext"
-      }
-      val messages = listOf(
-        ChatMessage("system", buildSystemMessage(instructions)),
-        ChatMessage("user", userMessage),
-      )
-      var receivedChunk = false
-      val response = try {
-        client.streamChat(messages) { chunk ->
-          if (!receivedChunk) {
-            receivedChunk = true
-            ApplicationManager.getApplication().invokeLater {
-              beginAppend("CodeSetu")
-              appendChunk(chunk)
-            }
-          } else {
-            ApplicationManager.getApplication().invokeLater {
-              appendChunk(chunk)
-            }
-          }
-        }
-      } catch (error: Exception) {
-        if (receivedChunk) {
-          val message = "\n\nCodeSetu could not complete that request: ${error.message ?: error}"
-          ApplicationManager.getApplication().invokeLater {
-            appendChunk(message)
-            endAppend()
-            send.isEnabled = true
-          }
-          return@executeOnPooledThread
-        }
-
-        try {
-          client.chat(messages)
-        } catch (fallbackError: Exception) {
-          "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}"
-        }
-      }
-
-      ApplicationManager.getApplication().invokeLater {
-        if (receivedChunk) {
-          if (response.isBlank()) {
-            appendChunk("CodeSetu did not return any text.")
-          }
-          endAppend()
-        } else {
-          append("CodeSetu", response.ifBlank { "CodeSetu did not return any text." })
-        }
-        send.isEnabled = true
+    when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+      "ready" -> onReady()
+      "selectModel" -> showModelPicker()
+      "sendMessage" -> {
+        val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
+        val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
+        runChat(text, include, null)
       }
     }
   }
 
-  private fun append(role: String, text: String) {
-    transcript.append("$role:\n$text\n\n")
+  private fun runChat(text: String, includeContext: Boolean, captured: IdeContextPayload?) {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return
+
+    ApplicationManager.getApplication().invokeLater {
+      if (inFlight) return@invokeLater
+      inFlight = true
+
+      push(message("userMessage") { put("text", trimmed) })
+      push(busy(true))
+
+      // Capture editor context on the EDT before going to a background thread.
+      val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
+
+      ApplicationManager.getApplication().executeOnPooledThread {
+        runRequest(trimmed, ideContext)
+      }
+    }
   }
 
-  private fun beginAppend(role: String) {
-    transcript.append("$role:\n")
+  private fun runRequest(userText: String, ideContext: IdeContextPayload) {
+    val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
+      loadWorkspaceInstructions(project)
+    }
+    val contextMarkdown = buildContextMarkdown(ideContext)
+    val userMessage = if (contextMarkdown.isBlank()) {
+      userText
+    } else {
+      "$userText\n\nCurrent IDE context:\n\n$contextMarkdown"
+    }
+    history.add(ChatMessage("user", userMessage))
+    val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
+
+    var started = false
+    val response = try {
+      client.streamChat(messages) { chunk ->
+        if (!started) {
+          started = true
+          push(message("assistantMessageStart"))
+        }
+        push(message("assistantMessageDelta") { put("text", chunk) })
+      }
+    } catch (error: Exception) {
+      if (started) {
+        history.removeLastOrNull()
+        push(
+          message("assistantMessageDelta") {
+            put("text", "\n\nCodeSetu could not complete that request: ${error.message ?: error}")
+          },
+        )
+        push(message("assistantMessageDone"))
+        finish()
+        return
+      }
+
+      try {
+        client.chat(messages)
+      } catch (fallbackError: Exception) {
+        history.removeLastOrNull()
+        push(
+          message("error") {
+            put("text", "CodeSetu could not complete that request: ${fallbackError.message ?: fallbackError}")
+          },
+        )
+        finish()
+        return
+      }
+    }
+
+    if (response.isNotBlank()) {
+      history.add(ChatMessage("assistant", response))
+    } else {
+      history.removeLastOrNull()
+    }
+
+    if (started) {
+      if (response.isBlank()) {
+        push(message("assistantMessageDelta") { put("text", "CodeSetu did not return any text.") })
+      }
+      push(message("assistantMessageDone"))
+    } else {
+      push(message("assistantMessage") { put("text", response.ifBlank { "CodeSetu did not return any text." }) })
+    }
+    finish()
   }
 
-  private fun appendChunk(text: String) {
-    transcript.append(text)
+  private fun showModelPicker() {
+    ApplicationManager.getApplication().invokeLater {
+      val state = CodeSetuSettingsState.getInstance().state
+      val current = resolveCodeSetuModel(state.model)
+      val configure = "⚙  Configure provider / endpoint…"
+      val custom = "Enter a custom model id…"
+      val items =
+        (listOf(configure, custom, current) + CodeSetuModelCatalog.suggestionsFor(state.provider))
+          .distinct()
+
+      JBPopupFactory.getInstance()
+        .createPopupChooserBuilder(items)
+        .setTitle("CodeSetu model")
+        .setItemChosenCallback { choice ->
+          when (choice) {
+            configure -> configureProvider()
+            custom -> applyModel(Messages.showInputDialog(project, "Model id", "Select Model", null, current, null))
+            else -> applyModel(choice)
+          }
+        }
+        .createPopup()
+        .showInFocusCenter()
+    }
   }
 
-  private fun endAppend() {
-    transcript.append("\n\n")
+  private fun applyModel(model: String?) {
+    val trimmed = model?.trim().orEmpty()
+    if (trimmed.isEmpty()) return
+    CodeSetuSettingsState.getInstance().state.model = trimmed
+    pushModelLabel()
+  }
+
+  // Lets the user switch provider (Sarvam / OpenAI-compatible (Ollama, local) /
+  // Hugging Face) and set its base URL, model, and API key from the chat.
+  private fun configureProvider() {
+    val providers = listOf(
+      "Sarvam" to "sarvam",
+      "OpenAI-compatible (Ollama, vLLM, local)" to "openai-compatible",
+      "Hugging Face" to "huggingface",
+    )
+
+    JBPopupFactory.getInstance()
+      .createPopupChooserBuilder(providers.map { it.first })
+      .setTitle("Configure provider")
+      .setItemChosenCallback { label ->
+        providers.firstOrNull { it.first == label }?.let { applyProvider(it.second) }
+      }
+      .createPopup()
+      .showInFocusCenter()
+  }
+
+  private fun applyProvider(providerId: String) {
+    val state = CodeSetuSettingsState.getInstance().state
+    val defaults = providerDefaults(providerId)
+    val baseUrlSeed =
+      if (state.provider == providerId && state.baseUrl.isNotBlank()) state.baseUrl else defaults.baseUrl
+    val modelSeed =
+      if (state.provider == providerId && state.model.isNotBlank()) state.model else defaults.model
+
+    val baseUrl =
+      Messages.showInputDialog(project, "Base URL", "Configure Provider", null, baseUrlSeed, null)
+        ?: return
+    val model =
+      Messages.showInputDialog(project, "Model id", "Configure Provider", null, modelSeed, null)
+        ?: return
+    val token =
+      Messages.showPasswordDialog(
+        project,
+        "API key / token (leave blank to keep the current one)",
+        "Configure Provider",
+        null,
+      )
+
+    state.provider = providerId
+    state.baseUrl = baseUrl.trim().ifBlank { defaults.baseUrl }
+    state.model = model.trim().ifBlank { defaults.model }
+    if (!token.isNullOrBlank()) {
+      CodeSetuSettingsState.getInstance().setApiKey(token)
+    }
+    pushModelLabel()
+  }
+
+  private fun pushModelLabel() {
+    push(message("modelLabel") { put("text", modelLabelText()) })
+  }
+
+  private fun modelLabelText(): String {
+    val state = CodeSetuSettingsState.getInstance().state
+    return "${state.provider} · ${resolveCodeSetuModel(state.model)}"
+  }
+
+  private fun finish() {
+    ApplicationManager.getApplication().invokeLater { inFlight = false }
+    push(busy(false))
+  }
+
+  private fun push(json: String) {
+    ApplicationManager.getApplication().invokeLater {
+      if (ready) {
+        executeJs(json)
+      } else {
+        pending.add(json)
+      }
+    }
+  }
+
+  private fun onReady() {
+    ApplicationManager.getApplication().invokeLater {
+      ready = true
+      pending.forEach { executeJs(it) }
+      pending.clear()
+    }
+  }
+
+  private fun executeJs(json: String) {
+    browser.cefBrowser.executeJavaScript("window.__codesetuReceive($json)", browser.cefBrowser.url ?: "", 0)
+  }
+
+  private fun message(type: String, build: JsonObjectBuilder.() -> Unit = {}): String =
+    buildJsonObject {
+      put("type", type)
+      build()
+    }.toString()
+
+  private fun busy(value: Boolean): String = message("busy") { put("value", value) }
+
+  override fun dispose() {
+    Disposer.dispose(jsQuery)
+    Disposer.dispose(browser)
   }
 }

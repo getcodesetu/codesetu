@@ -10,7 +10,7 @@ class CodeSetuSettingsConfigurable : Configurable {
   private var provider = settings.state.provider
   private var baseUrl = settings.state.baseUrl
   private var model = settings.state.model
-  private var apiKey = settings.state.apiKey
+  private var apiKey = settings.getApiKey()
 
   override fun getDisplayName(): String = "CodeSetu"
 
@@ -25,19 +25,19 @@ class CodeSetuSettingsConfigurable : Configurable {
     provider != settings.state.provider ||
       baseUrl != settings.state.baseUrl ||
       model != settings.state.model ||
-      apiKey != settings.state.apiKey
+      apiKey != settings.getApiKey()
 
   override fun apply() {
     settings.state.provider = provider.trim()
     settings.state.baseUrl = baseUrl.trim()
     settings.state.model = model.trim()
-    settings.state.apiKey = apiKey.trim()
+    settings.setApiKey(apiKey)
   }
 
   override fun reset() {
     provider = settings.state.provider
     baseUrl = settings.state.baseUrl
     model = settings.state.model
-    apiKey = settings.state.apiKey
+    apiKey = settings.getApiKey()
   }
 }
