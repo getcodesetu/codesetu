@@ -1,6 +1,7 @@
 package ai.codesetu.settings
 
 import com.intellij.openapi.options.Configurable
+import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import javax.swing.JComponent
@@ -11,6 +12,7 @@ class CodeSetuSettingsConfigurable : Configurable {
   private var baseUrl = settings.state.baseUrl
   private var model = settings.state.model
   private var apiKey = settings.getApiKey()
+  private var skillsAutoRoute = settings.state.skillsAutoRoute
 
   override fun getDisplayName(): String = "CodeSetu"
 
@@ -19,19 +21,25 @@ class CodeSetuSettingsConfigurable : Configurable {
     row("Base URL") { textField().bindText(::baseUrl) }
     row("Model") { textField().bindText(::model) }
     row("API key") { passwordField().bindText(::apiKey) }
+    row {
+      checkBox("Auto-route built-in AI skills by keyword (off = slash invocation only)")
+        .bindSelected(::skillsAutoRoute)
+    }
   }
 
   override fun isModified(): Boolean =
     provider != settings.state.provider ||
       baseUrl != settings.state.baseUrl ||
       model != settings.state.model ||
-      apiKey != settings.getApiKey()
+      apiKey != settings.getApiKey() ||
+      skillsAutoRoute != settings.state.skillsAutoRoute
 
   override fun apply() {
     settings.state.provider = provider.trim()
     settings.state.baseUrl = baseUrl.trim()
     settings.state.model = model.trim()
     settings.setApiKey(apiKey)
+    settings.state.skillsAutoRoute = skillsAutoRoute
   }
 
   override fun reset() {
@@ -39,5 +47,6 @@ class CodeSetuSettingsConfigurable : Configurable {
     baseUrl = settings.state.baseUrl
     model = settings.state.model
     apiKey = settings.getApiKey()
+    skillsAutoRoute = settings.state.skillsAutoRoute
   }
 }

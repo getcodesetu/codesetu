@@ -17,6 +17,7 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     // Legacy plaintext field, kept only so a pre-existing value can be migrated
     // into PasswordSafe on first access. New keys are never persisted here.
     var apiKey: String = "",
+    var skillsAutoRoute: Boolean = true,
   )
 
   private var state = State()

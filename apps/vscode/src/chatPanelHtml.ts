@@ -19,6 +19,8 @@ export interface RenderChatPanelHtmlOptions {
   nonce: string;
   /** Human-readable "provider · model" shown in the composer (real, configured values). */
   modelLabel: string;
+  /** Slash commands available in the composer palette. */
+  slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
 }
 
 function escapeHtml(value: string): string {
@@ -31,6 +33,12 @@ function escapeHtml(value: string): string {
 
 export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string {
   const modelLabel = escapeHtml(options.modelLabel);
+  // Serialized into the script body via JSON. JSON.stringify can produce "</"
+  // sequences that would close the script tag, so escape the slash.
+  const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(
+    /</g,
+    "\\u003c",
+  );
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -465,6 +473,56 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         font-size: 12px;
       }
 
+      .slash-menu {
+        left: 0;
+        right: auto;
+        bottom: 54px;
+        max-width: 420px;
+      }
+
+      .slash-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        width: 100%;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 8px;
+        text-align: left;
+        background: transparent;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+      }
+
+      .slash-row[aria-selected="true"],
+      .slash-row:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .slash-row .cmd {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.9em;
+        color: var(--vscode-button-background);
+      }
+
+      .slash-row .meta {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .slash-row .name {
+        font-weight: 600;
+      }
+
+      .slash-row .desc {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       @media (max-width: 520px) {
         body {
           padding: 12px;
@@ -567,6 +625,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
             </span>
           </label>
         </div>
+        <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
         <div id="approve-row" class="approve-row" data-show="false">
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
           <span class="approve-hint">Sends "${escapeHtml("APPROVED — proceed with implementation")}" and exits Plan Mode.</span>
@@ -623,6 +682,112 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         updatePlanModeUi();
       });
       includeContext.addEventListener("change", persistState);
+
+      // Slash command palette ---------------------------------------------------
+      const slashCommands = ${slashCommandsJson};
+      const slashMenu = document.getElementById("slash-menu");
+      let slashSelectedIndex = 0;
+      let slashFiltered = [];
+
+      function escapeAttr(value) {
+        return String(value)
+          .split("&").join("&amp;")
+          .split('"').join("&quot;")
+          .split("<").join("&lt;")
+          .split(">").join("&gt;");
+      }
+
+      function renderSlashMenu(filter) {
+        slashFiltered = slashCommands.filter((entry) =>
+          entry.command.toLowerCase().startsWith(filter.toLowerCase()),
+        );
+        if (slashFiltered.length === 0) {
+          slashMenu.hidden = true;
+          return;
+        }
+        slashSelectedIndex = 0;
+        slashMenu.innerHTML = slashFiltered
+          .map((entry, index) =>
+            '<button type="button" class="slash-row" role="option" data-index="' +
+            index +
+            '" aria-selected="' +
+            (index === 0 ? "true" : "false") +
+            '"><span class="cmd">' +
+            escapeAttr(entry.command) +
+            '</span><span class="meta"><span class="name">' +
+            escapeAttr(entry.skillName) +
+            '</span><span class="desc">' +
+            escapeAttr(entry.description) +
+            "</span></span></button>",
+          )
+          .join("");
+        slashMenu.hidden = false;
+      }
+
+      function closeSlashMenu() {
+        slashMenu.hidden = true;
+        slashFiltered = [];
+      }
+
+      function updateSlashSelection(direction) {
+        if (slashFiltered.length === 0) return;
+        slashSelectedIndex =
+          (slashSelectedIndex + direction + slashFiltered.length) % slashFiltered.length;
+        const rows = slashMenu.querySelectorAll(".slash-row");
+        rows.forEach((row, idx) => {
+          row.setAttribute("aria-selected", idx === slashSelectedIndex ? "true" : "false");
+        });
+      }
+
+      function applySlashSelection() {
+        if (slashFiltered.length === 0) return false;
+        const entry = slashFiltered[slashSelectedIndex];
+        if (!entry) return false;
+        textarea.value = entry.command + " ";
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        closeSlashMenu();
+        return true;
+      }
+
+      function maybeOpenSlashMenu() {
+        const text = textarea.value;
+        if (slashCommands.length === 0 || text.length === 0 || text.charAt(0) !== "/") {
+          closeSlashMenu();
+          return;
+        }
+        const firstSpace = text.search(/\\s/);
+        const prefix = firstSpace === -1 ? text : text.slice(0, firstSpace);
+        renderSlashMenu(prefix);
+      }
+
+      textarea.addEventListener("input", maybeOpenSlashMenu);
+      textarea.addEventListener("keydown", (event) => {
+        if (slashMenu.hidden) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateSlashSelection(1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateSlashSelection(-1);
+        } else if (event.key === "Enter" || event.key === "Tab") {
+          if (applySlashSelection()) {
+            event.preventDefault();
+          }
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeSlashMenu();
+        }
+      });
+      slashMenu.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest(".slash-row") : null;
+        if (!target) return;
+        const index = Number(target.getAttribute("data-index"));
+        if (Number.isFinite(index)) {
+          slashSelectedIndex = index;
+          applySlashSelection();
+          textarea.focus();
+        }
+      });
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);

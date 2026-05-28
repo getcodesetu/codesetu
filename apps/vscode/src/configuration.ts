@@ -36,6 +36,7 @@ export interface CodeSetuConfiguration {
   fimStopSequences: string[];
   chatMaxTokens: number;
   chatTemperature: number;
+  skillsAutoRoute: boolean;
 }
 
 export interface CodeSetuConfigurationSummary {
@@ -68,6 +69,7 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
     ]),
     chatMaxTokens: configuration.get<number>("chat.maxTokens", 4096),
     chatTemperature: configuration.get<number>("chat.temperature", 0.2),
+    skillsAutoRoute: configuration.get<boolean>("skills.autoRoute", true),
   };
 }
 

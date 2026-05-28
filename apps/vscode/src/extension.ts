@@ -15,10 +15,12 @@
  */
 
 import {
-  PLAN_MODE_SKILL,
+  BUILTIN_SKILLS,
+  PLAN_MODE_SKILL_ID,
   buildCodeSetuSystemMessage,
   buildContextMarkdown,
   createProvider,
+  routeSkills,
   type ChatCompletionRequest,
   type ChatMessage,
   type IdeContextPayload,
@@ -82,9 +84,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return [...result.skills, ...result.checks];
   };
 
-  const responder: ChatResponder = async (messages, requestContext) =>
-    sendChatRequest(
-      messages,
+  const responder: ChatResponder = async (messages, requestContext) => {
+    const configuration = readCodeSetuConfiguration();
+    const lastUserText = lastUserMessageText(messages);
+    const routed = routeSkills({
+      userText: lastUserText,
+      skills: BUILTIN_SKILLS,
+      pinnedIds: requestContext?.planMode === true ? [PLAN_MODE_SKILL_ID] : [],
+      autoRoute: configuration.skillsAutoRoute,
+    });
+
+    // Strip the leading slash from the message sent to the model — the routed
+    // skill body in the system prompt already encodes what the command meant,
+    // and the chat history keeps the user's literal text for display.
+    const providerMessages =
+      routed.consumedSlash !== undefined && routed.cleanedUserText !== lastUserText
+        ? withLastUserMessage(messages, routed.cleanedUserText)
+        : messages;
+
+    return sendChatRequest(
+      providerMessages,
       buildProviderOptions(),
       statusBarItem,
       outputChannel,
@@ -92,8 +111,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       requestContext?.ideContext ??
         ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {}),
       requestContext?.onChunk,
-      requestContext?.planMode ? [PLAN_MODE_SKILL] : [],
+      routed.selected,
     );
+  };
 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
@@ -206,6 +226,31 @@ async function sendChatRequest(
 
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function lastUserMessageText(messages: readonly ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role === "user" && typeof message.content === "string") {
+      return message.content;
+    }
+  }
+  return "";
+}
+
+function withLastUserMessage(
+  messages: readonly ChatMessage[],
+  newContent: string,
+): ChatMessage[] {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message?.role === "user") {
+      const copy = messages.slice();
+      copy[i] = { ...message, content: newContent };
+      return copy;
+    }
+  }
+  return [...messages];
 }
 
 function hasIdeContext(context: IdeContextPayload): boolean {

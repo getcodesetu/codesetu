@@ -16,7 +16,7 @@
 
 import crypto from "node:crypto";
 
-import type { ChatMessage, IdeContextPayload } from "@codesetu/core";
+import { BUILTIN_SKILLS, type ChatMessage, type IdeContextPayload } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { renderChatPanelHtml } from "./chatPanelHtml";
@@ -221,6 +221,13 @@ export class ChatPanel {
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
+      slashCommands: BUILTIN_SKILLS.flatMap((skill) =>
+        skill.slashCommands.map((command) => ({
+          command,
+          skillName: skill.name,
+          description: skill.description,
+        })),
+      ),
     });
   }
 }

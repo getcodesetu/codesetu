@@ -6,13 +6,15 @@ import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
-import ai.codesetu.prompts.PLAN_MODE_SKILL
+import ai.codesetu.prompts.PLAN_MODE_SKILL_ID
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
 import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
+import ai.codesetu.skills.BUILTIN_SKILLS
+import ai.codesetu.skills.routeSkills
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -143,16 +145,24 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
-    val pinnedSkills = if (planMode) listOf(PLAN_MODE_SKILL) else emptyList()
+    val pinnedIds = if (planMode) listOf(PLAN_MODE_SKILL_ID) else emptyList()
+    val autoRoute = CodeSetuSettingsState.getInstance().state.skillsAutoRoute
+    val routed = routeSkills(
+      userText = userText,
+      skills = BUILTIN_SKILLS,
+      pinnedIds = pinnedIds,
+      autoRoute = autoRoute,
+    )
+    val effectiveUserText = routed.cleanedUserText
     val contextMarkdown = buildContextMarkdown(ideContext)
     val userMessage = if (contextMarkdown.isBlank()) {
-      userText
+      effectiveUserText
     } else {
-      "$userText\n\nCurrent IDE context:\n\n$contextMarkdown"
+      "$effectiveUserText\n\nCurrent IDE context:\n\n$contextMarkdown"
     }
     history.add(ChatMessage("user", userMessage))
     val messages =
-      listOf(ChatMessage("system", buildSystemMessage(instructions, pinnedSkills))) + history
+      listOf(ChatMessage("system", buildSystemMessage(instructions, routed.selected))) + history
 
     var started = false
     val response = try {

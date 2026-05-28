@@ -58,6 +58,18 @@ export {
   PLAN_MODE_SKILL_ID,
   isPlanModeApproval,
 } from "./ide/planMode.js";
+export {
+  BUILTIN_SKILLS,
+  EXPLAIN_CODE_SKILL,
+  INDIC_COMMENTS_SKILL,
+  REFACTOR_SKILL,
+  WRITE_TESTS_SKILL,
+  findBuiltinSkill,
+  routeSkills,
+  type BuiltinSkill,
+  type RouteSkillsInput,
+  type RouteSkillsResult,
+} from "./skills/index.js";
 export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
 export { diagnoseProvider } from "./ide/diagnostics.js";
 export {

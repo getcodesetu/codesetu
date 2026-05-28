@@ -246,6 +246,11 @@
           "minimum": 0,
           "maximum": 2,
           "description": "Sampling temperature for chat responses."
+        },
+        "codesetu.skills.autoRoute": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-route built-in AI skills (Explain, Refactor, Write Tests, Indic Comments) by matching keywords in your message. Turn off to require slash invocation (e.g. /explain)."
         }
       }
     }
