@@ -12,6 +12,7 @@ landing page; these are deeper docs.
 | File                                               | Suggested page title |
 | -------------------------------------------------- | -------------------- |
 | [quickstart.md](quickstart.md)                     | Quickstart           |
+| [examples.md](examples.md)                         | Examples             |
 | [providers-and-models.md](providers-and-models.md) | Providers & Models   |
 | [privacy-and-security.md](privacy-and-security.md) | Privacy & Security   |
 | [faq.md](faq.md)                                   | FAQ                  |

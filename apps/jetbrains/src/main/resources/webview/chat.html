@@ -124,18 +124,50 @@
         line-height: 1.25;
       }
 
+      .welcome-card h3 {
+        margin: 14px 0 6px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--vscode-descriptionForeground);
+      }
+
       .welcome-card p {
         margin: 0 0 10px;
         color: var(--vscode-descriptionForeground);
       }
 
-      .welcome-steps {
-        margin: 0 0 12px 18px;
+      .welcome-steps,
+      .welcome-bullets {
+        margin: 0 0 8px 18px;
         padding: 0;
       }
 
-      .welcome-steps li {
+      .welcome-steps li,
+      .welcome-bullets li {
         margin: 4px 0;
+      }
+
+      .welcome-bullets b {
+        color: var(--vscode-foreground);
+      }
+
+      .welcome-bullets code {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.92em;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+      }
+
+      .welcome-tip {
+        margin: 12px 0 0;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.08));
+        color: var(--vscode-foreground);
+        font-size: 0.95em;
       }
 
       .welcome-actions {
@@ -461,19 +493,82 @@
       <section id="welcome" hidden>
         <div class="welcome-card">
           <h2>Welcome to CodeSetu</h2>
-          <p>Open-source AI coding assistant. <b>Bring your own model.</b></p>
+          <p>
+            A privacy-aware, open-source AI coding assistant.
+            <b>Bring your own model</b> — Sarvam, Hugging Face, or any OpenAI-compatible API
+            (Ollama, vLLM, local). Your key is stored in the OS keychain; your prompts go only to
+            the provider you configure.
+          </p>
+
+          <h3>Get started in 30 seconds</h3>
           <ol class="welcome-steps">
-            <li>
-              Pick a provider — Sarvam, Hugging Face, or any OpenAI-compatible API (Ollama, vLLM,
-              local).
-            </li>
-            <li>Paste your key (stored in the OS keychain — never in settings).</li>
-            <li>Ask anything.</li>
+            <li>Click <b>Configure provider</b> below.</li>
+            <li>Pick a provider, paste your API key (stored in the OS keychain).</li>
+            <li>Type a question and hit send.</li>
           </ol>
+
           <div class="welcome-actions">
             <button id="welcome-configure" type="button" class="primary">Configure provider</button>
             <button id="welcome-docs" type="button" class="link">Learn more</button>
           </div>
+
+          <h3>What you can do</h3>
+          <ul class="welcome-bullets">
+            <li>
+              <b>Repo-aware chat</b> — your active file and selection are attached automatically.
+              Toggle this off any time from the <b>+</b> menu in the composer.
+            </li>
+            <li>
+              <b>Selected-code actions</b> — select code, right-click, then pick
+              <i>Explain / Refactor / Write Tests / Fix Bug / Add Docs with CodeSetu</i>.
+            </li>
+            <li>
+              <b>Switch on the fly</b> — click the <b>provider · model</b> chip in the composer to
+              change models or providers without leaving the chat.
+            </li>
+            <li>
+              <b>Workspace skills</b> — drop <code>.codesetu/skills/*.md</code> files at the project
+              root; they're folded into the system prompt for every message.
+            </li>
+          </ul>
+
+          <h3>Try these prompts</h3>
+          <ul class="welcome-bullets">
+            <li>
+              <b>Understand:</b> &ldquo;Explain what this file does and how the main function fits
+              in.&rdquo;
+            </li>
+            <li>
+              <b>Refactor:</b> &ldquo;Refactor the selected function for readability without
+              changing behavior. List the changes.&rdquo;
+            </li>
+            <li>
+              <b>Test:</b> &ldquo;Write unit tests for the selected function — happy path plus edge
+              cases.&rdquo;
+            </li>
+            <li>
+              <b>Debug:</b> &ldquo;Why might this function throw a null-pointer exception? Give the
+              smallest safe fix.&rdquo;
+            </li>
+            <li>
+              <b>Document:</b> &ldquo;Add JSDoc comments to the selected function — describe each
+              parameter and the return value.&rdquo;
+            </li>
+            <li>
+              <b>Translate:</b> &ldquo;Translate the selected Python snippet to TypeScript with
+              equivalent types.&rdquo;
+            </li>
+            <li>
+              <b>Generate:</b> &ldquo;Generate a regex that matches Indian phone numbers (+91, 10
+              digits, optional spaces).&rdquo;
+            </li>
+          </ul>
+
+          <p class="welcome-tip">
+            <b>Tip:</b> Open the <b>+</b> menu in the composer to toggle
+            <b>Include IDE context</b> off when asking a general question — keeps prompts small and
+            your code out of the request.
+          </p>
         </div>
       </section>
       <form id="chat-form" class="composer-wrap">
