@@ -107,6 +107,72 @@
         border: 1px solid var(--vscode-inputValidation-errorBorder);
       }
 
+      #welcome[hidden] {
+        display: none;
+      }
+
+      .welcome-card {
+        padding: 14px 16px;
+        border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
+        border-radius: 12px;
+        background: var(--vscode-editor-inactiveSelectionBackground);
+      }
+
+      .welcome-card h2 {
+        margin: 0 0 6px;
+        font-size: 16px;
+        line-height: 1.25;
+      }
+
+      .welcome-card p {
+        margin: 0 0 10px;
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .welcome-steps {
+        margin: 0 0 12px 18px;
+        padding: 0;
+      }
+
+      .welcome-steps li {
+        margin: 4px 0;
+      }
+
+      .welcome-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .welcome-actions .primary {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 7px;
+        cursor: pointer;
+        font: inherit;
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+      }
+
+      .welcome-actions .primary:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+
+      .welcome-actions .link {
+        padding: 6px 4px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        font: inherit;
+        color: var(--vscode-descriptionForeground);
+        text-decoration: underline;
+      }
+
+      .welcome-actions .link:hover {
+        color: var(--vscode-foreground);
+      }
+
       .composer-wrap {
         position: relative;
         display: grid;
@@ -392,6 +458,24 @@
   <body>
     <main>
       <section id="transcript" aria-live="polite"></section>
+      <section id="welcome" hidden>
+        <div class="welcome-card">
+          <h2>Welcome to CodeSetu</h2>
+          <p>Open-source AI coding assistant. <b>Bring your own model.</b></p>
+          <ol class="welcome-steps">
+            <li>
+              Pick a provider — Sarvam, Hugging Face, or any OpenAI-compatible API (Ollama, vLLM,
+              local).
+            </li>
+            <li>Paste your key (stored in the OS keychain — never in settings).</li>
+            <li>Ask anything.</li>
+          </ol>
+          <div class="welcome-actions">
+            <button id="welcome-configure" type="button" class="primary">Configure provider</button>
+            <button id="welcome-docs" type="button" class="link">Learn more</button>
+          </div>
+        </div>
+      </section>
       <form id="chat-form" class="composer-wrap">
         <div class="composer-shell">
           <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu"></textarea>
@@ -471,6 +555,9 @@
       const includeContext = document.getElementById("include-context");
       const modelChip = document.getElementById("model-chip");
       const modelLabel = document.getElementById("model-label");
+      const welcome = document.getElementById("welcome");
+      const welcomeConfigure = document.getElementById("welcome-configure");
+      const welcomeDocs = document.getElementById("welcome-docs");
       let activeAssistantMessage;
       let activeAssistantRaw = "";
 
@@ -589,6 +676,8 @@
           message.textContent = text;
         }
         transcript.appendChild(message);
+        // First real message hides the welcome panel for the rest of the session.
+        welcome.hidden = true;
         message.scrollIntoView({ block: "end", behavior: "smooth" });
         return message;
       }
@@ -621,6 +710,14 @@
       modelChip.addEventListener("click", () => {
         setMenuOpen(false);
         post({ type: "selectModel" });
+      });
+
+      welcomeConfigure.addEventListener("click", () => {
+        post({ type: "configureProvider" });
+      });
+
+      welcomeDocs.addEventListener("click", () => {
+        post({ type: "openUrl", url: "https://github.com/getcodesetu/codesetu" });
       });
 
       document.addEventListener("click", (event) => {
@@ -679,6 +776,10 @@
 
         if (message.type === "modelLabel") {
           modelLabel.textContent = message.text;
+        }
+
+        if (message.type === "welcome") {
+          welcome.hidden = !message.show;
         }
 
         if (message.type === "busy") {

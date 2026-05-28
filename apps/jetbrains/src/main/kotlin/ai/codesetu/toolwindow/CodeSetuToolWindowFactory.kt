@@ -12,6 +12,7 @@ import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
@@ -98,6 +99,11 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     when (obj["type"]?.jsonPrimitive?.contentOrNull) {
       "ready" -> onReady()
       "selectModel" -> showModelPicker()
+      "configureProvider" -> ApplicationManager.getApplication().invokeLater { configureProvider() }
+      "openUrl" -> {
+        val url = obj["url"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().invokeLater { BrowserUtil.browse(url) }
+      }
       "sendMessage" -> {
         val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
         val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
@@ -272,6 +278,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       CodeSetuSettingsState.getInstance().setApiKey(token)
     }
     pushModelLabel()
+    pushWelcome()
   }
 
   private fun pushModelLabel() {
@@ -303,7 +310,21 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       ready = true
       pending.forEach { executeJs(it) }
       pending.clear()
+      pushWelcome()
     }
+  }
+
+  // The welcome panel shows on first use, when no provider key is configured.
+  // Once the user has a key (or sends a message), it stays hidden for the
+  // session.
+  private fun pushWelcome() {
+    push(message("welcome") { put("show", !isConfigured()) })
+  }
+
+  private fun isConfigured(): Boolean {
+    if (CodeSetuSettingsState.getInstance().getApiKey().isNotBlank()) return true
+    return sequenceOf("CODESETU_API_KEY", "SARVAM_API_KEY", "HF_TOKEN")
+      .any { !System.getenv(it).isNullOrBlank() }
   }
 
   private fun executeJs(json: String) {
