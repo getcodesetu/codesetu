@@ -46,7 +46,18 @@ export {
   type ProviderId,
 } from "./providers/registry.js";
 export { getAssistantText } from "./providers/response.js";
-export { IDE_ACTIONS, buildActionUserMessage, buildCodeSetuSystemMessage } from "./ide/actions.js";
+export {
+  IDE_ACTIONS,
+  buildActionUserMessage,
+  buildCodeSetuSystemMessage,
+  type SystemMessageOptions,
+} from "./ide/actions.js";
+export {
+  PLAN_MODE_APPROVE_PHRASE,
+  PLAN_MODE_SKILL,
+  PLAN_MODE_SKILL_ID,
+  isPlanModeApproval,
+} from "./ide/planMode.js";
 export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
 export { diagnoseProvider } from "./ide/diagnostics.js";
 export {

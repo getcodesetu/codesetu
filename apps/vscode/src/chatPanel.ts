@@ -29,12 +29,14 @@ const MAX_HISTORY_CHARS = 100_000;
 export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
+  planMode?: boolean;
   onChunk?: (chunk: string) => void;
 }
 
 export interface SendUserMessageOptions {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
+  planMode?: boolean;
 }
 
 export type ChatResponder = (
@@ -46,6 +48,7 @@ interface SendMessageRequest {
   type: "sendMessage";
   text: string;
   includeIdeContext?: boolean;
+  planMode?: boolean;
 }
 
 export class ChatPanel {
@@ -125,7 +128,10 @@ export class ChatPanel {
       return;
     }
 
-    await this.submitMessage(message.text, { includeIdeContext: message.includeIdeContext });
+    await this.submitMessage(message.text, {
+      includeIdeContext: message.includeIdeContext,
+      planMode: message.planMode,
+    });
   }
 
   private postModelLabel(): void {
@@ -160,6 +166,7 @@ export class ChatPanel {
       let isStreamingAssistantMessage = false;
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
+        planMode: options.planMode ?? false,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         onChunk: (chunk) => {
           if (!isStreamingAssistantMessage) {
@@ -239,7 +246,9 @@ function isSendMessageRequest(message: unknown): message is SendMessageRequest {
   return (
     candidate.type === "sendMessage" &&
     typeof candidate.text === "string" &&
-    (candidate.includeIdeContext === undefined || typeof candidate.includeIdeContext === "boolean")
+    (candidate.includeIdeContext === undefined ||
+      typeof candidate.includeIdeContext === "boolean") &&
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
   );
 }
 

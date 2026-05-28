@@ -6,6 +6,7 @@ import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
+import ai.codesetu.prompts.PLAN_MODE_SKILL
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
 import ai.codesetu.settings.CodeSetuModelCatalog
@@ -107,12 +108,18 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "sendMessage" -> {
         val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
         val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
-        runChat(text, include, null)
+        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull ?: false
+        runChat(text, include, null, planMode)
       }
     }
   }
 
-  private fun runChat(text: String, includeContext: Boolean, captured: IdeContextPayload?) {
+  private fun runChat(
+    text: String,
+    includeContext: Boolean,
+    captured: IdeContextPayload?,
+    planMode: Boolean = false,
+  ) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
 
@@ -127,15 +134,16 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
 
       ApplicationManager.getApplication().executeOnPooledThread {
-        runRequest(trimmed, ideContext)
+        runRequest(trimmed, ideContext, planMode)
       }
     }
   }
 
-  private fun runRequest(userText: String, ideContext: IdeContextPayload) {
+  private fun runRequest(userText: String, ideContext: IdeContextPayload, planMode: Boolean) {
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
+    val pinnedSkills = if (planMode) listOf(PLAN_MODE_SKILL) else emptyList()
     val contextMarkdown = buildContextMarkdown(ideContext)
     val userMessage = if (contextMarkdown.isBlank()) {
       userText
@@ -143,7 +151,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "$userText\n\nCurrent IDE context:\n\n$contextMarkdown"
     }
     history.add(ChatMessage("user", userMessage))
-    val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
+    val messages =
+      listOf(ChatMessage("system", buildSystemMessage(instructions, pinnedSkills))) + history
 
     var started = false
     val response = try {

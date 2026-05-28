@@ -409,6 +409,62 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         transform: translateX(16px);
       }
 
+      .mode-pill {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+        color: var(--vscode-button-background);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+      }
+
+      .mode-pill[data-active="true"] {
+        display: inline-flex;
+      }
+
+      .mode-pill .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--vscode-button-background);
+      }
+
+      .approve-row {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .approve-row[data-show="true"] {
+        display: inline-flex;
+      }
+
+      .approve-button {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 7px;
+        cursor: pointer;
+        font: inherit;
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+      }
+
+      .approve-button:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+
+      .approve-hint {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+      }
+
       @media (max-width: 520px) {
         body {
           padding: 12px;
@@ -451,6 +507,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="M5 12h14" />
                 </svg>
               </button>
+              <span
+                id="plan-mode-pill"
+                class="mode-pill"
+                data-active="false"
+                title="Plan mode is active — the assistant will plan, not edit"
+              >
+                <span class="dot" aria-hidden="true"></span>
+                Plan
+              </span>
             </div>
             <div class="toolbar-group secondary">
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
@@ -484,6 +549,27 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="plan" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6h12" />
+                  <path d="M4 12h16" />
+                  <path d="M4 18h8" />
+                  <path d="m17 16 2 2 4-4" />
+                </svg>
+              </span>
+              Plan Mode
+            </span>
+            <span class="switch">
+              <input id="plan-mode" type="checkbox" />
+              <span class="switch-track"></span>
+            </span>
+          </label>
+        </div>
+        <div id="approve-row" class="approve-row" data-show="false">
+          <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
+          <span class="approve-hint">Sends "${escapeHtml("APPROVED — proceed with implementation")}" and exits Plan Mode.</span>
         </div>
       </form>
     </main>
@@ -496,10 +582,47 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
       const includeContext = document.getElementById("include-context");
+      const planModeToggle = document.getElementById("plan-mode");
+      const planModePill = document.getElementById("plan-mode-pill");
+      const approveRow = document.getElementById("approve-row");
+      const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
       const modelLabel = document.getElementById("model-label");
       let activeAssistantMessage;
       let activeAssistantRaw = "";
+      // Tracks whether the most recent assistant turn was produced under plan
+      // mode. When true and plan mode is still on, the Approve & Run row shows.
+      let lastTurnWasPlan = false;
+
+      // Persist plan-mode and include-context across reloads using webview state.
+      const savedState = vscode.getState() || {};
+      if (savedState.planMode === true) {
+        planModeToggle.checked = true;
+      }
+      if (savedState.includeContext === false) {
+        includeContext.checked = false;
+      }
+
+      function persistState() {
+        vscode.setState({
+          planMode: planModeToggle.checked,
+          includeContext: includeContext.checked,
+        });
+      }
+
+      function updatePlanModeUi() {
+        planModePill.setAttribute("data-active", String(planModeToggle.checked));
+        const showApprove = planModeToggle.checked && lastTurnWasPlan;
+        approveRow.setAttribute("data-show", String(showApprove));
+      }
+
+      updatePlanModeUi();
+
+      planModeToggle.addEventListener("change", () => {
+        persistState();
+        updatePlanModeUi();
+      });
+      includeContext.addEventListener("change", persistState);
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
@@ -636,6 +759,26 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
       });
 
+      // Set at send time, consumed when the assistant turn finishes so we can
+      // show Approve & Run on plan-mode turns and only on plan-mode turns.
+      let pendingTurnWasPlan = false;
+
+      function sendUserMessage(text) {
+        textarea.value = "";
+        setMenuOpen(false);
+        // Hide the approve row immediately so a rapid second send doesn't keep
+        // it visible; it reappears only if the next assistant turn is a plan.
+        lastTurnWasPlan = false;
+        updatePlanModeUi();
+        pendingTurnWasPlan = planModeToggle.checked;
+        vscode.postMessage({
+          type: "sendMessage",
+          text,
+          includeIdeContext: includeContext.checked,
+          planMode: planModeToggle.checked,
+        });
+      }
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const text = textarea.value.trim();
@@ -644,13 +787,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           return;
         }
 
-        textarea.value = "";
-        setMenuOpen(false);
-        vscode.postMessage({
-          type: "sendMessage",
-          text,
-          includeIdeContext: includeContext.checked,
-        });
+        sendUserMessage(text);
+      });
+
+      approveRunButton.addEventListener("click", () => {
+        // Drop plan mode for this turn and the rest of the session, then send
+        // the canonical approval phrase so the model implements the plan.
+        planModeToggle.checked = false;
+        persistState();
+        updatePlanModeUi();
+        sendUserMessage("APPROVED — proceed with implementation");
       });
 
       window.addEventListener("message", (event) => {
@@ -665,6 +811,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           } else {
             appendMessage("assistant", message.text);
           }
+          lastTurnWasPlan = pendingTurnWasPlan;
+          updatePlanModeUi();
         }
 
         if (message.type === "assistantMessageStart") {
@@ -678,6 +826,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         if (message.type === "assistantMessageDone") {
           activeAssistantMessage = undefined;
           activeAssistantRaw = "";
+          lastTurnWasPlan = pendingTurnWasPlan;
+          updatePlanModeUi();
         }
 
         if (message.type === "userMessage") {

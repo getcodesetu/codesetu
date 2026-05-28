@@ -55,7 +55,19 @@ export function buildActionUserMessage(
   return parts.join("\n\n");
 }
 
-export function buildCodeSetuSystemMessage(instructions: WorkspaceInstruction[] = []): string {
+export interface SystemMessageOptions {
+  /**
+   * Skill-like prompt fragments pinned for this turn. Appended after the
+   * workspace instructions so they have the last word in the system prompt.
+   * Used by Plan Mode and (in Phase 2) the routed-skill flow.
+   */
+  pinnedSkills?: WorkspaceInstruction[];
+}
+
+export function buildCodeSetuSystemMessage(
+  instructions: WorkspaceInstruction[] = [],
+  options: SystemMessageOptions = {},
+): string {
   const parts = [
     "You are CodeSetu, an IDE coding assistant for Indian developers. Be precise, code-aware, and concise.",
     "Use the supplied IDE context as the source of truth. Ask for missing context when needed.",
@@ -63,6 +75,11 @@ export function buildCodeSetuSystemMessage(instructions: WorkspaceInstruction[] 
 
   if (instructions.length > 0) {
     parts.push(formatWorkspaceInstructions(instructions));
+  }
+
+  const pinned = options.pinnedSkills ?? [];
+  if (pinned.length > 0) {
+    parts.push(formatPinnedSkills(pinned));
   }
 
   return parts.join("\n\n");
@@ -78,4 +95,12 @@ function formatWorkspaceInstructions(instructions: WorkspaceInstruction[]): stri
   );
 
   return ["Workspace instructions", ...rendered].join("\n\n");
+}
+
+function formatPinnedSkills(skills: WorkspaceInstruction[]): string {
+  const rendered = skills.map((skill) =>
+    [`Skill: ${skill.name} (${skill.id})`, skill.description, skill.body].join("\n"),
+  );
+
+  return ["Active skills", ...rendered].join("\n\n");
 }

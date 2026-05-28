@@ -15,6 +15,7 @@
  */
 
 import {
+  PLAN_MODE_SKILL,
   buildCodeSetuSystemMessage,
   buildContextMarkdown,
   createProvider,
@@ -91,6 +92,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       requestContext?.ideContext ??
         ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {}),
       requestContext?.onChunk,
+      requestContext?.planMode ? [PLAN_MODE_SKILL] : [],
     );
 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
@@ -143,6 +145,7 @@ async function sendChatRequest(
   instructions: readonly WorkspaceInstruction[] = [],
   ideContext: IdeContextPayload = {},
   onChunk?: (chunk: string) => void,
+  pinnedSkills: readonly WorkspaceInstruction[] = [],
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -165,7 +168,9 @@ async function sendChatRequest(
       messages: [
         {
           role: "system",
-          content: buildCodeSetuSystemMessage([...instructions]),
+          content: buildCodeSetuSystemMessage([...instructions], {
+            pinnedSkills: [...pinnedSkills],
+          }),
         },
         ...contextualMessages,
       ],
