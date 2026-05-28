@@ -77,8 +77,11 @@ export function applyAuth(auth: Auth): AuthApplication {
 }
 
 function encodeBase64(value: string): string {
-  const bufferCtor = (globalThis as { Buffer?: { from(input: string, enc: string): { toString(enc: string): string } } })
-    .Buffer;
+  const bufferCtor = (
+    globalThis as {
+      Buffer?: { from(input: string, enc: string): { toString(enc: string): string } };
+    }
+  ).Buffer;
   if (bufferCtor) {
     return bufferCtor.from(value, "utf-8").toString("base64");
   }

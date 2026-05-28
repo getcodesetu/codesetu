@@ -36,10 +36,7 @@ function findInNodes(nodes: CollectionNode[], nodeId: string): RequestNode | und
 }
 
 /** Returns a new collections array with the matching request node replaced. */
-export function replaceRequestNode(
-  collections: Collection[],
-  node: RequestNode,
-): Collection[] {
+export function replaceRequestNode(collections: Collection[], node: RequestNode): Collection[] {
   return collections.map((collection) => ({
     ...collection,
     children: replaceInNodes(collection.children, node),
@@ -69,9 +66,7 @@ function removeFromNodes(nodes: CollectionNode[], nodeId: string): CollectionNod
   return nodes
     .filter((node) => node.id !== nodeId)
     .map((node) =>
-      node.kind === "folder"
-        ? { ...node, children: removeFromNodes(node.children, nodeId) }
-        : node,
+      node.kind === "folder" ? { ...node, children: removeFromNodes(node.children, nodeId) } : node,
     );
 }
 
@@ -109,22 +104,14 @@ function addToFolder(
   });
 }
 
-export function renameNode(
-  collections: Collection[],
-  nodeId: string,
-  name: string,
-): Collection[] {
+export function renameNode(collections: Collection[], nodeId: string, name: string): Collection[] {
   return collections.map((collection) => ({
     ...collection,
     children: renameInNodes(collection.children, nodeId, name),
   }));
 }
 
-function renameInNodes(
-  nodes: CollectionNode[],
-  nodeId: string,
-  name: string,
-): CollectionNode[] {
+function renameInNodes(nodes: CollectionNode[], nodeId: string, name: string): CollectionNode[] {
   return nodes.map((node) => {
     if (node.id === nodeId) {
       return { ...node, name };

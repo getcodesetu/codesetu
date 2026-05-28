@@ -31,8 +31,19 @@ interface InsomniaResource {
   url?: string;
   headers?: { name?: string; value?: string; disabled?: boolean }[];
   parameters?: { name?: string; value?: string; disabled?: boolean }[];
-  body?: { mimeType?: string; text?: string; params?: { name?: string; value?: string; disabled?: boolean }[] };
-  authentication?: { type?: string; token?: string; username?: string; password?: string; key?: string; value?: string };
+  body?: {
+    mimeType?: string;
+    text?: string;
+    params?: { name?: string; value?: string; disabled?: boolean }[];
+  };
+  authentication?: {
+    type?: string;
+    token?: string;
+    username?: string;
+    password?: string;
+    key?: string;
+    value?: string;
+  };
 }
 
 export function isInsomniaExport(doc: unknown): boolean {
@@ -136,9 +147,15 @@ function mapAuth(auth: InsomniaResource["authentication"]): Auth {
     case "bearer":
       return { type: "bearer", bearer: { token: auth.token ?? "" } };
     case "basic":
-      return { type: "basic", basic: { username: auth.username ?? "", password: auth.password ?? "" } };
+      return {
+        type: "basic",
+        basic: { username: auth.username ?? "", password: auth.password ?? "" },
+      };
     case "apikey":
-      return { type: "apikey", apikey: { key: auth.key ?? "", value: auth.value ?? "", location: "header" } };
+      return {
+        type: "apikey",
+        apikey: { key: auth.key ?? "", value: auth.value ?? "", location: "header" },
+      };
     default:
       return createNoneAuth();
   }

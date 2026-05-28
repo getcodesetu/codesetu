@@ -14,13 +14,7 @@
  * limitations under the License.
  */
 
-import type {
-  Auth,
-  Collection,
-  CollectionNode,
-  HttpRequest,
-  RequestBody,
-} from "../model.js";
+import type { Auth, Collection, CollectionNode, HttpRequest, RequestBody } from "../model.js";
 
 const SCHEMA = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json";
 
@@ -67,10 +61,15 @@ function exportRequest(http: HttpRequest | undefined): Record<string, unknown> {
         value: param.value,
         disabled: !param.enabled,
       })),
-      variable: http.pathVariables.map((variable) => ({ key: variable.key, value: variable.value })),
+      variable: http.pathVariables.map((variable) => ({
+        key: variable.key,
+        value: variable.value,
+      })),
     },
     ...(http.body.mode === "none" ? {} : { body: exportBody(http.body) }),
-    ...(http.auth.type === "none" || http.auth.type === "inherit" ? {} : { auth: exportAuth(http.auth) }),
+    ...(http.auth.type === "none" || http.auth.type === "inherit"
+      ? {}
+      : { auth: exportAuth(http.auth) }),
   };
 }
 

@@ -92,13 +92,7 @@ export class ApiClientPanel {
     );
 
     const state = await storage.load();
-    ApiClientPanel.current = new ApiClientPanel(
-      panel,
-      extensionUri,
-      storage,
-      outputChannel,
-      state,
-    );
+    ApiClientPanel.current = new ApiClientPanel(panel, extensionUri, storage, outputChannel, state);
     return ApiClientPanel.current;
   }
 

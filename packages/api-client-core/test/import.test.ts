@@ -36,7 +36,10 @@ describe("parseCurl", () => {
 describe("importCollections", () => {
   it("auto-detects and imports a Postman v2.1 collection", () => {
     const postman = JSON.stringify({
-      info: { name: "Demo", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+      info: {
+        name: "Demo",
+        schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+      },
       item: [
         {
           name: "List Users",
@@ -63,7 +66,9 @@ describe("importCollections", () => {
     const har = JSON.stringify({
       log: {
         entries: [
-          { request: { method: "GET", url: "https://api.test/ping", headers: [], queryString: [] } },
+          {
+            request: { method: "GET", url: "https://api.test/ping", headers: [], queryString: [] },
+          },
         ],
       },
     });
@@ -105,9 +110,8 @@ describe("importCollections", () => {
 
 describe("export", () => {
   it("round-trips a collection through Postman export and import", () => {
-    const original = importCollections(
-      `curl -X POST 'https://api.test/x' -H 'X-Test: 1' -d 'a=b'`,
-    ).collections[0];
+    const original = importCollections(`curl -X POST 'https://api.test/x' -H 'X-Test: 1' -d 'a=b'`)
+      .collections[0];
     const exported = exportPostman(original!);
     const reimported = importCollections(JSON.stringify(exported));
     expect(reimported.format).toBe("postman");
@@ -124,6 +128,6 @@ describe("export", () => {
     const node = parseCurl(`curl -X POST 'https://api.test/data' -d '{"a":1}'`);
     const code = generateCode(node.http!, "python");
     expect(code).toContain("import requests");
-    expect(code).toContain("requests.request(\"POST\"");
+    expect(code).toContain('requests.request("POST"');
   });
 });

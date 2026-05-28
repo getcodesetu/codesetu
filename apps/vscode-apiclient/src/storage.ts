@@ -58,9 +58,7 @@ export class ApiClientStorage {
     const file = this.workspaceFile;
     if (file) {
       try {
-        await vscode.workspace.fs.createDirectory(
-          vscode.Uri.joinPath(file, ".."),
-        );
+        await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(file, ".."));
         await vscode.workspace.fs.writeFile(
           file,
           Buffer.from(JSON.stringify(normalized, null, 2), "utf-8"),
