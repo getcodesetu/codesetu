@@ -42,15 +42,22 @@ jobs:
       - name: Compute version
         id: version
         run: |
-          MAJOR_MINOR=$(grep '^pluginVersion=' apps/jetbrains/gradle.properties | cut -d= -f2 | cut -d. -f1-2)
-          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          # Full version is read from apps/jetbrains/gradle.properties (single source of truth).
+          # Bump pluginVersion in a commit before running this workflow.
+          VERSION=$(grep '^pluginVersion=' apps/jetbrains/gradle.properties | cut -d= -f2)
+          TAG="jetbrains-v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+            || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists. Bump pluginVersion in apps/jetbrains/gradle.properties before releasing."
+            exit 1
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=jetbrains-v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Computed version: ${VERSION}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: ${VERSION}"
 
       - name: Build and verify plugin
         working-directory: apps/jetbrains
-        run: ./gradlew -PpluginVersion=${{ steps.version.outputs.version }} buildPlugin verifyPlugin --no-daemon
+        run: ./gradlew buildPlugin verifyPlugin --no-daemon
 
       - name: Verify plugin zip exists
         run: |
@@ -67,7 +74,7 @@ jobs:
         working-directory: apps/jetbrains
         env:
           JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
-        run: ./gradlew -PpluginVersion=${{ steps.version.outputs.version }} publishPlugin --no-daemon
+        run: ./gradlew publishPlugin --no-daemon
 
       - name: Configure git for tagging
         if: ${{ !inputs.dry-run }}
@@ -99,7 +106,6 @@ jobs:
             echo ""
             echo "- Version: \`${{ steps.version.outputs.version }}\`"
             echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
-            echo "- Run number: \`${{ github.run_number }}\`"
             if [ "${{ inputs.dry-run }}" = "true" ]; then
               echo "- Mode: **dry-run** (no publish, no tag pushed, no GitHub Release)"
             fi
