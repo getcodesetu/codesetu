@@ -121,5 +121,13 @@
     <applicationConfigurable
       instance="ai.codesetu.settings.CodeSetuSettingsConfigurable"
       displayName="CodeSetu"/>
+    <!--
+      Adds the CEF flags required for the chat webview's mic button. Without
+      this, getUserMedia throws NotSupportedError in the JCEF browser. See
+      CodeSetuJBCefArgsProvider for the per-flag rationale and the README's
+      "Voice in JetBrains" section for the user-facing trade-off.
+    -->
+    <jbCefAppRequiredArgumentsProvider
+      implementation="ai.codesetu.toolwindow.CodeSetuJBCefArgsProvider"/>
   </extensions>
 </idea-plugin>

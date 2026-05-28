@@ -9,7 +9,16 @@ fill-in-the-middle completions.
 - Status bar entry
 - Repo-aware chat context from the active editor and workspace snippets
 - Selected-code actions: Explain, Refactor, Write Tests, Fix Bug, Add Docs
+- **Plan Mode** — toggle the assistant into "produce a numbered plan, no edits"; one-click **Approve & Run** sends the implementation turn
+- **AI Skills with a slash palette** — type `/` in the composer to invoke
+  `/plan`, `/explain`, `/refactor`, `/test`, `/indic`. Keyword auto-routing picks
+  the right skill from natural-language prompts (toggle with `codesetu.skills.autoRoute`)
+- **Voice** — mic button (push-to-toggle) and a "read aloud" toggle in the
+  composer. STT and TTS backends: browser SpeechRecognition (default, free),
+  Sarvam Saaras + Bulbul, OpenAI-compatible Whisper, Hugging Face Whisper,
+  or local-only / air-gapped. Run `CodeSetu: Setup Speech Provider` to switch.
 - `CodeSetu: Setup Provider` guided provider configuration
+- `CodeSetu: Setup Speech Provider` guided speech configuration
 - `CodeSetu: Diagnose Provider` connection test and friendly errors
 - Inline completions for code files
 - Sarvam provider support
