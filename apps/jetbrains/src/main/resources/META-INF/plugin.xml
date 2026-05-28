@@ -4,11 +4,56 @@
   <vendor url="https://github.com/getcodesetu/codesetu">CodeSetu Maintainers</vendor>
 
   <description><![CDATA[
-    Open-source AI coding assistant for JetBrains IDEs.
-    Multi-provider — works with Sarvam, OpenAI-compatible APIs (Ollama, vLLM, OpenRouter), and local self-hosted deployments.
-    Built for Indian developers, public-sector teams, and air-gapped enterprises.<br/><br/>
-    This plugin is in early scaffold. Source: <a href="https://github.com/getcodesetu/codesetu">github.com/getcodesetu/codesetu</a>
-    &middot; Community: <a href="https://discord.gg/sjVKU8cpC6">Discord</a>
+    <h2>CodeSetu — Open-source AI coding assistant for JetBrains IDEs</h2>
+
+    <p>
+      A privacy-aware, multi-provider Copilot / Cursor alternative for Indian developers,
+      enterprises, public-sector teams, and air-gapped deployments.
+      <b>Bring your own model.</b>
+    </p>
+
+    <h3>What you get</h3>
+    <ul>
+      <li><b>Chat tool window</b> — streamed, markdown-rendered replies with rendered code blocks, in a polished CodeSetu webview.</li>
+      <li><b>Selected-code actions</b> — Explain, Refactor, Write Tests, Fix Bug, Add Docs, right from the editor context menu.</li>
+      <li><b>Repo-aware context</b> — active file, selection, and cursor neighborhood are attached automatically (toggleable per message).</li>
+      <li><b>In-chat provider &amp; model switcher</b> — change providers, base URLs, and models without leaving the chat.</li>
+      <li><b>Workspace skills &amp; checks</b> — drop <code>.codesetu/skills/*.md</code> and <code>.codesetu/checks/*.md</code> files; they are folded into the system prompt.</li>
+      <li><b>Multi-turn conversation history</b> — kept per session.</li>
+    </ul>
+
+    <h3>Works with</h3>
+    <ul>
+      <li><b>Sarvam</b> — Indic-aware hosted models.</li>
+      <li><b>Hugging Face</b> — the hosted router (<code>router.huggingface.co/v1</code>), your dedicated Inference Endpoints, or self-hosted TGI. Any served chat model (Llama, Qwen, DeepSeek, Mistral, Gemma…) with your <code>hf_…</code> token.</li>
+      <li><b>OpenAI-compatible</b> — Ollama, vLLM, SGLang, OpenRouter, LM Studio, any compatible endpoint.</li>
+      <li><b>Self-hosted &amp; air-gapped</b> — bring your own URL. No outbound calls beyond the provider you configure.</li>
+    </ul>
+
+    <h3>Privacy &amp; security</h3>
+    <ul>
+      <li>API keys live in the OS <b>PasswordSafe</b> (keychain) — never in plaintext settings XML.</li>
+      <li>Common secret files (<code>.env*</code>, <code>*.pem</code>, <code>*.key</code>, <code>secrets/</code>, …) are excluded from auto-collected workspace context.</li>
+      <li>No CodeSetu telemetry. Your prompts go only to the provider you configured.</li>
+      <li>100% open-source under Apache 2.0.</li>
+    </ul>
+
+    <h3>Quick start</h3>
+    <ol>
+      <li>Install the plugin and restart the IDE.</li>
+      <li>Open the <b>CodeSetu</b> tool window (right dock).</li>
+      <li>Click the <b>provider · model</b> chip in the composer → <b>Configure provider / endpoint…</b> → pick Sarvam, Hugging Face, or OpenAI-compatible, paste your key, and start chatting.</li>
+    </ol>
+
+    <p><b>Selected-code actions:</b> right-click any selection → <i>Explain / Refactor / Write Tests / Fix Bug / Add Docs with CodeSetu</i>.</p>
+
+    <h3>Links</h3>
+    <ul>
+      <li><a href="https://github.com/getcodesetu/codesetu">Source on GitHub</a></li>
+      <li><a href="https://github.com/getcodesetu/codesetu/blob/main/INSTALL.md">Install &amp; setup guide</a></li>
+      <li><a href="https://discord.gg/sjVKU8cpC6">Community Discord</a></li>
+      <li><a href="https://github.com/getcodesetu/codesetu/issues">Report an issue</a></li>
+    </ul>
   ]]></description>
 
   <change-notes><![CDATA[
