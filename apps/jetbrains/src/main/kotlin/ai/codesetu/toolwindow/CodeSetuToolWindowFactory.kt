@@ -15,6 +15,9 @@ import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
 import ai.codesetu.skills.BUILTIN_SKILLS
 import ai.codesetu.skills.routeSkills
+import ai.codesetu.speech.AudioPayload
+import ai.codesetu.speech.CodeSetuSpeechClient
+import java.util.Base64
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -69,6 +72,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val browser = JBCefBrowser()
   private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
+  private val speechClient = CodeSetuSpeechClient()
   private val history = mutableListOf<ChatMessage>()
 
   // EDT-only state: outgoing messages buffered until the page signals "ready".
@@ -113,6 +117,67 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull ?: false
         runChat(text, include, null, planMode)
       }
+      "transcribe" -> {
+        val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
+        val mimeType = obj["mimeType"]?.jsonPrimitive?.contentOrNull ?: "audio/webm"
+        val base64 = obj["base64"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+          runTranscribe(requestId, mimeType, base64)
+        }
+      }
+      "synthesize" -> {
+        val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
+        val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+          runSynthesize(requestId, text)
+        }
+      }
+    }
+  }
+
+  private fun runTranscribe(requestId: String, mimeType: String, base64: String) {
+    val state = CodeSetuSettingsState.getInstance().state
+    val language = state.speechLanguage.ifBlank { "en-US" }
+    try {
+      val bytes = Base64.getDecoder().decode(base64)
+      val result = speechClient.transcribe(AudioPayload(mimeType, bytes), language)
+      push(
+        message("transcription") {
+          put("requestId", requestId)
+          put("text", result.text)
+          if (result.language != null) put("language", result.language)
+        },
+      )
+    } catch (error: Exception) {
+      push(
+        message("speechError") {
+          put("requestId", requestId)
+          put("text", "Transcription failed: ${error.message ?: error}")
+        },
+      )
+    }
+  }
+
+  private fun runSynthesize(requestId: String, text: String) {
+    val state = CodeSetuSettingsState.getInstance().state
+    val language = state.speechLanguage.ifBlank { "en-US" }
+    try {
+      val audio = speechClient.synthesize(text, language)
+      val encoded = Base64.getEncoder().encodeToString(audio.bytes)
+      push(
+        message("synthesized") {
+          put("requestId", requestId)
+          put("mimeType", audio.mimeType)
+          put("base64", encoded)
+        },
+      )
+    } catch (error: Exception) {
+      push(
+        message("speechError") {
+          put("requestId", requestId)
+          put("text", "TTS failed: ${error.message ?: error}")
+        },
+      )
     }
   }
 

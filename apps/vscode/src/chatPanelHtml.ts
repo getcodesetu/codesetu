@@ -21,6 +21,20 @@ export interface RenderChatPanelHtmlOptions {
   modelLabel: string;
   /** Slash commands available in the composer palette. */
   slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
+  /**
+   * Origin allowlist used in the CSP `connect-src` so the webview can talk to
+   * configured speech endpoints (Sarvam / HF / OpenAI / local Whisper). Always
+   * includes 'self'.
+   */
+  speechConnectSources?: ReadonlyArray<string>;
+  /** Initial STT provider id (informs which mic path the webview activates). */
+  speechSttProvider?: string;
+  /** Initial TTS provider id. */
+  speechTtsProvider?: string;
+  /** BCP-47 language code, e.g. "en-US", "hi-IN". */
+  speechLanguage?: string;
+  /** TTS toggled on at panel render time. */
+  speechTtsEnabled?: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -39,6 +53,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
     /</g,
     "\\u003c",
   );
+  // CSP connect-src allowlist. 'self' covers the webview origin; any extra
+  // entries are configured speech endpoints (Sarvam / HF / local Whisper).
+  const connectSources = ["'self'", ...(options.speechConnectSources ?? [])].join(" ");
+  const speechSttProvider = options.speechSttProvider ?? "browser";
+  const speechTtsProvider = options.speechTtsProvider ?? "browser";
+  const speechLanguage = options.speechLanguage ?? "en-US";
+  const speechTtsEnabled = options.speechTtsEnabled === true;
+  const speechConfigJson = JSON.stringify({
+    sttProvider: speechSttProvider,
+    ttsProvider: speechTtsProvider,
+    language: speechLanguage,
+    ttsEnabled: speechTtsEnabled,
+  }).replace(/</g, "\\u003c");
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -47,7 +74,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src ${options.cspSource} 'unsafe-inline'; script-src 'nonce-${options.nonce}';"
+      content="default-src 'none'; style-src ${options.cspSource} 'unsafe-inline'; script-src 'nonce-${options.nonce}'; media-src 'self' blob:; connect-src ${connectSources};"
     />
     <style>
       * {
@@ -523,6 +550,50 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         white-space: nowrap;
       }
 
+      .mic-button[data-state="listening"] {
+        color: #d24a4a;
+        background: color-mix(in srgb, #d24a4a 14%, transparent);
+      }
+
+      .mic-button[data-state="listening"]::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 50%;
+        border: 2px solid #d24a4a;
+        opacity: 0.6;
+        animation: codesetuMicPulse 1.2s ease-out infinite;
+      }
+
+      .mic-button {
+        position: relative;
+      }
+
+      .mic-button[data-state="transcribing"] {
+        opacity: 0.7;
+      }
+
+      @keyframes codesetuMicPulse {
+        0% { transform: scale(1); opacity: 0.6; }
+        100% { transform: scale(1.4); opacity: 0; }
+      }
+
+      .tts-button[data-active="true"] {
+        color: var(--vscode-button-background);
+        background: color-mix(in srgb, var(--vscode-button-background) 14%, transparent);
+      }
+
+      .speech-status {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+        min-height: 16px;
+      }
+
+      .speech-status.error {
+        color: var(--vscode-inputValidation-errorForeground, #d24a4a);
+      }
+
       @media (max-width: 520px) {
         body {
           padding: 12px;
@@ -576,6 +647,34 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               </span>
             </div>
             <div class="toolbar-group secondary">
+              <button
+                id="tts-button"
+                class="icon-button tts-button"
+                type="button"
+                data-active="${speechTtsEnabled ? "true" : "false"}"
+                aria-pressed="${speechTtsEnabled ? "true" : "false"}"
+                aria-label="Toggle read responses aloud"
+                title="Read assistant responses aloud"
+              >
+                <svg class="composer-icon" data-icon="speaker" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M5 9v6h4l5 4V5L9 9H5z" />
+                  <path d="M16 8.5a4 4 0 0 1 0 7" />
+                </svg>
+              </button>
+              <button
+                id="mic-button"
+                class="icon-button mic-button"
+                type="button"
+                data-state="idle"
+                aria-label="Dictate"
+                title="Dictate — tap to toggle, hold for push-to-talk"
+              >
+                <svg class="composer-icon" data-icon="mic" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0" />
+                  <path d="M12 18v3" />
+                </svg>
+              </button>
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
@@ -630,6 +729,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
           <span class="approve-hint">Sends "${escapeHtml("APPROVED — proceed with implementation")}" and exits Plan Mode.</span>
         </div>
+        <div id="speech-status" class="speech-status" aria-live="polite"></div>
       </form>
     </main>
     <script nonce="${options.nonce}">
@@ -788,6 +888,231 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           textarea.focus();
         }
       });
+
+      // Voice: mic (STT) and TTS toggle -----------------------------------------
+      const speechConfig = ${speechConfigJson};
+      const micButton = document.getElementById("mic-button");
+      const ttsButton = document.getElementById("tts-button");
+      const speechStatus = document.getElementById("speech-status");
+
+      function setSpeechStatus(text, isError) {
+        speechStatus.textContent = text || "";
+        speechStatus.classList.toggle("error", Boolean(isError));
+      }
+
+      function setMicState(state) {
+        micButton.setAttribute("data-state", state);
+      }
+
+      let ttsEnabled = speechConfig.ttsEnabled === true;
+      ttsButton.setAttribute("data-active", String(ttsEnabled));
+      ttsButton.setAttribute("aria-pressed", String(ttsEnabled));
+      ttsButton.addEventListener("click", () => {
+        ttsEnabled = !ttsEnabled;
+        ttsButton.setAttribute("data-active", String(ttsEnabled));
+        ttsButton.setAttribute("aria-pressed", String(ttsEnabled));
+        setSpeechStatus(ttsEnabled ? "Read aloud: on" : "Read aloud: off", false);
+      });
+
+      // ---- STT: browser/local path uses WebSpeech; server path uses MediaRecorder.
+      const SttProvider = speechConfig.sttProvider || "browser";
+      const useBrowserStt = SttProvider === "browser" || SttProvider === "local";
+      const SpeechRecognitionCtor =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      let recognition;
+      let mediaRecorder;
+      let recorderChunks = [];
+      let listening = false;
+
+      function appendToTextarea(text) {
+        if (!text) return;
+        const trimmed = String(text).trim();
+        if (trimmed.length === 0) return;
+        const separator = textarea.value.length > 0 && !textarea.value.endsWith(" ") ? " " : "";
+        textarea.value += separator + trimmed;
+        textarea.dispatchEvent(new Event("input"));
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+
+      function startBrowserStt() {
+        if (!SpeechRecognitionCtor) {
+          setSpeechStatus(
+            "Browser SpeechRecognition is unavailable. Switch the speech provider in settings.",
+            true,
+          );
+          return;
+        }
+        try {
+          recognition = new SpeechRecognitionCtor();
+        } catch (error) {
+          setSpeechStatus("Could not start speech recognition: " + error, true);
+          return;
+        }
+        recognition.lang = speechConfig.language || "en-US";
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        let finalText = "";
+        recognition.addEventListener("result", (event) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              finalText += result[0].transcript;
+            } else {
+              interim += result[0].transcript;
+            }
+          }
+          if (interim) setSpeechStatus("Listening: " + interim, false);
+        });
+        recognition.addEventListener("error", (event) => {
+          setSpeechStatus("Speech recognition error: " + (event.error || "unknown"), true);
+          stopListening();
+        });
+        recognition.addEventListener("end", () => {
+          if (finalText) appendToTextarea(finalText);
+          setSpeechStatus("", false);
+          listening = false;
+          setMicState("idle");
+        });
+        recognition.start();
+        listening = true;
+        setMicState("listening");
+        setSpeechStatus("Listening… (tap mic to stop)", false);
+      }
+
+      async function startServerStt() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setSpeechStatus("getUserMedia is unavailable in this environment.", true);
+          return;
+        }
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+          setSpeechStatus("Microphone permission denied or unavailable.", true);
+          return;
+        }
+        recorderChunks = [];
+        try {
+          mediaRecorder = new MediaRecorder(stream);
+        } catch (error) {
+          setSpeechStatus("MediaRecorder is unavailable.", true);
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) recorderChunks.push(event.data);
+        });
+        mediaRecorder.addEventListener("stop", async () => {
+          stream.getTracks().forEach((track) => track.stop());
+          if (recorderChunks.length === 0) {
+            setSpeechStatus("", false);
+            listening = false;
+            setMicState("idle");
+            return;
+          }
+          setMicState("transcribing");
+          setSpeechStatus("Transcribing…", false);
+          const blob = new Blob(recorderChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+          const base64 = await blobToBase64(blob);
+          const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+          pendingTranscriptions.set(requestId, () => {});
+          vscode.postMessage({
+            type: "transcribe",
+            requestId,
+            mimeType: blob.type,
+            base64,
+          });
+        });
+        mediaRecorder.start();
+        listening = true;
+        setMicState("listening");
+        setSpeechStatus("Listening… (tap mic to stop)", false);
+      }
+
+      function startListening() {
+        if (listening) return;
+        if (useBrowserStt) {
+          startBrowserStt();
+        } else {
+          void startServerStt();
+        }
+      }
+
+      function stopListening() {
+        if (!listening) {
+          setMicState("idle");
+          return;
+        }
+        if (useBrowserStt && recognition) {
+          try { recognition.stop(); } catch (_) {}
+        } else if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+      }
+
+      micButton.addEventListener("click", () => {
+        if (listening) {
+          stopListening();
+        } else {
+          startListening();
+        }
+      });
+
+      const pendingTranscriptions = new Map();
+
+      function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = String(reader.result || "");
+            const commaIndex = result.indexOf(",");
+            resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      function base64ToBlob(base64, mimeType) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes.buffer], { type: mimeType || "application/octet-stream" });
+      }
+
+      const pendingTtsPlaybacks = new Map();
+
+      function speakViaBrowser(text) {
+        if (!window.speechSynthesis) {
+          setSpeechStatus("Browser speech synthesis is unavailable.", true);
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = speechConfig.language || "en-US";
+        window.speechSynthesis.speak(utterance);
+      }
+
+      function speakViaServer(text) {
+        const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+        pendingTtsPlaybacks.set(requestId, true);
+        setSpeechStatus("Synthesizing…", false);
+        vscode.postMessage({ type: "synthesize", requestId, text });
+      }
+
+      function maybeSpeakAssistant(text) {
+        if (!ttsEnabled || !text) return;
+        const trimmed = String(text).trim();
+        if (trimmed.length === 0) return;
+        const ttsProvider = speechConfig.ttsProvider || "browser";
+        if (ttsProvider === "browser" || ttsProvider === "local") {
+          speakViaBrowser(trimmed);
+        } else {
+          speakViaServer(trimmed);
+        }
+      }
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
@@ -978,6 +1303,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           }
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
+          maybeSpeakAssistant(message.text);
         }
 
         if (message.type === "assistantMessageStart") {
@@ -989,10 +1315,41 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         if (message.type === "assistantMessageDone") {
+          const finalText = activeAssistantRaw;
           activeAssistantMessage = undefined;
           activeAssistantRaw = "";
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
+          maybeSpeakAssistant(finalText);
+        }
+
+        if (message.type === "transcription") {
+          const callback = pendingTranscriptions.get(message.requestId);
+          if (callback) pendingTranscriptions.delete(message.requestId);
+          appendToTextarea(message.text);
+          setSpeechStatus("", false);
+          listening = false;
+          setMicState("idle");
+        }
+
+        if (message.type === "synthesized") {
+          pendingTtsPlaybacks.delete(message.requestId);
+          const blob = base64ToBlob(message.base64, message.mimeType);
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+          audio.play().catch((error) => {
+            setSpeechStatus("Audio playback failed: " + error.message, true);
+          });
+          setSpeechStatus("", false);
+        }
+
+        if (message.type === "speechError") {
+          pendingTranscriptions.delete(message.requestId);
+          pendingTtsPlaybacks.delete(message.requestId);
+          listening = false;
+          setMicState("idle");
+          setSpeechStatus(message.text || "Speech error.", true);
         }
 
         if (message.type === "userMessage") {

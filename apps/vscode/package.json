@@ -102,6 +102,11 @@
         "command": "codesetu.addDocsToSelection",
         "title": "Add Docs with CodeSetu",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.setupSpeechProvider",
+        "title": "CodeSetu: Setup Speech Provider",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
@@ -251,6 +256,67 @@
           "type": "boolean",
           "default": true,
           "description": "Auto-route built-in AI skills (Explain, Refactor, Write Tests, Indic Comments) by matching keywords in your message. Turn off to require slash invocation (e.g. /explain)."
+        },
+        "codesetu.speech.sttProvider": {
+          "type": "string",
+          "enum": [
+            "browser",
+            "local",
+            "sarvam",
+            "openai-compatible",
+            "huggingface"
+          ],
+          "enumDescriptions": [
+            "Use the browser SpeechRecognition API (no server call). Free, English best, requires Chromium-based VS Code.",
+            "Local / air-gapped — same as browser, but explicitly refuses any server fallback.",
+            "Sarvam Saaras hosted STT (Indic languages first-class). Requires a Sarvam API key.",
+            "Any OpenAI-compatible endpoint exposing /v1/audio/transcriptions (OpenAI, Groq, local whisper.cpp).",
+            "Hugging Face Inference Router (Whisper-large-v3 by default)."
+          ],
+          "default": "browser",
+          "description": "Speech-to-text backend used by the chat mic."
+        },
+        "codesetu.speech.ttsProvider": {
+          "type": "string",
+          "enum": [
+            "browser",
+            "local",
+            "sarvam",
+            "openai-compatible",
+            "huggingface"
+          ],
+          "default": "browser",
+          "description": "Text-to-speech backend used to read assistant responses."
+        },
+        "codesetu.speech.language": {
+          "type": "string",
+          "default": "en-US",
+          "description": "BCP-47 language code for STT and TTS, e.g. en-US, hi-IN, ta-IN, bn-IN."
+        },
+        "codesetu.speech.ttsEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Read assistant responses aloud when a turn ends. Off by default."
+        },
+        "codesetu.speech.sttBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for openai-compatible or huggingface STT (leave empty for provider default)."
+        },
+        "codesetu.speech.sttModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model id for STT (e.g. whisper-1, openai/whisper-large-v3). Empty = provider default."
+        },
+        "codesetu.speech.ttsBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for openai-compatible or huggingface TTS (leave empty to reuse sttBaseUrl)."
+        },
+        "codesetu.speech.ttsModel": {
+          "type": "string",
+          "default": "",
+          "description": "Model id for TTS (e.g. tts-1). Empty = provider default."
         }
       }
     }

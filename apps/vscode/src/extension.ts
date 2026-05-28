@@ -20,17 +20,20 @@ import {
   buildCodeSetuSystemMessage,
   buildContextMarkdown,
   createProvider,
+  createSpeechProvider,
   routeSkills,
+  type AudioBlob,
   type ChatCompletionRequest,
   type ChatMessage,
   type IdeContextPayload,
   type ProviderFactoryOptions,
+  type SpeechProvider,
   type WorkspaceInstruction,
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { completeAssistantText } from "./chatCompletionRetry";
-import { ChatPanel, type ChatResponder } from "./chatPanel";
+import { ChatPanel, type ChatResponder, type SpeechBridge } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
@@ -39,7 +42,13 @@ import { collectVSCodeContext } from "./ideContext";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
-import { getStoredApiKey, migrateApiKeyFromConfiguration } from "./secretStorage";
+import {
+  getStoredApiKey,
+  getStoredSpeechApiKey,
+  migrateApiKeyFromConfiguration,
+} from "./secretStorage";
+import { readSpeechConfiguration } from "./speechConfiguration";
+import { setupCodeSetuSpeechProvider } from "./speechSetup";
 import { loadWorkspaceInstructions } from "./workspaceInstructions";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -115,11 +124,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   };
 
+  const buildSpeechBridge = (): SpeechBridge => buildHostSpeechBridge(context.secrets, outputChannel);
+
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
-    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel);
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
   });
   const setupProviderCommand = vscode.commands.registerCommand("codesetu.setupProvider", () =>
     setupCodeSetuProvider(context.secrets),
+  );
+  const setupSpeechProviderCommand = vscode.commands.registerCommand(
+    "codesetu.setupSpeechProvider",
+    () => setupCodeSetuSpeechProvider(context.secrets),
   );
   const diagnoseProviderCommand = vscode.commands.registerCommand("codesetu.diagnoseProvider", () =>
     runCodeSetuProviderDiagnostics(outputChannel, apiKey),
@@ -133,6 +148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context,
     responder,
     outputChannel,
+    speechBridge: buildSpeechBridge,
   });
 
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
@@ -146,11 +162,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     inlineCompletionProvider,
     openChatCommand,
     setupProviderCommand,
+    setupSpeechProviderCommand,
     diagnoseProviderCommand,
     selectModelCommand,
     ...editorActions,
     homeView,
   );
+}
+
+function buildHostSpeechBridge(
+  secrets: vscode.SecretStorage,
+  outputChannel: vscode.OutputChannel,
+): SpeechBridge {
+  // Build the SpeechProvider lazily per request so settings changes (provider,
+  // baseURL, model, language) take effect without re-opening the chat panel.
+  const resolveProvider = async (purpose: "stt" | "tts"): Promise<SpeechProvider> => {
+    const speech = readSpeechConfiguration();
+    const providerId = purpose === "stt" ? speech.sttProvider : speech.ttsProvider;
+    if (providerId === "browser" || providerId === "local") {
+      throw new Error(
+        `Speech provider is "${providerId}" — this path is handled in the webview, the host should not be called.`,
+      );
+    }
+    const apiKey = await getStoredSpeechApiKey(secrets);
+    if (apiKey === undefined) {
+      throw new Error('No speech API key set. Run "CodeSetu: Setup Speech Provider".');
+    }
+    const baseURL = purpose === "stt" ? speech.sttBaseUrl : speech.ttsBaseUrl || speech.sttBaseUrl;
+    const model = purpose === "stt" ? speech.sttModel : speech.ttsModel;
+    const { provider } = createSpeechProvider({
+      provider: providerId,
+      apiKey,
+      ...(baseURL.length === 0 ? {} : { baseURL }),
+      ...(model.length === 0 ? {} : { model }),
+      language: speech.language,
+    });
+    if (provider === null) {
+      throw new Error(`Speech provider "${providerId}" has no host-side implementation.`);
+    }
+    return provider;
+  };
+
+  return {
+    transcribe: async (audio: AudioBlob, language: string) => {
+      const provider = await resolveProvider("stt");
+      if (provider.transcribe === undefined) {
+        throw new Error(`Provider "${provider.id}" does not support transcription.`);
+      }
+      outputChannel.appendLine(
+        `Speech.transcribe via ${provider.id} (${audio.bytes.byteLength} bytes, ${audio.mimeType})`,
+      );
+      return provider.transcribe(audio, { language });
+    },
+    synthesize: async (text: string, language: string) => {
+      const provider = await resolveProvider("tts");
+      if (provider.synthesize === undefined) {
+        throw new Error(`Provider "${provider.id}" does not support synthesis.`);
+      }
+      outputChannel.appendLine(`Speech.synthesize via ${provider.id} (${text.length} chars)`);
+      return provider.synthesize(text, { language });
+    },
+  };
 }
 
 export function deactivate(): void {

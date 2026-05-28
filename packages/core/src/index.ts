@@ -70,6 +70,33 @@ export {
   type RouteSkillsInput,
   type RouteSkillsResult,
 } from "./skills/index.js";
+export {
+  DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
+  DEFAULT_HUGGINGFACE_STT_MODEL,
+  DEFAULT_HUGGINGFACE_TTS_MODEL,
+  DEFAULT_SARVAM_LANGUAGE,
+  DEFAULT_SARVAM_SPEECH_BASE_URL,
+  DEFAULT_SARVAM_STT_MODEL,
+  DEFAULT_SARVAM_TTS_MODEL,
+  DEFAULT_SARVAM_TTS_VOICE,
+  HuggingFaceSpeechProvider,
+  OpenAICompatibleSpeechProvider,
+  SPEECH_PROVIDER_IDS,
+  SarvamSpeechProvider,
+  createSpeechProvider,
+  normalizeSpeechProvider,
+  type AudioBlob,
+  type CreateSpeechProviderResult,
+  type HuggingFaceSpeechProviderOptions,
+  type OpenAICompatibleSpeechOptions,
+  type SarvamSpeechProviderOptions,
+  type SpeechFactoryOptions,
+  type SpeechProvider,
+  type SpeechProviderId,
+  type SynthesizeOptions,
+  type TranscribeOptions,
+  type TranscriptionResult,
+} from "./speech/index.js";
 export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
 export { diagnoseProvider } from "./ide/diagnostics.js";
 export {

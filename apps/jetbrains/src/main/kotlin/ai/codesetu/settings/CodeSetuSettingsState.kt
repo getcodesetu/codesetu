@@ -18,6 +18,14 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     // into PasswordSafe on first access. New keys are never persisted here.
     var apiKey: String = "",
     var skillsAutoRoute: Boolean = true,
+    var speechSttProvider: String = "browser",
+    var speechTtsProvider: String = "browser",
+    var speechLanguage: String = "en-US",
+    var speechTtsEnabled: Boolean = false,
+    var speechSttBaseUrl: String = "",
+    var speechSttModel: String = "",
+    var speechTtsBaseUrl: String = "",
+    var speechTtsModel: String = "",
   )
 
   private var state = State()
@@ -44,6 +52,12 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
   fun setApiKey(value: String) {
     state.apiKey = ""
     CodeSetuApiKeyStore.set(value)
+  }
+
+  fun getSpeechApiKey(): String = CodeSetuSpeechApiKeyStore.get()
+
+  fun setSpeechApiKey(value: String) {
+    CodeSetuSpeechApiKeyStore.set(value)
   }
 
   companion object {
