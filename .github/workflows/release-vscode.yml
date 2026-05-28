@@ -41,17 +41,18 @@ jobs:
       - name: Compute version
         id: version
         run: |
-          # Major.minor is read from apps/vscode/package.json (single source of truth).
-          # Patch is the GitHub Actions run_number for this workflow (monotonic, never resets).
-          MAJOR_MINOR=$(node -p "require('./apps/vscode/package.json').version.split('.').slice(0,2).join('.')")
-          VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
+          # Full version is read from apps/vscode/package.json (single source of truth).
+          # Bump it in a commit before running this workflow.
+          VERSION=$(node -p "require('./apps/vscode/package.json').version")
+          TAG="vscode-v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null \
+            || git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists. Bump apps/vscode/package.json before releasing."
+            exit 1
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=vscode-v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Computed version: ${VERSION}"
-
-      - name: Apply version to manifest (workspace only, not committed)
-        working-directory: apps/vscode
-        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: ${VERSION}"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -89,8 +90,6 @@ jobs:
       - name: Tag the release commit
         if: ${{ !inputs.dry-run }}
         run: |
-          # Discard the in-workspace version bump so the tag points at the original commit.
-          git checkout apps/vscode/package.json
           git tag "${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
 
@@ -112,7 +111,6 @@ jobs:
             echo ""
             echo "- Version: \`${{ steps.version.outputs.version }}\`"
             echo "- Tag: \`${{ steps.version.outputs.tag }}\`"
-            echo "- Run number: \`${{ github.run_number }}\`"
             if [ "${{ inputs.dry-run }}" = "true" ]; then
               echo "- Mode: **dry-run** (nothing published, no tag pushed)"
             fi
