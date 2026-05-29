@@ -9,7 +9,7 @@
 
 A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, Hugging Face (any served chat model, dedicated endpoints, or self-hosted TGI), OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, repo-aware context, selected-code actions, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
 
-**Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
+**Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · **Plan Mode** (plan-then-implement) · **AI Skills with slash palette** (`/plan`, `/explain`, `/refactor`, `/test`, `/indic`) · **Voice dictation** (Sarvam Saarika, browser SpeechRecognition, OpenAI-compatible Whisper, HuggingFace) · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
 
 ## Status
 

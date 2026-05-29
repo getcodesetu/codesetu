@@ -16,11 +16,17 @@
 
 import crypto from "node:crypto";
 
-import type { ChatMessage, IdeContextPayload } from "@codesetu/core";
+import {
+  BUILTIN_SKILLS,
+  type AudioBlob,
+  type ChatMessage,
+  type IdeContextPayload,
+} from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
+import { readSpeechConfiguration } from "./speechConfiguration";
 
 // Cap the rolling transcript sent to the provider so long sessions don't
 // overflow the context window. The most recent turns are always kept.
@@ -29,12 +35,14 @@ const MAX_HISTORY_CHARS = 100_000;
 export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
+  planMode?: boolean;
   onChunk?: (chunk: string) => void;
 }
 
 export interface SendUserMessageOptions {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
+  planMode?: boolean;
 }
 
 export type ChatResponder = (
@@ -42,10 +50,28 @@ export type ChatResponder = (
   context?: ChatResponderContext,
 ) => Promise<string>;
 
+/** Host-side speech bridge invoked by the webview mic control. */
+export interface SpeechBridge {
+  transcribe(audio: AudioBlob, language: string): Promise<{ text: string; language?: string }>;
+}
+
 interface SendMessageRequest {
   type: "sendMessage";
   text: string;
   includeIdeContext?: boolean;
+  planMode?: boolean;
+}
+
+interface TranscribeRequest {
+  type: "transcribe";
+  requestId: string;
+  mimeType: string;
+  base64: string;
+}
+
+interface UiStateRequest {
+  type: "uiState";
+  planMode?: boolean;
 }
 
 export class ChatPanel {
@@ -54,11 +80,15 @@ export class ChatPanel {
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
   private inFlight = false;
+  // Webview-owned UI state mirrored to the host so editor actions (which don't
+  // go through the composer) can inherit the user's current Plan Mode pick.
+  private currentPlanMode = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
     private readonly responder: ChatResponder,
     private readonly outputChannel: vscode.OutputChannel,
+    private readonly speechBridge: SpeechBridge | undefined,
   ) {
     this.panel = panel;
     this.panel.webview.html = this.renderHtml(this.panel.webview);
@@ -74,6 +104,7 @@ export class ChatPanel {
     extensionUri: vscode.Uri,
     responder: ChatResponder,
     outputChannel: vscode.OutputChannel,
+    speechBridge?: SpeechBridge,
   ): void {
     if (ChatPanel.currentPanel !== undefined) {
       ChatPanel.currentPanel.panel.reveal(vscode.ViewColumn.Beside);
@@ -91,7 +122,7 @@ export class ChatPanel {
       },
     );
 
-    ChatPanel.currentPanel = new ChatPanel(panel, responder, outputChannel);
+    ChatPanel.currentPanel = new ChatPanel(panel, responder, outputChannel, speechBridge);
   }
 
   public static async createOrShowAndSend(
@@ -100,8 +131,9 @@ export class ChatPanel {
     outputChannel: vscode.OutputChannel,
     text: string,
     options: SendUserMessageOptions = {},
+    speechBridge?: SpeechBridge,
   ): Promise<void> {
-    ChatPanel.createOrShow(extensionUri, responder, outputChannel);
+    ChatPanel.createOrShow(extensionUri, responder, outputChannel, speechBridge);
     await ChatPanel.currentPanel?.sendUserMessage(text, options);
   }
 
@@ -121,11 +153,58 @@ export class ChatPanel {
       return;
     }
 
+    if (isTranscribeRequest(message)) {
+      await this.handleTranscribe(message);
+      return;
+    }
+
+    if (isUiStateRequest(message)) {
+      if (typeof message.planMode === "boolean") {
+        this.currentPlanMode = message.planMode;
+      }
+      return;
+    }
+
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
 
-    await this.submitMessage(message.text, { includeIdeContext: message.includeIdeContext });
+    await this.submitMessage(message.text, {
+      includeIdeContext: message.includeIdeContext,
+      planMode: message.planMode,
+    });
+  }
+
+  private async handleTranscribe(message: TranscribeRequest): Promise<void> {
+    if (this.speechBridge === undefined) {
+      this.postSpeechError(
+        message.requestId,
+        "Configure a non-browser speech provider via CodeSetu: Setup Speech Provider.",
+      );
+      return;
+    }
+    try {
+      const audio = { mimeType: message.mimeType, bytes: decodeBase64(message.base64) };
+      const language = readSpeechConfiguration().language;
+      const result = await this.speechBridge.transcribe(audio, language);
+      void this.panel.webview.postMessage({
+        type: "transcription",
+        requestId: message.requestId,
+        text: result.text,
+        ...(result.language === undefined ? {} : { language: result.language }),
+      });
+    } catch (error: unknown) {
+      this.outputChannel.appendLine(`Transcription failed: ${formatErrorMessage(error)}`);
+      this.postSpeechError(message.requestId, formatErrorMessage(error));
+    }
+  }
+
+  private postSpeechError(requestId: string, errorText: string): void {
+    void this.panel.webview.postMessage({
+      type: "speechError",
+      requestId,
+      text: errorText,
+    });
   }
 
   private postModelLabel(): void {
@@ -160,6 +239,7 @@ export class ChatPanel {
       let isStreamingAssistantMessage = false;
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
+        planMode: options.planMode ?? this.currentPlanMode,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         onChunk: (chunk) => {
           if (!isStreamingAssistantMessage) {
@@ -209,13 +289,48 @@ export class ChatPanel {
 
   private renderHtml(webview: vscode.Webview): string {
     const summary = summarizeCodeSetuConfiguration();
+    const speech = readSpeechConfiguration();
 
     return renderChatPanelHtml({
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
+      slashCommands: BUILTIN_SKILLS.flatMap((skill) =>
+        skill.slashCommands.map((command) => ({
+          command,
+          skillName: skill.name,
+          description: skill.description,
+        })),
+      ),
+      speechConnectSources: speechConnectSources(speech),
+      speechSttProvider: speech.sttProvider,
+      speechLanguage: speech.language,
     });
   }
+}
+
+/**
+ * Build a CSP `connect-src` allowlist from the configured speech endpoint.
+ * Returns the bare origin (https://api.sarvam.ai). The webview already has
+ * 'self' in its connect-src, so we only add explicit external origins here.
+ */
+function speechConnectSources(speech: ReturnType<typeof readSpeechConfiguration>): string[] {
+  const origins = new Set<string>();
+  if (speech.sttBaseUrl.length > 0) {
+    try {
+      origins.add(new URL(speech.sttBaseUrl).origin);
+    } catch {
+      // Ignore malformed URLs — they would fail at fetch time anyway.
+    }
+  }
+  if (speech.sttProvider === "sarvam") {
+    origins.add("https://api.sarvam.ai");
+  }
+  if (speech.sttProvider === "huggingface") {
+    origins.add("https://router.huggingface.co");
+    origins.add("https://api-inference.huggingface.co");
+  }
+  return [...origins];
 }
 
 function messageLength(message: ChatMessage): number {
@@ -230,6 +345,31 @@ function isSelectModelRequest(message: unknown): boolean {
   );
 }
 
+function isTranscribeRequest(message: unknown): message is TranscribeRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<TranscribeRequest>;
+  return (
+    candidate.type === "transcribe" &&
+    typeof candidate.requestId === "string" &&
+    typeof candidate.mimeType === "string" &&
+    typeof candidate.base64 === "string"
+  );
+}
+
+function decodeBase64(value: string): Uint8Array {
+  const buffer = Buffer.from(value, "base64");
+  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+}
+
+function isUiStateRequest(message: unknown): message is UiStateRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<UiStateRequest>;
+  return (
+    candidate.type === "uiState" &&
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
+  );
+}
+
 function isSendMessageRequest(message: unknown): message is SendMessageRequest {
   if (typeof message !== "object" || message === null) {
     return false;
@@ -239,7 +379,9 @@ function isSendMessageRequest(message: unknown): message is SendMessageRequest {
   return (
     candidate.type === "sendMessage" &&
     typeof candidate.text === "string" &&
-    (candidate.includeIdeContext === undefined || typeof candidate.includeIdeContext === "boolean")
+    (candidate.includeIdeContext === undefined ||
+      typeof candidate.includeIdeContext === "boolean") &&
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
   );
 }
 

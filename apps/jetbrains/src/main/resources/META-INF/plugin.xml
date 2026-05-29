@@ -57,6 +57,13 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <h3>0.3.0</h3>
+    <ul>
+      <li><b>Plan Mode</b> — composer toggle that asks the assistant for a numbered plan instead of code; "Approve &amp; Run" sends the canonical approval phrase and exits the mode. Toggle state persists across IDE restarts.</li>
+      <li><b>AI Skills with slash palette</b> — type <code>/</code> in the composer to invoke <code>/plan</code>, <code>/explain</code>, <code>/refactor</code>, <code>/test</code>, <code>/indic</code>. Keyword auto-routing picks a skill from natural-language prompts (toggle in Settings → CodeSetu).</li>
+      <li><b>Voice dictation</b> — mic button with push-to-toggle, push-to-talk (hold), and spacebar hotkey when composer is empty. Defaults to <b>Sarvam Saarika</b> STT in JetBrains (browser SpeechRecognition does not work in JCEF). Other backends: OpenAI-compatible Whisper, Hugging Face Whisper. New <i>Tools → CodeSetu → Setup Speech Provider</i> wizard.</li>
+      <li>Registers a <code>JBCefAppRequiredArgumentsProvider</code> that adds the CEF flags needed for <code>getUserMedia</code> in the chat webview.</li>
+    </ul>
     <h3>0.2.0</h3>
     <ul>
       <li>Chat tool window rendered with the CodeSetu webview design (markdown replies, model chip)</li>
@@ -85,6 +92,11 @@
         class="ai.codesetu.actions.DiagnoseProviderAction"
         text="Diagnose Provider"
         description="Test the configured CodeSetu provider"/>
+      <action
+        id="ai.codesetu.SetupSpeechProviderAction"
+        class="ai.codesetu.actions.SetupSpeechProviderAction"
+        text="Setup Speech Provider"
+        description="Configure the mic speech-to-text backend (Sarvam, OpenAI-compatible, HuggingFace)"/>
       <action
         id="ai.codesetu.ExplainSelectionAction"
         class="ai.codesetu.actions.ExplainSelectionAction"
@@ -121,5 +133,13 @@
     <applicationConfigurable
       instance="ai.codesetu.settings.CodeSetuSettingsConfigurable"
       displayName="CodeSetu"/>
+    <!--
+      Adds the CEF flags required for the chat webview's mic button. Without
+      this, getUserMedia throws NotSupportedError in the JCEF browser. See
+      CodeSetuJBCefArgsProvider for the per-flag rationale and the README's
+      "Voice in JetBrains" section for the user-facing trade-off.
+    -->
+    <jbCefAppRequiredArgumentsProvider
+      implementation="ai.codesetu.toolwindow.CodeSetuJBCefArgsProvider"/>
   </extensions>
 </idea-plugin>

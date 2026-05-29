@@ -19,6 +19,18 @@ export interface RenderChatPanelHtmlOptions {
   nonce: string;
   /** Human-readable "provider · model" shown in the composer (real, configured values). */
   modelLabel: string;
+  /** Slash commands available in the composer palette. */
+  slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
+  /**
+   * Origin allowlist used in the CSP `connect-src` so the webview can talk to
+   * the configured speech endpoint (Sarvam / HF / OpenAI / local Whisper).
+   * Always includes 'self'.
+   */
+  speechConnectSources?: ReadonlyArray<string>;
+  /** Initial STT provider id (informs which mic path the webview activates). */
+  speechSttProvider?: string;
+  /** BCP-47 language code, e.g. "en-US", "hi-IN". */
+  speechLanguage?: string;
 }
 
 function escapeHtml(value: string): string {
@@ -31,6 +43,21 @@ function escapeHtml(value: string): string {
 
 export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string {
   const modelLabel = escapeHtml(options.modelLabel);
+  // Serialized into the script body via JSON. JSON.stringify can produce "</"
+  // sequences that would close the script tag, so escape the slash.
+  const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(
+    /</g,
+    "\\u003c",
+  );
+  // CSP connect-src allowlist. 'self' covers the webview origin; any extra
+  // entries are configured speech endpoints (Sarvam / HF / local Whisper).
+  const connectSources = ["'self'", ...(options.speechConnectSources ?? [])].join(" ");
+  const speechSttProvider = options.speechSttProvider ?? "browser";
+  const speechLanguage = options.speechLanguage ?? "en-US";
+  const speechConfigJson = JSON.stringify({
+    sttProvider: speechSttProvider,
+    language: speechLanguage,
+  }).replace(/</g, "\\u003c");
 
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
@@ -39,7 +66,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src ${options.cspSource} 'unsafe-inline'; script-src 'nonce-${options.nonce}';"
+      content="default-src 'none'; style-src ${options.cspSource} 'unsafe-inline'; script-src 'nonce-${options.nonce}'; media-src 'self' blob:; connect-src ${connectSources};"
     />
     <style>
       * {
@@ -409,6 +436,151 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         transform: translateX(16px);
       }
 
+      .mode-pill {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        min-height: 24px;
+        padding: 0 9px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--vscode-button-background) 18%, transparent);
+        color: var(--vscode-button-background);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+      }
+
+      .mode-pill[data-active="true"] {
+        display: inline-flex;
+      }
+
+      .mode-pill .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--vscode-button-background);
+      }
+
+      .approve-row {
+        display: none;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .approve-row[data-show="true"] {
+        display: inline-flex;
+      }
+
+      .approve-button {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 7px;
+        cursor: pointer;
+        font: inherit;
+        color: var(--vscode-button-foreground);
+        background: var(--vscode-button-background);
+      }
+
+      .approve-button:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+
+      .approve-hint {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+      }
+
+      .slash-menu {
+        left: 0;
+        right: auto;
+        bottom: 54px;
+        max-width: 420px;
+      }
+
+      .slash-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        width: 100%;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 8px;
+        text-align: left;
+        background: transparent;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+      }
+
+      .slash-row[aria-selected="true"],
+      .slash-row:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .slash-row .cmd {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.9em;
+        color: var(--vscode-button-background);
+      }
+
+      .slash-row .meta {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+
+      .slash-row .name {
+        font-weight: 600;
+      }
+
+      .slash-row .desc {
+        color: var(--vscode-descriptionForeground);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mic-button[data-state="listening"] {
+        color: #d24a4a;
+        background: color-mix(in srgb, #d24a4a 14%, transparent);
+      }
+
+      .mic-button[data-state="listening"]::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 50%;
+        border: 2px solid #d24a4a;
+        opacity: 0.6;
+        animation: codesetuMicPulse 1.2s ease-out infinite;
+      }
+
+      .mic-button {
+        position: relative;
+      }
+
+      .mic-button[data-state="transcribing"] {
+        opacity: 0.7;
+      }
+
+      @keyframes codesetuMicPulse {
+        0% { transform: scale(1); opacity: 0.6; }
+        100% { transform: scale(1.4); opacity: 0; }
+      }
+
+      .speech-status {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+        min-height: 16px;
+      }
+
+      .speech-status.error {
+        color: var(--vscode-inputValidation-errorForeground, #d24a4a);
+      }
+
       @media (max-width: 520px) {
         body {
           padding: 12px;
@@ -451,8 +623,31 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="M5 12h14" />
                 </svg>
               </button>
+              <span
+                id="plan-mode-pill"
+                class="mode-pill"
+                data-active="false"
+                title="Plan mode is active — the assistant will plan, not edit"
+              >
+                <span class="dot" aria-hidden="true"></span>
+                Plan
+              </span>
             </div>
             <div class="toolbar-group secondary">
+              <button
+                id="mic-button"
+                class="icon-button mic-button"
+                type="button"
+                data-state="idle"
+                aria-label="Dictate"
+                title="Dictate — tap to toggle, hold for push-to-talk"
+              >
+                <svg class="composer-icon" data-icon="mic" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="3" width="6" height="12" rx="3" />
+                  <path d="M5 11a7 7 0 0 0 14 0" />
+                  <path d="M12 18v3" />
+                </svg>
+              </button>
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
@@ -484,7 +679,30 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="plan" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 6h12" />
+                  <path d="M4 12h16" />
+                  <path d="M4 18h8" />
+                  <path d="m17 16 2 2 4-4" />
+                </svg>
+              </span>
+              Plan Mode
+            </span>
+            <span class="switch">
+              <input id="plan-mode" type="checkbox" />
+              <span class="switch-track"></span>
+            </span>
+          </label>
         </div>
+        <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
+        <div id="approve-row" class="approve-row" data-show="false">
+          <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
+          <span class="approve-hint">Sends "${escapeHtml("APPROVED — proceed with implementation")}" and exits Plan Mode.</span>
+        </div>
+        <div id="speech-status" class="speech-status" aria-live="polite"></div>
       </form>
     </main>
     <script nonce="${options.nonce}">
@@ -496,10 +714,404 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
       const includeContext = document.getElementById("include-context");
+      const planModeToggle = document.getElementById("plan-mode");
+      const planModePill = document.getElementById("plan-mode-pill");
+      const approveRow = document.getElementById("approve-row");
+      const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
       const modelLabel = document.getElementById("model-label");
       let activeAssistantMessage;
       let activeAssistantRaw = "";
+      // Tracks whether the most recent assistant turn was produced under plan
+      // mode. When true and plan mode is still on, the Approve & Run row shows.
+      let lastTurnWasPlan = false;
+
+      // Persist plan-mode and include-context across reloads using webview state.
+      const savedState = vscode.getState() || {};
+      if (savedState.planMode === true) {
+        planModeToggle.checked = true;
+      }
+      if (savedState.includeContext === false) {
+        includeContext.checked = false;
+      }
+
+      function persistState() {
+        vscode.setState({
+          planMode: planModeToggle.checked,
+          includeContext: includeContext.checked,
+        });
+      }
+
+      function updatePlanModeUi() {
+        planModePill.setAttribute("data-active", String(planModeToggle.checked));
+        const showApprove = planModeToggle.checked && lastTurnWasPlan;
+        approveRow.setAttribute("data-show", String(showApprove));
+      }
+
+      updatePlanModeUi();
+
+      function postPlanModeUiState() {
+        vscode.postMessage({ type: "uiState", planMode: planModeToggle.checked });
+      }
+
+      planModeToggle.addEventListener("change", () => {
+        persistState();
+        updatePlanModeUi();
+        postPlanModeUiState();
+      });
+      includeContext.addEventListener("change", persistState);
+      // Tell the host the initial Plan Mode state so editor-action submissions
+      // (which don't go through the composer) inherit it.
+      postPlanModeUiState();
+
+      // Slash command palette ---------------------------------------------------
+      const slashCommands = ${slashCommandsJson};
+      const slashMenu = document.getElementById("slash-menu");
+      let slashSelectedIndex = 0;
+      let slashFiltered = [];
+
+      function escapeAttr(value) {
+        return String(value)
+          .split("&").join("&amp;")
+          .split('"').join("&quot;")
+          .split("<").join("&lt;")
+          .split(">").join("&gt;");
+      }
+
+      function renderSlashMenu(filter) {
+        slashFiltered = slashCommands.filter((entry) =>
+          entry.command.toLowerCase().startsWith(filter.toLowerCase()),
+        );
+        if (slashFiltered.length === 0) {
+          slashMenu.hidden = true;
+          return;
+        }
+        slashSelectedIndex = 0;
+        slashMenu.innerHTML = slashFiltered
+          .map((entry, index) =>
+            '<button type="button" class="slash-row" role="option" data-index="' +
+            index +
+            '" aria-selected="' +
+            (index === 0 ? "true" : "false") +
+            '"><span class="cmd">' +
+            escapeAttr(entry.command) +
+            '</span><span class="meta"><span class="name">' +
+            escapeAttr(entry.skillName) +
+            '</span><span class="desc">' +
+            escapeAttr(entry.description) +
+            "</span></span></button>",
+          )
+          .join("");
+        slashMenu.hidden = false;
+      }
+
+      function closeSlashMenu() {
+        slashMenu.hidden = true;
+        slashFiltered = [];
+      }
+
+      function updateSlashSelection(direction) {
+        if (slashFiltered.length === 0) return;
+        slashSelectedIndex =
+          (slashSelectedIndex + direction + slashFiltered.length) % slashFiltered.length;
+        const rows = slashMenu.querySelectorAll(".slash-row");
+        rows.forEach((row, idx) => {
+          row.setAttribute("aria-selected", idx === slashSelectedIndex ? "true" : "false");
+        });
+      }
+
+      function applySlashSelection() {
+        if (slashFiltered.length === 0) return false;
+        const entry = slashFiltered[slashSelectedIndex];
+        if (!entry) return false;
+        textarea.value = entry.command + " ";
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        closeSlashMenu();
+        return true;
+      }
+
+      function maybeOpenSlashMenu() {
+        const text = textarea.value;
+        if (slashCommands.length === 0 || text.length === 0 || text.charAt(0) !== "/") {
+          closeSlashMenu();
+          return;
+        }
+        // Mutually exclusive with the composer (+) menu.
+        setMenuOpen(false);
+        const firstSpace = text.search(/\\s/);
+        const prefix = firstSpace === -1 ? text : text.slice(0, firstSpace);
+        renderSlashMenu(prefix);
+      }
+
+      textarea.addEventListener("input", maybeOpenSlashMenu);
+      textarea.addEventListener("keydown", (event) => {
+        if (slashMenu.hidden) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateSlashSelection(1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateSlashSelection(-1);
+        } else if (event.key === "Enter" || event.key === "Tab") {
+          if (applySlashSelection()) {
+            event.preventDefault();
+          }
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeSlashMenu();
+        }
+      });
+      slashMenu.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest(".slash-row") : null;
+        if (!target) return;
+        const index = Number(target.getAttribute("data-index"));
+        if (Number.isFinite(index)) {
+          slashSelectedIndex = index;
+          applySlashSelection();
+          textarea.focus();
+        }
+      });
+
+      // Voice (STT only) ---------------------------------------------------------
+      const speechConfig = ${speechConfigJson};
+      const micButton = document.getElementById("mic-button");
+      const speechStatus = document.getElementById("speech-status");
+
+      function setSpeechStatus(text, isError) {
+        speechStatus.textContent = text || "";
+        speechStatus.classList.toggle("error", Boolean(isError));
+      }
+
+      function setMicState(state) {
+        micButton.setAttribute("data-state", state);
+      }
+
+      // ---- STT: browser path uses WebSpeech; server path uses MediaRecorder.
+      const SttProvider = speechConfig.sttProvider || "browser";
+      const useBrowserStt = SttProvider === "browser";
+      const SpeechRecognitionCtor =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      let recognition;
+      let mediaRecorder;
+      let recorderChunks = [];
+      let listening = false;
+
+      function appendToTextarea(text) {
+        if (!text) return;
+        const trimmed = String(text).trim();
+        if (trimmed.length === 0) return;
+        const separator = textarea.value.length > 0 && !textarea.value.endsWith(" ") ? " " : "";
+        textarea.value += separator + trimmed;
+        textarea.dispatchEvent(new Event("input"));
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+
+      function startBrowserStt() {
+        if (!SpeechRecognitionCtor) {
+          setSpeechStatus(
+            "Browser SpeechRecognition is unavailable. Switch the speech provider in settings.",
+            true,
+          );
+          return;
+        }
+        try {
+          recognition = new SpeechRecognitionCtor();
+        } catch (error) {
+          setSpeechStatus("Could not start speech recognition: " + error, true);
+          return;
+        }
+        recognition.lang = speechConfig.language || "en-US";
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        let finalText = "";
+        recognition.addEventListener("result", (event) => {
+          let interim = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              finalText += result[0].transcript;
+            } else {
+              interim += result[0].transcript;
+            }
+          }
+          if (interim) setSpeechStatus("Listening: " + interim, false);
+        });
+        recognition.addEventListener("error", (event) => {
+          setSpeechStatus("Speech recognition error: " + (event.error || "unknown"), true);
+          stopListening();
+        });
+        recognition.addEventListener("end", () => {
+          if (finalText) appendToTextarea(finalText);
+          setSpeechStatus("", false);
+          listening = false;
+          setMicState("idle");
+        });
+        recognition.start();
+        listening = true;
+        setMicState("listening");
+        setSpeechStatus("Listening… (tap mic to stop)", false);
+      }
+
+      async function startServerStt() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          setSpeechStatus("getUserMedia is unavailable in this environment.", true);
+          return;
+        }
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+          setSpeechStatus("Microphone permission denied or unavailable.", true);
+          return;
+        }
+        recorderChunks = [];
+        try {
+          mediaRecorder = new MediaRecorder(stream);
+        } catch (error) {
+          setSpeechStatus("MediaRecorder is unavailable.", true);
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        mediaRecorder.addEventListener("dataavailable", (event) => {
+          if (event.data && event.data.size > 0) recorderChunks.push(event.data);
+        });
+        mediaRecorder.addEventListener("stop", async () => {
+          stream.getTracks().forEach((track) => track.stop());
+          if (recorderChunks.length === 0) {
+            setSpeechStatus("", false);
+            listening = false;
+            setMicState("idle");
+            return;
+          }
+          setMicState("transcribing");
+          setSpeechStatus("Transcribing…", false);
+          const blob = new Blob(recorderChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+          const base64 = await blobToBase64(blob);
+          const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+          pendingTranscriptions.set(requestId, () => {});
+          vscode.postMessage({
+            type: "transcribe",
+            requestId,
+            mimeType: blob.type,
+            base64,
+          });
+        });
+        mediaRecorder.start();
+        listening = true;
+        setMicState("listening");
+        setSpeechStatus("Listening… (tap mic to stop)", false);
+      }
+
+      function startListening() {
+        if (listening) return;
+        if (useBrowserStt) {
+          startBrowserStt();
+        } else {
+          void startServerStt();
+        }
+      }
+
+      function stopListening() {
+        if (!listening) {
+          setMicState("idle");
+          return;
+        }
+        if (useBrowserStt && recognition) {
+          try { recognition.stop(); } catch (_) {}
+        } else if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+      }
+
+      // Mic UX: pointerdown >250ms = push-to-talk (release stops); shorter
+      // press = tap-to-toggle. Spacebar in an empty/focused composer also
+      // triggers push-to-talk. Esc stops an active capture.
+      const HOLD_THRESHOLD_MS = 250;
+      let pressTimer;
+      let holdMode = false;
+
+      function startHoldMode() {
+        holdMode = true;
+        startListening();
+      }
+
+      micButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        if (listening && !holdMode) {
+          // A second tap while a tap-toggled capture is running just stops it.
+          stopListening();
+          return;
+        }
+        if (listening) return;
+        holdMode = false;
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = setTimeout(startHoldMode, HOLD_THRESHOLD_MS);
+      });
+
+      function endMicPress() {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = undefined;
+        }
+        if (holdMode) {
+          stopListening();
+          holdMode = false;
+        } else if (!listening) {
+          // Short tap with no active capture starts listening (tap-toggle on).
+          startListening();
+        }
+      }
+
+      micButton.addEventListener("pointerup", endMicPress);
+      micButton.addEventListener("pointerleave", () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = undefined;
+        }
+      });
+      micButton.addEventListener("pointercancel", endMicPress);
+
+      let spaceHeld = false;
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && slashMenu.hidden && listening) {
+          stopListening();
+          return;
+        }
+        if (event.key !== " " || event.repeat || spaceHeld) return;
+        if (document.activeElement !== textarea) return;
+        if (textarea.value.length !== 0) return;
+        event.preventDefault();
+        spaceHeld = true;
+        holdMode = true;
+        startListening();
+      });
+      document.addEventListener("keyup", (event) => {
+        if (event.key !== " " || !spaceHeld) return;
+        event.preventDefault();
+        spaceHeld = false;
+        if (holdMode) {
+          stopListening();
+          holdMode = false;
+        }
+      });
+
+      const pendingTranscriptions = new Map();
+
+      function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = String(reader.result || "");
+            const commaIndex = result.indexOf(",");
+            resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+      }
+
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
@@ -616,7 +1228,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
       composerMenuToggle.addEventListener("click", (event) => {
         event.stopPropagation();
-        setMenuOpen(composerMenu.hidden);
+        const willOpen = composerMenu.hidden;
+        if (willOpen) closeSlashMenu();
+        setMenuOpen(willOpen);
       });
 
       modelChip.addEventListener("click", () => {
@@ -636,6 +1250,26 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
       });
 
+      // Set at send time, consumed when the assistant turn finishes so we can
+      // show Approve & Run on plan-mode turns and only on plan-mode turns.
+      let pendingTurnWasPlan = false;
+
+      function sendUserMessage(text) {
+        textarea.value = "";
+        setMenuOpen(false);
+        // Hide the approve row immediately so a rapid second send doesn't keep
+        // it visible; it reappears only if the next assistant turn is a plan.
+        lastTurnWasPlan = false;
+        updatePlanModeUi();
+        pendingTurnWasPlan = planModeToggle.checked;
+        vscode.postMessage({
+          type: "sendMessage",
+          text,
+          includeIdeContext: includeContext.checked,
+          planMode: planModeToggle.checked,
+        });
+      }
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const text = textarea.value.trim();
@@ -644,13 +1278,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           return;
         }
 
-        textarea.value = "";
-        setMenuOpen(false);
-        vscode.postMessage({
-          type: "sendMessage",
-          text,
-          includeIdeContext: includeContext.checked,
-        });
+        sendUserMessage(text);
+      });
+
+      approveRunButton.addEventListener("click", () => {
+        // Drop plan mode for this turn and the rest of the session, then send
+        // the canonical approval phrase so the model implements the plan.
+        planModeToggle.checked = false;
+        persistState();
+        updatePlanModeUi();
+        sendUserMessage("APPROVED — proceed with implementation");
       });
 
       window.addEventListener("message", (event) => {
@@ -665,6 +1302,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           } else {
             appendMessage("assistant", message.text);
           }
+          lastTurnWasPlan = pendingTurnWasPlan;
+          updatePlanModeUi();
         }
 
         if (message.type === "assistantMessageStart") {
@@ -678,6 +1317,24 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         if (message.type === "assistantMessageDone") {
           activeAssistantMessage = undefined;
           activeAssistantRaw = "";
+          lastTurnWasPlan = pendingTurnWasPlan;
+          updatePlanModeUi();
+        }
+
+        if (message.type === "transcription") {
+          const callback = pendingTranscriptions.get(message.requestId);
+          if (callback) pendingTranscriptions.delete(message.requestId);
+          appendToTextarea(message.text);
+          setSpeechStatus("", false);
+          listening = false;
+          setMicState("idle");
+        }
+
+        if (message.type === "speechError") {
+          pendingTranscriptions.delete(message.requestId);
+          listening = false;
+          setMicState("idle");
+          setSpeechStatus(message.text || "Speech error.", true);
         }
 
         if (message.type === "userMessage") {

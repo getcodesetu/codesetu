@@ -6,12 +6,19 @@ import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
+import ai.codesetu.prompts.PLAN_MODE_SKILL_ID
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
+import ai.codesetu.prompts.isPlanModeApproval
 import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
+import ai.codesetu.skills.BUILTIN_SKILLS
+import ai.codesetu.skills.routeSkills
+import ai.codesetu.speech.AudioPayload
+import ai.codesetu.speech.CodeSetuSpeechClient
+import java.util.Base64
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -66,6 +73,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val browser = JBCefBrowser()
   private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
+  private val speechClient = CodeSetuSpeechClient()
   private val history = mutableListOf<ChatMessage>()
 
   // EDT-only state: outgoing messages buffered until the page signals "ready".
@@ -86,7 +94,9 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   /** Entry point for editor actions (Explain/Refactor/...) with pre-captured context. */
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
-    runChat(text, includeContext = true, captured = capturedIdeContext)
+    // Editor actions inherit the user's current Plan Mode pick from settings.
+    val planMode = CodeSetuSettingsState.getInstance().state.chatPlanModeOn
+    runChat(text, includeContext = true, captured = capturedIdeContext, planMode = planMode)
   }
 
   private fun handlePost(request: String) {
@@ -107,12 +117,57 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "sendMessage" -> {
         val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
         val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
-        runChat(text, include, null)
+        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull
+          ?: CodeSetuSettingsState.getInstance().state.chatPlanModeOn
+        runChat(text, include, null, planMode)
+      }
+      "uiState" -> {
+        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull
+        if (planMode != null) {
+          CodeSetuSettingsState.getInstance().state.chatPlanModeOn = planMode
+        }
+      }
+      "transcribe" -> {
+        val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
+        val mimeType = obj["mimeType"]?.jsonPrimitive?.contentOrNull ?: "audio/webm"
+        val base64 = obj["base64"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+          runTranscribe(requestId, mimeType, base64)
+        }
       }
     }
   }
 
-  private fun runChat(text: String, includeContext: Boolean, captured: IdeContextPayload?) {
+  private fun runTranscribe(requestId: String, mimeType: String, base64: String) {
+    val state = CodeSetuSettingsState.getInstance().state
+    val language = state.speechLanguage.ifBlank { "en-US" }
+    try {
+      val bytes = Base64.getDecoder().decode(base64)
+      val result = speechClient.transcribe(AudioPayload(mimeType, bytes), language)
+      push(
+        message("transcription") {
+          put("requestId", requestId)
+          put("text", result.text)
+          if (result.language != null) put("language", result.language)
+        },
+      )
+    } catch (error: Exception) {
+      push(
+        message("speechError") {
+          put("requestId", requestId)
+          put("text", "Transcription failed: ${error.message ?: error}")
+        },
+      )
+    }
+  }
+
+
+  private fun runChat(
+    text: String,
+    includeContext: Boolean,
+    captured: IdeContextPayload?,
+    planMode: Boolean = false,
+  ) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
 
@@ -127,23 +182,36 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
 
       ApplicationManager.getApplication().executeOnPooledThread {
-        runRequest(trimmed, ideContext)
+        runRequest(trimmed, ideContext, planMode)
       }
     }
   }
 
-  private fun runRequest(userText: String, ideContext: IdeContextPayload) {
+  private fun runRequest(userText: String, ideContext: IdeContextPayload, planMode: Boolean) {
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
+    // Typing APPROVED / RUN (or hitting Approve & Run) drops plan-mode for this
+    // turn even if the toggle is still on — the user wants implementation now.
+    val planModeActive = planMode && !isPlanModeApproval(userText)
+    val pinnedIds = if (planModeActive) listOf(PLAN_MODE_SKILL_ID) else emptyList()
+    val autoRoute = CodeSetuSettingsState.getInstance().state.skillsAutoRoute
+    val routed = routeSkills(
+      userText = userText,
+      skills = BUILTIN_SKILLS,
+      pinnedIds = pinnedIds,
+      autoRoute = autoRoute,
+    )
+    val effectiveUserText = routed.cleanedUserText
     val contextMarkdown = buildContextMarkdown(ideContext)
     val userMessage = if (contextMarkdown.isBlank()) {
-      userText
+      effectiveUserText
     } else {
-      "$userText\n\nCurrent IDE context:\n\n$contextMarkdown"
+      "$effectiveUserText\n\nCurrent IDE context:\n\n$contextMarkdown"
     }
     history.add(ChatMessage("user", userMessage))
-    val messages = listOf(ChatMessage("system", buildSystemMessage(instructions))) + history
+    val messages =
+      listOf(ChatMessage("system", buildSystemMessage(instructions, routed.selected))) + history
 
     var started = false
     val response = try {

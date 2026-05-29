@@ -17,6 +17,18 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     // Legacy plaintext field, kept only so a pre-existing value can be migrated
     // into PasswordSafe on first access. New keys are never persisted here.
     var apiKey: String = "",
+    var skillsAutoRoute: Boolean = true,
+    // Default to Sarvam in JetBrains: browser SpeechRecognition does not work
+    // in JCEF (no Google cloud-speech keys in the embedded Chromium build),
+    // so the only out-of-the-box working option is a server provider.
+    var speechSttProvider: String = "sarvam",
+    var speechLanguage: String = "en-IN",
+    var speechSttBaseUrl: String = "",
+    var speechSttModel: String = "",
+    // Mirror of the Plan Mode toggle in the chat composer. Persisted so it
+    // survives panel reloads and IDE restarts. Also lets editor actions
+    // (Explain selection etc.) inherit the user's current pick.
+    var chatPlanModeOn: Boolean = false,
   )
 
   private var state = State()
@@ -43,6 +55,12 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
   fun setApiKey(value: String) {
     state.apiKey = ""
     CodeSetuApiKeyStore.set(value)
+  }
+
+  fun getSpeechApiKey(): String = CodeSetuSpeechApiKeyStore.get()
+
+  fun setSpeechApiKey(value: String) {
+    CodeSetuSpeechApiKeyStore.set(value)
   }
 
   companion object {

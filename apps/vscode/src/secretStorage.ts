@@ -18,6 +18,8 @@ import * as vscode from "vscode";
 
 /** Key under which the provider API key is stored in {@link vscode.SecretStorage}. */
 export const API_KEY_SECRET = "codesetu.apiKey";
+/** Key under which the speech provider API key is stored (separate from chat). */
+export const SPEECH_API_KEY_SECRET = "codesetu.speech.apiKey";
 
 /** Reads the stored API key, returning `undefined` when none is set. */
 export async function getStoredApiKey(secrets: vscode.SecretStorage): Promise<string | undefined> {
@@ -35,6 +37,27 @@ export async function storeApiKey(secrets: vscode.SecretStorage, apiKey: string)
   }
 
   await secrets.store(API_KEY_SECRET, trimmed);
+}
+
+/** Reads the stored speech API key (Sarvam/OpenAI/Whisper/HF for STT+TTS). */
+export async function getStoredSpeechApiKey(
+  secrets: vscode.SecretStorage,
+): Promise<string | undefined> {
+  const value = (await secrets.get(SPEECH_API_KEY_SECRET))?.trim();
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
+/** Stores (or clears, when blank) the speech provider API key. */
+export async function storeSpeechApiKey(
+  secrets: vscode.SecretStorage,
+  apiKey: string,
+): Promise<void> {
+  const trimmed = apiKey.trim();
+  if (trimmed.length === 0) {
+    await secrets.delete(SPEECH_API_KEY_SECRET);
+    return;
+  }
+  await secrets.store(SPEECH_API_KEY_SECRET, trimmed);
 }
 
 /**
