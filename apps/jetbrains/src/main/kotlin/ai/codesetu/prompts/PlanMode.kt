@@ -39,3 +39,18 @@ val PLAN_MODE_SKILL: WorkspaceInstruction = WorkspaceInstruction(
 )
 
 const val PLAN_MODE_APPROVE_PHRASE: String = "APPROVED — proceed with implementation"
+
+/**
+ * Mirrors `isPlanModeApproval` from packages/core/src/ide/planMode.ts. When
+ * the user types one of these phrases (manually or via the Approve & Run
+ * button), the host drops plan-mode pinning for that turn so the model
+ * implements instead of producing another plan.
+ */
+fun isPlanModeApproval(userText: String): Boolean {
+  val trimmed = userText.trim().uppercase()
+  return trimmed == "APPROVED" ||
+    trimmed == "RUN" ||
+    trimmed.startsWith("APPROVED —") ||
+    trimmed.startsWith("APPROVED -") ||
+    trimmed.startsWith("APPROVED:")
+}

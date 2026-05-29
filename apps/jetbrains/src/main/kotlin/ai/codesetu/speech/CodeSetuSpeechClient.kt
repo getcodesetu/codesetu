@@ -7,9 +7,9 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Host-side speech client for the JetBrains plugin. Mirrors the contract used
- * by packages/core/src/speech in TypeScript so the wire formats stay aligned
- * with what the VSCode webview produces and consumes.
+ * Host-side speech-to-text client for the JetBrains plugin. Mirrors the
+ * contract used by packages/core/src/speech in TypeScript so the wire formats
+ * stay aligned with what the VSCode webview produces and consumes.
  */
 package ai.codesetu.speech
 
@@ -19,7 +19,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
-import java.util.Base64
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -34,26 +33,7 @@ private data class SarvamTranscribeResponse(
 )
 
 @Serializable
-private data class SarvamTtsResponse(val audios: List<String> = emptyList())
-
-@Serializable
 private data class OpenAiTranscribeResponse(val text: String = "", val language: String? = null)
-
-@Serializable
-private data class SarvamTtsRequest(
-  val inputs: List<String>,
-  val target_language_code: String,
-  val model: String,
-  val speaker: String,
-)
-
-@Serializable
-private data class OpenAiTtsRequest(
-  val model: String,
-  val voice: String,
-  val input: String,
-  val response_format: String,
-)
 
 class CodeSetuSpeechClient(
   private val httpClient: HttpClient = HttpClient.newHttpClient(),
@@ -70,22 +50,11 @@ class CodeSetuSpeechClient(
     }
   }
 
-  fun synthesize(text: String, language: String): AudioPayload {
-    val state = CodeSetuSettingsState.getInstance().state
-    return when (state.speechTtsProvider) {
-      "sarvam" -> synthesizeSarvam(text, language)
-      "openai-compatible", "huggingface" -> synthesizeOpenAiCompatible(text, language)
-      else -> error(
-        "TTS provider '${state.speechTtsProvider}' is handled in the webview, the host should not be called.",
-      )
-    }
-  }
-
   private fun transcribeSarvam(audio: AudioPayload, language: String): SpeechTranscription {
     val apiKey = requireSpeechKey()
     val state = CodeSetuSettingsState.getInstance().state
     val baseUrl = state.speechSttBaseUrl.ifBlank { "https://api.sarvam.ai" }.trimEnd('/')
-    val model = state.speechSttModel.ifBlank { "saaras:v2" }
+    val model = state.speechSttModel.ifBlank { "saarika:v2" }
     val boundary = "----codesetu-${System.nanoTime()}"
     val body = buildMultipart(
       boundary,
@@ -107,36 +76,6 @@ class CodeSetuSpeechClient(
     }
     val parsed = json.decodeFromString<SarvamTranscribeResponse>(response.body())
     return SpeechTranscription(parsed.transcript, parsed.language_code)
-  }
-
-  private fun synthesizeSarvam(text: String, language: String): AudioPayload {
-    val apiKey = requireSpeechKey()
-    val state = CodeSetuSettingsState.getInstance().state
-    val baseUrl = state.speechTtsBaseUrl.ifBlank { state.speechSttBaseUrl.ifBlank { "https://api.sarvam.ai" } }
-      .trimEnd('/')
-    val model = state.speechTtsModel.ifBlank { "bulbul:v1" }
-    val payload = json.encodeToString(
-      SarvamTtsRequest.serializer(),
-      SarvamTtsRequest(
-        inputs = listOf(text),
-        target_language_code = language,
-        model = model,
-        speaker = "meera",
-      ),
-    )
-    val request = HttpRequest.newBuilder()
-      .uri(URI.create("$baseUrl/text-to-speech"))
-      .header("api-subscription-key", apiKey)
-      .header("Content-Type", "application/json")
-      .POST(HttpRequest.BodyPublishers.ofString(payload))
-      .build()
-    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
-    require(response.statusCode() in 200..299) {
-      "Sarvam TTS failed: HTTP ${response.statusCode()} ${response.body()}"
-    }
-    val parsed = json.decodeFromString<SarvamTtsResponse>(response.body())
-    val base64 = parsed.audios.firstOrNull() ?: error("Sarvam TTS returned no audio")
-    return AudioPayload("audio/wav", Base64.getDecoder().decode(base64))
   }
 
   private fun transcribeOpenAiCompatible(audio: AudioPayload, language: String): SpeechTranscription {
@@ -169,30 +108,6 @@ class CodeSetuSpeechClient(
     }
     val parsed = json.decodeFromString<OpenAiTranscribeResponse>(response.body())
     return SpeechTranscription(parsed.text, parsed.language)
-  }
-
-  private fun synthesizeOpenAiCompatible(text: String, @Suppress("UNUSED_PARAMETER") language: String): AudioPayload {
-    val apiKey = requireSpeechKey()
-    val state = CodeSetuSettingsState.getInstance().state
-    val baseUrl = state.speechTtsBaseUrl.ifBlank { state.speechSttBaseUrl }.trimEnd('/').ifBlank {
-      error("Speech TTS base URL is required for openai-compatible / huggingface.")
-    }
-    val model = state.speechTtsModel.ifBlank { "tts-1" }
-    val payload = json.encodeToString(
-      OpenAiTtsRequest.serializer(),
-      OpenAiTtsRequest(model = model, voice = "alloy", input = text, response_format = "mp3"),
-    )
-    val request = HttpRequest.newBuilder()
-      .uri(URI.create("$baseUrl/audio/speech"))
-      .header("Authorization", "Bearer $apiKey")
-      .header("Content-Type", "application/json")
-      .POST(HttpRequest.BodyPublishers.ofString(payload))
-      .build()
-    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
-    require(response.statusCode() in 200..299) {
-      "TTS failed: HTTP ${response.statusCode()}"
-    }
-    return AudioPayload("audio/mpeg", response.body())
   }
 
   private fun requireSpeechKey(): String {

@@ -15,17 +15,15 @@
  */
 
 /**
- * The five voice backends users can choose between. `browser` and `local` both
- * run inside the webview (WebSpeech API + speechSynthesis) and do not touch the
- * host-side factory — the factory returns `null` for them. `local` is the
- * air-gapped variant: same code path as `browser`, surfaced as a separate
- * option so users can opt out of any future server-side fallback.
+ * Speech-to-text backends users can choose between. `browser` runs inside the
+ * webview (WebSpeech API) and does not touch the host-side factory — the
+ * factory returns `null` for it. All others are server-side and run in the
+ * extension host.
  */
-export type SpeechProviderId = "browser" | "local" | "sarvam" | "openai-compatible" | "huggingface";
+export type SpeechProviderId = "browser" | "sarvam" | "openai-compatible" | "huggingface";
 
 export const SPEECH_PROVIDER_IDS: readonly SpeechProviderId[] = [
   "browser",
-  "local",
   "sarvam",
   "openai-compatible",
   "huggingface",
@@ -44,30 +42,16 @@ export interface TranscribeOptions {
   model?: string;
 }
 
-export interface SynthesizeOptions {
-  /** BCP-47 language code or provider-specific locale. */
-  language?: string;
-  /** Optional voice id (provider-dependent — e.g. Sarvam "meera", OpenAI "alloy"). */
-  voice?: string;
-  /** Optional model override. */
-  model?: string;
-}
-
 export interface TranscriptionResult {
   text: string;
   /** Provider-reported language if available. */
   language?: string;
 }
 
-/**
- * Server-side speech provider contract. Implementations may throw if a method
- * is unsupported (e.g. a transcription-only endpoint). Both methods are
- * optional so providers can implement only what they support.
- */
+/** Server-side speech-to-text provider contract. */
 export interface SpeechProvider {
   readonly id: SpeechProviderId;
-  transcribe?(audio: AudioBlob, options?: TranscribeOptions): Promise<TranscriptionResult>;
-  synthesize?(text: string, options?: SynthesizeOptions): Promise<AudioBlob>;
+  transcribe(audio: AudioBlob, options?: TranscribeOptions): Promise<TranscriptionResult>;
 }
 
 export interface SpeechFactoryOptions {

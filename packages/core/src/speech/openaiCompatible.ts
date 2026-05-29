@@ -18,7 +18,6 @@ import type {
   AudioBlob,
   SpeechProvider,
   SpeechProviderId,
-  SynthesizeOptions,
   TranscribeOptions,
   TranscriptionResult,
 } from "./types.js";
@@ -27,8 +26,6 @@ export interface OpenAICompatibleSpeechOptions {
   apiKey: string;
   baseURL: string;
   defaultModel?: string;
-  defaultTtsModel?: string;
-  defaultVoice?: string;
   defaultLanguage?: string;
   fetch?: typeof fetch;
   /** Override the reported id — used by HuggingFace which reuses this transport. */
@@ -41,11 +38,10 @@ interface TranscriptionResponse {
 }
 
 /**
- * OpenAI-compatible speech provider — POSTs multipart to
- * `${baseURL}/audio/transcriptions` and JSON to `${baseURL}/audio/speech`.
- * Works with OpenAI, Groq, local whisper.cpp servers, and any other
- * implementation of those two endpoints. Hugging Face's Inference Router
- * also follows this shape; the HuggingFace provider is a thin wrapper.
+ * OpenAI-compatible speech-to-text provider — POSTs multipart audio to
+ * `${baseURL}/audio/transcriptions`. Works with OpenAI, Groq, local
+ * whisper.cpp servers, and any other implementation of that endpoint.
+ * Hugging Face's Inference Router is a thin wrapper around this transport.
  */
 export class OpenAICompatibleSpeechProvider implements SpeechProvider {
   public readonly id: SpeechProviderId;
@@ -53,8 +49,6 @@ export class OpenAICompatibleSpeechProvider implements SpeechProvider {
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly defaultModel: string;
-  private readonly defaultTtsModel: string;
-  private readonly defaultVoice: string;
   private readonly defaultLanguage?: string;
   private readonly fetchImpl: typeof fetch;
 
@@ -69,8 +63,6 @@ export class OpenAICompatibleSpeechProvider implements SpeechProvider {
     this.apiKey = options.apiKey;
     this.baseURL = options.baseURL.replace(/\/+$/, "");
     this.defaultModel = options.defaultModel ?? "whisper-1";
-    this.defaultTtsModel = options.defaultTtsModel ?? "tts-1";
-    this.defaultVoice = options.defaultVoice ?? "alloy";
     if (options.defaultLanguage !== undefined) {
       this.defaultLanguage = options.defaultLanguage;
     }
@@ -82,7 +74,11 @@ export class OpenAICompatibleSpeechProvider implements SpeechProvider {
     options: TranscribeOptions = {},
   ): Promise<TranscriptionResult> {
     const formData = new FormData();
-    formData.append("file", new Blob([new Uint8Array(audio.bytes)], { type: audio.mimeType }), "audio");
+    formData.append(
+      "file",
+      new Blob([new Uint8Array(audio.bytes)], { type: audio.mimeType }),
+      "audio",
+    );
     formData.append("model", options.model ?? this.defaultModel);
     const language = options.language ?? this.defaultLanguage;
     if (language !== undefined) {
@@ -103,28 +99,5 @@ export class OpenAICompatibleSpeechProvider implements SpeechProvider {
     const json = (await response.json()) as TranscriptionResponse;
     const text = json.text ?? "";
     return json.language === undefined ? { text } : { text, language: json.language };
-  }
-
-  public async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioBlob> {
-    const response = await this.fetchImpl(`${this.baseURL}/audio/speech`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: options.model ?? this.defaultTtsModel,
-        voice: options.voice ?? this.defaultVoice,
-        input: text,
-        response_format: "mp3",
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`TTS failed: ${response.status} ${await response.text()}`);
-    }
-
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    return { mimeType: "audio/mpeg", bytes };
   }
 }

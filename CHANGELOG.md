@@ -19,11 +19,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
   capped at one auto-routed skill per turn) and a slash-command palette in the
   composer (`/plan`, `/explain`, `/refactor`, `/test`, `/indic`). Workspace
   `.codesetu/skills/*.md` continue to load always-on — no regression.
-- **Voice (STT + TTS)** with five backends — `browser`, `local` (air-gapped),
-  `sarvam` (Saaras + Bulbul), `openai-compatible` (Whisper), `huggingface`. Mic
-  button with idle / listening / transcribing states and a "read aloud" toggle
-  in both webviews. New `CodeSetu: Setup Speech Provider` command in VSCode;
-  matching Settings section in JetBrains.
+- **Voice dictation (STT)** with four backends — `browser` (WebSpeech),
+  `sarvam` (Saarika), `openai-compatible` (Whisper-style), `huggingface`. Mic
+  button with idle / listening / transcribing states; push-to-toggle, hold for
+  push-to-talk, spacebar hotkey when the composer is empty. New
+  `CodeSetu: Setup Speech Provider` command in VSCode and matching action in
+  JetBrains. JetBrains defaults to `sarvam` because browser SpeechRecognition
+  does not work in JCEF.
 - JetBrains plugin registers a `JBCefAppRequiredArgumentsProvider` that adds
   the CEF flags required for `getUserMedia` to work in the chat webview. See
   `apps/jetbrains/README.md` for the security trade-off.

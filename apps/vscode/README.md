@@ -13,10 +13,11 @@ fill-in-the-middle completions.
 - **AI Skills with a slash palette** — type `/` in the composer to invoke
   `/plan`, `/explain`, `/refactor`, `/test`, `/indic`. Keyword auto-routing picks
   the right skill from natural-language prompts (toggle with `codesetu.skills.autoRoute`)
-- **Voice** — mic button (push-to-toggle) and a "read aloud" toggle in the
-  composer. STT and TTS backends: browser SpeechRecognition (default, free),
-  Sarvam Saaras + Bulbul, OpenAI-compatible Whisper, Hugging Face Whisper,
-  or local-only / air-gapped. Run `CodeSetu: Setup Speech Provider` to switch.
+- **Voice (STT)** — mic button in the composer with push-to-toggle and
+  push-to-talk (hold) plus a spacebar hotkey when the composer is empty.
+  STT backends: browser SpeechRecognition (default, free), Sarvam Saarika,
+  OpenAI-compatible Whisper, or Hugging Face Whisper. Run
+  `CodeSetu: Setup Speech Provider` to switch.
 - `CodeSetu: Setup Provider` guided provider configuration
 - `CodeSetu: Setup Speech Provider` guided speech configuration
 - `CodeSetu: Diagnose Provider` connection test and friendly errors

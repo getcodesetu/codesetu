@@ -19,7 +19,6 @@ export type {
   SpeechFactoryOptions,
   SpeechProvider,
   SpeechProviderId,
-  SynthesizeOptions,
   TranscribeOptions,
   TranscriptionResult,
 } from "./types.js";
@@ -28,8 +27,6 @@ export {
   DEFAULT_SARVAM_LANGUAGE,
   DEFAULT_SARVAM_SPEECH_BASE_URL,
   DEFAULT_SARVAM_STT_MODEL,
-  DEFAULT_SARVAM_TTS_MODEL,
-  DEFAULT_SARVAM_TTS_VOICE,
   SarvamSpeechProvider,
   type SarvamSpeechProviderOptions,
 } from "./sarvam.js";
@@ -40,7 +37,6 @@ export {
 export {
   DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
   DEFAULT_HUGGINGFACE_STT_MODEL,
-  DEFAULT_HUGGINGFACE_TTS_MODEL,
   HuggingFaceSpeechProvider,
   type HuggingFaceSpeechProviderOptions,
 } from "./huggingface.js";

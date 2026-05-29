@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {
@@ -261,42 +261,23 @@
           "type": "string",
           "enum": [
             "browser",
-            "local",
             "sarvam",
             "openai-compatible",
             "huggingface"
           ],
           "enumDescriptions": [
             "Use the browser SpeechRecognition API (no server call). Free, English best, requires Chromium-based VS Code.",
-            "Local / air-gapped — same as browser, but explicitly refuses any server fallback.",
-            "Sarvam Saaras hosted STT (Indic languages first-class). Requires a Sarvam API key.",
+            "Sarvam Saarika hosted STT (Indic languages first-class). Requires a Sarvam API key.",
             "Any OpenAI-compatible endpoint exposing /v1/audio/transcriptions (OpenAI, Groq, local whisper.cpp).",
             "Hugging Face Inference Router (Whisper-large-v3 by default)."
           ],
           "default": "browser",
           "description": "Speech-to-text backend used by the chat mic."
         },
-        "codesetu.speech.ttsProvider": {
-          "type": "string",
-          "enum": [
-            "browser",
-            "local",
-            "sarvam",
-            "openai-compatible",
-            "huggingface"
-          ],
-          "default": "browser",
-          "description": "Text-to-speech backend used to read assistant responses."
-        },
         "codesetu.speech.language": {
           "type": "string",
           "default": "en-US",
-          "description": "BCP-47 language code for STT and TTS, e.g. en-US, hi-IN, ta-IN, bn-IN."
-        },
-        "codesetu.speech.ttsEnabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Read assistant responses aloud when a turn ends. Off by default."
+          "description": "BCP-47 language code for STT, e.g. en-US, hi-IN, ta-IN, bn-IN."
         },
         "codesetu.speech.sttBaseUrl": {
           "type": "string",
@@ -306,17 +287,7 @@
         "codesetu.speech.sttModel": {
           "type": "string",
           "default": "",
-          "description": "Model id for STT (e.g. whisper-1, openai/whisper-large-v3). Empty = provider default."
-        },
-        "codesetu.speech.ttsBaseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL for openai-compatible or huggingface TTS (leave empty to reuse sttBaseUrl)."
-        },
-        "codesetu.speech.ttsModel": {
-          "type": "string",
-          "default": "",
-          "description": "Model id for TTS (e.g. tts-1). Empty = provider default."
+          "description": "Model id for STT (e.g. whisper-1, openai/whisper-large-v3, saarika:v2). Empty = provider default."
         }
       }
     }

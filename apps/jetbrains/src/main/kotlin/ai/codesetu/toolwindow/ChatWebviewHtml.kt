@@ -18,40 +18,39 @@ object ChatWebviewHtml {
   }
 
   fun render(modelLabel: String, bridgePostJs: String): String {
-    val speech = CodeSetuSettingsState.getInstance().state
+    val state = CodeSetuSettingsState.getInstance().state
     return template
       .replace("__THEME_CSS__", ChatTheme.rootCss())
       .replace("__MODEL_LABEL__", escapeHtml(modelLabel))
       .replace("__BRIDGE_POST__", bridgePostJs)
       .replace("__SLASH_COMMANDS_JSON__", slashCommandsJson())
-      .replace("__SPEECH_CONFIG_JSON__", speechConfigJson(speech))
-      .replace("__SPEECH_CONNECT_SOURCES__", speechConnectSources(speech))
+      .replace("__SPEECH_CONFIG_JSON__", speechConfigJson(state))
+      .replace("__SPEECH_CONNECT_SOURCES__", speechConnectSources(state))
+      .replace("__PLAN_MODE_INITIAL__", state.chatPlanModeOn.toString())
   }
 
   private fun speechConfigJson(state: CodeSetuSettingsState.State): String =
     "{\"sttProvider\":${jsonString(state.speechSttProvider)}," +
-      "\"ttsProvider\":${jsonString(state.speechTtsProvider)}," +
-      "\"language\":${jsonString(state.speechLanguage)}," +
-      "\"ttsEnabled\":${state.speechTtsEnabled}}"
+      "\"language\":${jsonString(state.speechLanguage)}}"
 
   private fun speechConnectSources(state: CodeSetuSettingsState.State): String {
     val origins = linkedSetOf<String>("'self'")
-    listOf(state.speechSttBaseUrl, state.speechTtsBaseUrl).forEach { url ->
-      if (url.isNotBlank()) {
-        runCatching { URI.create(url) }
-          .getOrNull()
-          ?.let { uri ->
-            val scheme = uri.scheme ?: return@let
-            val host = uri.host ?: return@let
+    if (state.speechSttBaseUrl.isNotBlank()) {
+      runCatching { URI.create(state.speechSttBaseUrl) }
+        .getOrNull()
+        ?.let { uri ->
+          val scheme = uri.scheme
+          val host = uri.host
+          if (scheme != null && host != null) {
             val port = if (uri.port == -1) "" else ":${uri.port}"
             origins += "$scheme://$host$port"
           }
-      }
+        }
     }
-    if (state.speechSttProvider == "sarvam" || state.speechTtsProvider == "sarvam") {
+    if (state.speechSttProvider == "sarvam") {
       origins += "https://api.sarvam.ai"
     }
-    if (state.speechSttProvider == "huggingface" || state.speechTtsProvider == "huggingface") {
+    if (state.speechSttProvider == "huggingface") {
       origins += "https://router.huggingface.co"
       origins += "https://api-inference.huggingface.co"
     }

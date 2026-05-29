@@ -21,6 +21,7 @@ import {
   buildContextMarkdown,
   createProvider,
   createSpeechProvider,
+  isPlanModeApproval,
   routeSkills,
   type AudioBlob,
   type ChatCompletionRequest,
@@ -96,10 +97,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const responder: ChatResponder = async (messages, requestContext) => {
     const configuration = readCodeSetuConfiguration();
     const lastUserText = lastUserMessageText(messages);
+    // If the user explicitly approved the plan (typed APPROVED / RUN, or hit
+    // the Approve & Run button which sends the canonical phrase), this turn
+    // should NOT be pinned to plan-mode — they want the implementation now,
+    // not another plan.
+    const planModeActive = requestContext?.planMode === true && !isPlanModeApproval(lastUserText);
     const routed = routeSkills({
       userText: lastUserText,
       skills: BUILTIN_SKILLS,
-      pinnedIds: requestContext?.planMode === true ? [PLAN_MODE_SKILL_ID] : [],
+      pinnedIds: planModeActive ? [PLAN_MODE_SKILL_ID] : [],
       autoRoute: configuration.skillsAutoRoute,
     });
 
@@ -176,51 +182,37 @@ function buildHostSpeechBridge(
 ): SpeechBridge {
   // Build the SpeechProvider lazily per request so settings changes (provider,
   // baseURL, model, language) take effect without re-opening the chat panel.
-  const resolveProvider = async (purpose: "stt" | "tts"): Promise<SpeechProvider> => {
+  const resolveProvider = async (): Promise<SpeechProvider> => {
     const speech = readSpeechConfiguration();
-    const providerId = purpose === "stt" ? speech.sttProvider : speech.ttsProvider;
-    if (providerId === "browser" || providerId === "local") {
+    if (speech.sttProvider === "browser") {
       throw new Error(
-        `Speech provider is "${providerId}" — this path is handled in the webview, the host should not be called.`,
+        'Speech provider is "browser" — this path is handled in the webview, the host should not be called.',
       );
     }
     const apiKey = await getStoredSpeechApiKey(secrets);
     if (apiKey === undefined) {
       throw new Error('No speech API key set. Run "CodeSetu: Setup Speech Provider".');
     }
-    const baseURL = purpose === "stt" ? speech.sttBaseUrl : speech.ttsBaseUrl || speech.sttBaseUrl;
-    const model = purpose === "stt" ? speech.sttModel : speech.ttsModel;
     const { provider } = createSpeechProvider({
-      provider: providerId,
+      provider: speech.sttProvider,
       apiKey,
-      ...(baseURL.length === 0 ? {} : { baseURL }),
-      ...(model.length === 0 ? {} : { model }),
+      ...(speech.sttBaseUrl.length === 0 ? {} : { baseURL: speech.sttBaseUrl }),
+      ...(speech.sttModel.length === 0 ? {} : { model: speech.sttModel }),
       language: speech.language,
     });
     if (provider === null) {
-      throw new Error(`Speech provider "${providerId}" has no host-side implementation.`);
+      throw new Error(`Speech provider "${speech.sttProvider}" has no host-side implementation.`);
     }
     return provider;
   };
 
   return {
     transcribe: async (audio: AudioBlob, language: string) => {
-      const provider = await resolveProvider("stt");
-      if (provider.transcribe === undefined) {
-        throw new Error(`Provider "${provider.id}" does not support transcription.`);
-      }
+      const provider = await resolveProvider();
       outputChannel.appendLine(
         `Speech.transcribe via ${provider.id} (${audio.bytes.byteLength} bytes, ${audio.mimeType})`,
       );
       return provider.transcribe(audio, { language });
-    },
-    synthesize: async (text: string, language: string) => {
-      const provider = await resolveProvider("tts");
-      if (provider.synthesize === undefined) {
-        throw new Error(`Provider "${provider.id}" does not support synthesis.`);
-      }
-      outputChannel.appendLine(`Speech.synthesize via ${provider.id} (${text.length} chars)`);
-      return provider.synthesize(text, { language });
     },
   };
 }

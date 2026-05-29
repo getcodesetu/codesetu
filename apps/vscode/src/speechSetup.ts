@@ -26,22 +26,16 @@ const PROVIDER_DEFAULTS: Record<string, SpeechSetupDefaults> = {
     apiKeyPrompt: "",
     needsKey: false,
   },
-  local: {
-    baseUrl: "",
-    model: "",
-    apiKeyPrompt: "",
-    needsKey: false,
-  },
   sarvam: {
     baseUrl: "https://api.sarvam.ai",
-    model: "saaras:v2",
-    apiKeyPrompt: "Sarvam API key (Saaras STT + Bulbul TTS)",
+    model: "saarika:v2",
+    apiKeyPrompt: "Sarvam API key (Saarika STT)",
     needsKey: true,
   },
   "openai-compatible": {
     baseUrl: "https://api.openai.com/v1",
     model: "whisper-1",
-    apiKeyPrompt: "API key for the /v1/audio endpoints",
+    apiKeyPrompt: "API key for the /v1/audio/transcriptions endpoint",
     needsKey: true,
   },
   huggingface: {
@@ -56,11 +50,10 @@ export async function setupCodeSetuSpeechProvider(secrets: vscode.SecretStorage)
   const provider = await vscode.window.showQuickPick(
     [
       { label: "browser", description: "WebSpeech API in the chat webview — no server, no key" },
-      { label: "local", description: "Same as browser; refuses any server fallback (air-gapped)" },
-      { label: "sarvam", description: "Sarvam Saaras (STT) + Bulbul (TTS)" },
+      { label: "sarvam", description: "Sarvam Saarika STT (Indic languages first-class)" },
       {
         label: "openai-compatible",
-        description: "/v1/audio/transcriptions + /v1/audio/speech — OpenAI, Groq, local whisper.cpp",
+        description: "/v1/audio/transcriptions — OpenAI, Groq, local whisper.cpp",
       },
       { label: "huggingface", description: "Hugging Face Inference Router (Whisper-large-v3)" },
     ],
@@ -73,7 +66,6 @@ export async function setupCodeSetuSpeechProvider(secrets: vscode.SecretStorage)
 
   const configuration = vscode.workspace.getConfiguration("codesetu.speech");
   await configuration.update("sttProvider", provider.label, vscode.ConfigurationTarget.Global);
-  await configuration.update("ttsProvider", provider.label, vscode.ConfigurationTarget.Global);
 
   if (!defaults.needsKey) {
     void vscode.window.showInformationMessage(
@@ -101,7 +93,6 @@ export async function setupCodeSetuSpeechProvider(secrets: vscode.SecretStorage)
   if (apiKey === undefined) return;
 
   await configuration.update("sttBaseUrl", baseUrl.trim(), vscode.ConfigurationTarget.Global);
-  await configuration.update("ttsBaseUrl", baseUrl.trim(), vscode.ConfigurationTarget.Global);
   await configuration.update("sttModel", model.trim(), vscode.ConfigurationTarget.Global);
   await storeSpeechApiKey(secrets, apiKey);
 

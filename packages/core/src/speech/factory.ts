@@ -17,7 +17,6 @@
 import {
   DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
   DEFAULT_HUGGINGFACE_STT_MODEL,
-  DEFAULT_HUGGINGFACE_TTS_MODEL,
   HuggingFaceSpeechProvider,
 } from "./huggingface.js";
 import { OpenAICompatibleSpeechProvider } from "./openaiCompatible.js";
@@ -32,12 +31,11 @@ import type { SpeechFactoryOptions, SpeechProvider, SpeechProviderId } from "./t
 /**
  * Normalize a possibly-stringly-typed provider id. Unknown values fall back to
  * `browser` since that's the safe local-only default — no key needed, no
- * network call, no setup.
+ * network call (the webview owns the WebSpeech path).
  */
 export function normalizeSpeechProvider(value: string | undefined): SpeechProviderId {
   switch (value) {
     case "sarvam":
-    case "local":
     case "openai-compatible":
     case "huggingface":
       return value;
@@ -47,7 +45,7 @@ export function normalizeSpeechProvider(value: string | undefined): SpeechProvid
 }
 
 export interface CreateSpeechProviderResult {
-  /** The host-side provider, or null for browser/local (the webview handles those). */
+  /** The host-side provider, or null for browser (the webview handles that). */
   provider: SpeechProvider | null;
   /** The id actually used (after normalization), so callers can echo it back. */
   providerId: SpeechProviderId;
@@ -62,7 +60,7 @@ export interface CreateSpeechProviderResult {
 export function createSpeechProvider(options: SpeechFactoryOptions): CreateSpeechProviderResult {
   const providerId = normalizeSpeechProvider(options.provider);
 
-  if (providerId === "browser" || providerId === "local") {
+  if (providerId === "browser") {
     return { provider: null, providerId };
   }
 
@@ -92,7 +90,6 @@ export function createSpeechProvider(options: SpeechFactoryOptions): CreateSpeec
         apiKey: options.apiKey,
         baseURL: options.baseURL ?? DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
         defaultModel: options.model ?? DEFAULT_HUGGINGFACE_STT_MODEL,
-        defaultTtsModel: DEFAULT_HUGGINGFACE_TTS_MODEL,
         ...(options.language === undefined ? {} : { defaultLanguage: options.language }),
         ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       }),

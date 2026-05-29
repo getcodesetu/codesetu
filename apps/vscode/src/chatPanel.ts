@@ -50,10 +50,9 @@ export type ChatResponder = (
   context?: ChatResponderContext,
 ) => Promise<string>;
 
-/** Host-side speech bridge invoked by webview mic / TTS controls. */
+/** Host-side speech bridge invoked by the webview mic control. */
 export interface SpeechBridge {
   transcribe(audio: AudioBlob, language: string): Promise<{ text: string; language?: string }>;
-  synthesize(text: string, language: string): Promise<AudioBlob>;
 }
 
 interface SendMessageRequest {
@@ -70,10 +69,9 @@ interface TranscribeRequest {
   base64: string;
 }
 
-interface SynthesizeRequest {
-  type: "synthesize";
-  requestId: string;
-  text: string;
+interface UiStateRequest {
+  type: "uiState";
+  planMode?: boolean;
 }
 
 export class ChatPanel {
@@ -82,6 +80,9 @@ export class ChatPanel {
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
   private inFlight = false;
+  // Webview-owned UI state mirrored to the host so editor actions (which don't
+  // go through the composer) can inherit the user's current Plan Mode pick.
+  private currentPlanMode = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -157,8 +158,10 @@ export class ChatPanel {
       return;
     }
 
-    if (isSynthesizeRequest(message)) {
-      await this.handleSynthesize(message);
+    if (isUiStateRequest(message)) {
+      if (typeof message.planMode === "boolean") {
+        this.currentPlanMode = message.planMode;
+      }
       return;
     }
 
@@ -192,29 +195,6 @@ export class ChatPanel {
       });
     } catch (error: unknown) {
       this.outputChannel.appendLine(`Transcription failed: ${formatErrorMessage(error)}`);
-      this.postSpeechError(message.requestId, formatErrorMessage(error));
-    }
-  }
-
-  private async handleSynthesize(message: SynthesizeRequest): Promise<void> {
-    if (this.speechBridge === undefined) {
-      this.postSpeechError(
-        message.requestId,
-        "Configure a non-browser speech provider via CodeSetu: Setup Speech Provider.",
-      );
-      return;
-    }
-    try {
-      const language = readSpeechConfiguration().language;
-      const audio = await this.speechBridge.synthesize(message.text, language);
-      void this.panel.webview.postMessage({
-        type: "synthesized",
-        requestId: message.requestId,
-        mimeType: audio.mimeType,
-        base64: encodeBase64(audio.bytes),
-      });
-    } catch (error: unknown) {
-      this.outputChannel.appendLine(`TTS failed: ${formatErrorMessage(error)}`);
       this.postSpeechError(message.requestId, formatErrorMessage(error));
     }
   }
@@ -259,7 +239,7 @@ export class ChatPanel {
       let isStreamingAssistantMessage = false;
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
-        planMode: options.planMode ?? false,
+        planMode: options.planMode ?? this.currentPlanMode,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         onChunk: (chunk) => {
           if (!isStreamingAssistantMessage) {
@@ -324,34 +304,29 @@ export class ChatPanel {
       ),
       speechConnectSources: speechConnectSources(speech),
       speechSttProvider: speech.sttProvider,
-      speechTtsProvider: speech.ttsProvider,
       speechLanguage: speech.language,
-      speechTtsEnabled: speech.ttsEnabled,
     });
   }
 }
 
 /**
- * Build a CSP `connect-src` allowlist from the configured speech endpoints.
- * Returns the bare origins (https://api.sarvam.ai). The webview already has
+ * Build a CSP `connect-src` allowlist from the configured speech endpoint.
+ * Returns the bare origin (https://api.sarvam.ai). The webview already has
  * 'self' in its connect-src, so we only add explicit external origins here.
  */
 function speechConnectSources(speech: ReturnType<typeof readSpeechConfiguration>): string[] {
   const origins = new Set<string>();
-  const consider = (value: string | undefined): void => {
-    if (value === undefined || value.length === 0) return;
+  if (speech.sttBaseUrl.length > 0) {
     try {
-      origins.add(new URL(value).origin);
+      origins.add(new URL(speech.sttBaseUrl).origin);
     } catch {
       // Ignore malformed URLs — they would fail at fetch time anyway.
     }
-  };
-  consider(speech.sttBaseUrl);
-  consider(speech.ttsBaseUrl);
-  if (speech.sttProvider === "sarvam" || speech.ttsProvider === "sarvam") {
+  }
+  if (speech.sttProvider === "sarvam") {
     origins.add("https://api.sarvam.ai");
   }
-  if (speech.sttProvider === "huggingface" || speech.ttsProvider === "huggingface") {
+  if (speech.sttProvider === "huggingface") {
     origins.add("https://router.huggingface.co");
     origins.add("https://api-inference.huggingface.co");
   }
@@ -381,23 +356,18 @@ function isTranscribeRequest(message: unknown): message is TranscribeRequest {
   );
 }
 
-function isSynthesizeRequest(message: unknown): message is SynthesizeRequest {
-  if (typeof message !== "object" || message === null) return false;
-  const candidate = message as Partial<SynthesizeRequest>;
-  return (
-    candidate.type === "synthesize" &&
-    typeof candidate.requestId === "string" &&
-    typeof candidate.text === "string"
-  );
-}
-
 function decodeBase64(value: string): Uint8Array {
   const buffer = Buffer.from(value, "base64");
   return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
 
-function encodeBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+function isUiStateRequest(message: unknown): message is UiStateRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<UiStateRequest>;
+  return (
+    candidate.type === "uiState" &&
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
+  );
 }
 
 function isSendMessageRequest(message: unknown): message is SendMessageRequest {

@@ -19,25 +19,17 @@ import * as vscode from "vscode";
 
 export interface SpeechConfiguration {
   sttProvider: SpeechProviderId;
-  ttsProvider: SpeechProviderId;
   language: string;
-  ttsEnabled: boolean;
   sttBaseUrl: string;
   sttModel: string;
-  ttsBaseUrl: string;
-  ttsModel: string;
 }
 
 export function readSpeechConfiguration(): SpeechConfiguration {
   const configuration = vscode.workspace.getConfiguration("codesetu.speech");
   return {
     sttProvider: normalizeSpeechProvider(configuration.get<string>("sttProvider", "browser")),
-    ttsProvider: normalizeSpeechProvider(configuration.get<string>("ttsProvider", "browser")),
     language: (configuration.get<string>("language", "en-US") || "en-US").trim(),
-    ttsEnabled: configuration.get<boolean>("ttsEnabled", false),
     sttBaseUrl: (configuration.get<string>("sttBaseUrl", "") || "").trim(),
     sttModel: (configuration.get<string>("sttModel", "") || "").trim(),
-    ttsBaseUrl: (configuration.get<string>("ttsBaseUrl", "") || "").trim(),
-    ttsModel: (configuration.get<string>("ttsModel", "") || "").trim(),
   };
 }

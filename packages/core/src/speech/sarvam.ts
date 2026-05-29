@@ -14,18 +14,13 @@
  * limitations under the License.
  */
 
-import type {
-  AudioBlob,
-  SpeechProvider,
-  SynthesizeOptions,
-  TranscribeOptions,
-  TranscriptionResult,
-} from "./types.js";
+import type { AudioBlob, SpeechProvider, TranscribeOptions, TranscriptionResult } from "./types.js";
 
 export const DEFAULT_SARVAM_SPEECH_BASE_URL = "https://api.sarvam.ai";
-export const DEFAULT_SARVAM_STT_MODEL = "saaras:v2";
-export const DEFAULT_SARVAM_TTS_MODEL = "bulbul:v1";
-export const DEFAULT_SARVAM_TTS_VOICE = "meera";
+// Sarvam ships STT under multiple model names ("saaras", "saarika"). saarika:v2
+// is the current GA model — verify against your Sarvam dashboard if calls 404
+// or 400 with "unknown model". See apps/jetbrains/README.md "Voice" section.
+export const DEFAULT_SARVAM_STT_MODEL = "saarika:v2";
 export const DEFAULT_SARVAM_LANGUAGE = "en-IN";
 
 export interface SarvamSpeechProviderOptions {
@@ -41,15 +36,12 @@ interface SarvamTranscribeResponse {
   language_code?: string;
 }
 
-interface SarvamTtsResponse {
-  audios?: string[];
-}
-
 /**
- * Sarvam Saaras (STT) + Bulbul (TTS) speech provider. Saaras posts multipart
- * form data to /speech-to-text; Bulbul posts JSON to /text-to-speech and
- * returns base64-encoded WAV. Keep the surface narrow — match the
- * SpeechProvider contract rather than every Sarvam-specific knob.
+ * Sarvam Saarika (STT) provider. POSTs multipart form data to /speech-to-text.
+ * Auth via the `api-subscription-key` header (NOT a Bearer token — Sarvam
+ * uses its own scheme). Response is JSON with `transcript` and an optional
+ * `language_code`. Both field names are kept loose so a Sarvam-side rename
+ * doesn't break us silently.
  */
 export class SarvamSpeechProvider implements SpeechProvider {
   public readonly id = "sarvam" as const;
@@ -78,7 +70,11 @@ export class SarvamSpeechProvider implements SpeechProvider {
     options: TranscribeOptions = {},
   ): Promise<TranscriptionResult> {
     const formData = new FormData();
-    formData.append("file", new Blob([new Uint8Array(audio.bytes)], { type: audio.mimeType }), "audio");
+    formData.append(
+      "file",
+      new Blob([new Uint8Array(audio.bytes)], { type: audio.mimeType }),
+      "audio",
+    );
     formData.append("model", options.model ?? this.defaultModel ?? DEFAULT_SARVAM_STT_MODEL);
     formData.append("language_code", options.language ?? this.defaultLanguage);
 
@@ -96,38 +92,4 @@ export class SarvamSpeechProvider implements SpeechProvider {
     const text = json.transcript ?? "";
     return json.language_code === undefined ? { text } : { text, language: json.language_code };
   }
-
-  public async synthesize(text: string, options: SynthesizeOptions = {}): Promise<AudioBlob> {
-    const response = await this.fetchImpl(`${this.baseURL}/text-to-speech`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "api-subscription-key": this.apiKey,
-      },
-      body: JSON.stringify({
-        inputs: [text],
-        target_language_code: options.language ?? this.defaultLanguage,
-        model: options.model ?? this.defaultModel ?? DEFAULT_SARVAM_TTS_MODEL,
-        speaker: options.voice ?? DEFAULT_SARVAM_TTS_VOICE,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Sarvam TTS failed: ${response.status} ${await response.text()}`);
-    }
-
-    const json = (await response.json()) as SarvamTtsResponse;
-    const base64 = json.audios?.[0];
-    if (base64 === undefined) {
-      throw new Error("Sarvam TTS returned no audio");
-    }
-    return { mimeType: "audio/wav", bytes: base64ToBytes(base64) };
-  }
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  // Node has Buffer; the webview path uses atob. Either is fine — the webview
-  // never instantiates this class (it talks to a host that does).
-  const buffer = Buffer.from(base64, "base64");
-  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }

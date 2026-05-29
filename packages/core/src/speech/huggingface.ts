@@ -18,18 +18,18 @@ import { OpenAICompatibleSpeechProvider } from "./openaiCompatible.js";
 
 /**
  * Hugging Face Inference Router (https://router.huggingface.co/v1) speaks the
- * OpenAI-compatible audio API for both transcription and speech. Users with a
- * dedicated Inference Endpoint can override baseURL/model.
+ * OpenAI-compatible audio API for transcription. Coverage of
+ * `/v1/audio/transcriptions` on the router is uneven across models — if you
+ * get a 404, switch baseURL to a model-specific endpoint or use a dedicated
+ * Inference Endpoint.
  */
 export const DEFAULT_HUGGINGFACE_SPEECH_BASE_URL = "https://router.huggingface.co/v1";
 export const DEFAULT_HUGGINGFACE_STT_MODEL = "openai/whisper-large-v3";
-export const DEFAULT_HUGGINGFACE_TTS_MODEL = "facebook/mms-tts";
 
 export interface HuggingFaceSpeechProviderOptions {
   apiKey: string;
   baseURL?: string;
   defaultModel?: string;
-  defaultTtsModel?: string;
   defaultLanguage?: string;
   fetch?: typeof fetch;
 }
@@ -41,7 +41,6 @@ export class HuggingFaceSpeechProvider extends OpenAICompatibleSpeechProvider {
       apiKey: options.apiKey,
       baseURL: options.baseURL ?? DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
       defaultModel: options.defaultModel ?? DEFAULT_HUGGINGFACE_STT_MODEL,
-      defaultTtsModel: options.defaultTtsModel ?? DEFAULT_HUGGINGFACE_TTS_MODEL,
       ...(options.defaultLanguage === undefined ? {} : { defaultLanguage: options.defaultLanguage }),
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     });

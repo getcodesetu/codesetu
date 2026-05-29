@@ -23,18 +23,14 @@ export interface RenderChatPanelHtmlOptions {
   slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
   /**
    * Origin allowlist used in the CSP `connect-src` so the webview can talk to
-   * configured speech endpoints (Sarvam / HF / OpenAI / local Whisper). Always
-   * includes 'self'.
+   * the configured speech endpoint (Sarvam / HF / OpenAI / local Whisper).
+   * Always includes 'self'.
    */
   speechConnectSources?: ReadonlyArray<string>;
   /** Initial STT provider id (informs which mic path the webview activates). */
   speechSttProvider?: string;
-  /** Initial TTS provider id. */
-  speechTtsProvider?: string;
   /** BCP-47 language code, e.g. "en-US", "hi-IN". */
   speechLanguage?: string;
-  /** TTS toggled on at panel render time. */
-  speechTtsEnabled?: boolean;
 }
 
 function escapeHtml(value: string): string {
@@ -57,14 +53,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
   // entries are configured speech endpoints (Sarvam / HF / local Whisper).
   const connectSources = ["'self'", ...(options.speechConnectSources ?? [])].join(" ");
   const speechSttProvider = options.speechSttProvider ?? "browser";
-  const speechTtsProvider = options.speechTtsProvider ?? "browser";
   const speechLanguage = options.speechLanguage ?? "en-US";
-  const speechTtsEnabled = options.speechTtsEnabled === true;
   const speechConfigJson = JSON.stringify({
     sttProvider: speechSttProvider,
-    ttsProvider: speechTtsProvider,
     language: speechLanguage,
-    ttsEnabled: speechTtsEnabled,
   }).replace(/</g, "\\u003c");
 
   return /* html */ `<!DOCTYPE html>
@@ -578,11 +570,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         100% { transform: scale(1.4); opacity: 0; }
       }
 
-      .tts-button[data-active="true"] {
-        color: var(--vscode-button-background);
-        background: color-mix(in srgb, var(--vscode-button-background) 14%, transparent);
-      }
-
       .speech-status {
         margin-top: 6px;
         font-size: 12px;
@@ -647,20 +634,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               </span>
             </div>
             <div class="toolbar-group secondary">
-              <button
-                id="tts-button"
-                class="icon-button tts-button"
-                type="button"
-                data-active="${speechTtsEnabled ? "true" : "false"}"
-                aria-pressed="${speechTtsEnabled ? "true" : "false"}"
-                aria-label="Toggle read responses aloud"
-                title="Read assistant responses aloud"
-              >
-                <svg class="composer-icon" data-icon="speaker" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M5 9v6h4l5 4V5L9 9H5z" />
-                  <path d="M16 8.5a4 4 0 0 1 0 7" />
-                </svg>
-              </button>
               <button
                 id="mic-button"
                 class="icon-button mic-button"
@@ -777,11 +750,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
       updatePlanModeUi();
 
+      function postPlanModeUiState() {
+        vscode.postMessage({ type: "uiState", planMode: planModeToggle.checked });
+      }
+
       planModeToggle.addEventListener("change", () => {
         persistState();
         updatePlanModeUi();
+        postPlanModeUiState();
       });
       includeContext.addEventListener("change", persistState);
+      // Tell the host the initial Plan Mode state so editor-action submissions
+      // (which don't go through the composer) inherit it.
+      postPlanModeUiState();
 
       // Slash command palette ---------------------------------------------------
       const slashCommands = ${slashCommandsJson};
@@ -855,6 +836,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           closeSlashMenu();
           return;
         }
+        // Mutually exclusive with the composer (+) menu.
+        setMenuOpen(false);
         const firstSpace = text.search(/\\s/);
         const prefix = firstSpace === -1 ? text : text.slice(0, firstSpace);
         renderSlashMenu(prefix);
@@ -889,10 +872,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
       });
 
-      // Voice: mic (STT) and TTS toggle -----------------------------------------
+      // Voice (STT only) ---------------------------------------------------------
       const speechConfig = ${speechConfigJson};
       const micButton = document.getElementById("mic-button");
-      const ttsButton = document.getElementById("tts-button");
       const speechStatus = document.getElementById("speech-status");
 
       function setSpeechStatus(text, isError) {
@@ -904,19 +886,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         micButton.setAttribute("data-state", state);
       }
 
-      let ttsEnabled = speechConfig.ttsEnabled === true;
-      ttsButton.setAttribute("data-active", String(ttsEnabled));
-      ttsButton.setAttribute("aria-pressed", String(ttsEnabled));
-      ttsButton.addEventListener("click", () => {
-        ttsEnabled = !ttsEnabled;
-        ttsButton.setAttribute("data-active", String(ttsEnabled));
-        ttsButton.setAttribute("aria-pressed", String(ttsEnabled));
-        setSpeechStatus(ttsEnabled ? "Read aloud: on" : "Read aloud: off", false);
-      });
-
-      // ---- STT: browser/local path uses WebSpeech; server path uses MediaRecorder.
+      // ---- STT: browser path uses WebSpeech; server path uses MediaRecorder.
       const SttProvider = speechConfig.sttProvider || "browser";
-      const useBrowserStt = SttProvider === "browser" || SttProvider === "local";
+      const useBrowserStt = SttProvider === "browser";
       const SpeechRecognitionCtor =
         window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -1053,11 +1025,75 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
       }
 
-      micButton.addEventListener("click", () => {
-        if (listening) {
+      // Mic UX: pointerdown >250ms = push-to-talk (release stops); shorter
+      // press = tap-to-toggle. Spacebar in an empty/focused composer also
+      // triggers push-to-talk. Esc stops an active capture.
+      const HOLD_THRESHOLD_MS = 250;
+      let pressTimer;
+      let holdMode = false;
+
+      function startHoldMode() {
+        holdMode = true;
+        startListening();
+      }
+
+      micButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        if (listening && !holdMode) {
+          // A second tap while a tap-toggled capture is running just stops it.
           stopListening();
-        } else {
+          return;
+        }
+        if (listening) return;
+        holdMode = false;
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = setTimeout(startHoldMode, HOLD_THRESHOLD_MS);
+      });
+
+      function endMicPress() {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = undefined;
+        }
+        if (holdMode) {
+          stopListening();
+          holdMode = false;
+        } else if (!listening) {
+          // Short tap with no active capture starts listening (tap-toggle on).
           startListening();
+        }
+      }
+
+      micButton.addEventListener("pointerup", endMicPress);
+      micButton.addEventListener("pointerleave", () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = undefined;
+        }
+      });
+      micButton.addEventListener("pointercancel", endMicPress);
+
+      let spaceHeld = false;
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && slashMenu.hidden && listening) {
+          stopListening();
+          return;
+        }
+        if (event.key !== " " || event.repeat || spaceHeld) return;
+        if (document.activeElement !== textarea) return;
+        if (textarea.value.length !== 0) return;
+        event.preventDefault();
+        spaceHeld = true;
+        holdMode = true;
+        startListening();
+      });
+      document.addEventListener("keyup", (event) => {
+        if (event.key !== " " || !spaceHeld) return;
+        event.preventDefault();
+        spaceHeld = false;
+        if (holdMode) {
+          stopListening();
+          holdMode = false;
         }
       });
 
@@ -1076,43 +1112,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         });
       }
 
-      function base64ToBlob(base64, mimeType) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return new Blob([bytes.buffer], { type: mimeType || "application/octet-stream" });
-      }
-
-      const pendingTtsPlaybacks = new Map();
-
-      function speakViaBrowser(text) {
-        if (!window.speechSynthesis) {
-          setSpeechStatus("Browser speech synthesis is unavailable.", true);
-          return;
-        }
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = speechConfig.language || "en-US";
-        window.speechSynthesis.speak(utterance);
-      }
-
-      function speakViaServer(text) {
-        const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
-        pendingTtsPlaybacks.set(requestId, true);
-        setSpeechStatus("Synthesizing…", false);
-        vscode.postMessage({ type: "synthesize", requestId, text });
-      }
-
-      function maybeSpeakAssistant(text) {
-        if (!ttsEnabled || !text) return;
-        const trimmed = String(text).trim();
-        if (trimmed.length === 0) return;
-        const ttsProvider = speechConfig.ttsProvider || "browser";
-        if (ttsProvider === "browser" || ttsProvider === "local") {
-          speakViaBrowser(trimmed);
-        } else {
-          speakViaServer(trimmed);
-        }
-      }
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
@@ -1229,7 +1228,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
       composerMenuToggle.addEventListener("click", (event) => {
         event.stopPropagation();
-        setMenuOpen(composerMenu.hidden);
+        const willOpen = composerMenu.hidden;
+        if (willOpen) closeSlashMenu();
+        setMenuOpen(willOpen);
       });
 
       modelChip.addEventListener("click", () => {
@@ -1303,7 +1304,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           }
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
-          maybeSpeakAssistant(message.text);
         }
 
         if (message.type === "assistantMessageStart") {
@@ -1315,12 +1315,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         if (message.type === "assistantMessageDone") {
-          const finalText = activeAssistantRaw;
           activeAssistantMessage = undefined;
           activeAssistantRaw = "";
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
-          maybeSpeakAssistant(finalText);
         }
 
         if (message.type === "transcription") {
@@ -1332,21 +1330,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           setMicState("idle");
         }
 
-        if (message.type === "synthesized") {
-          pendingTtsPlaybacks.delete(message.requestId);
-          const blob = base64ToBlob(message.base64, message.mimeType);
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.addEventListener("ended", () => URL.revokeObjectURL(url));
-          audio.play().catch((error) => {
-            setSpeechStatus("Audio playback failed: " + error.message, true);
-          });
-          setSpeechStatus("", false);
-        }
-
         if (message.type === "speechError") {
           pendingTranscriptions.delete(message.requestId);
-          pendingTtsPlaybacks.delete(message.requestId);
           listening = false;
           setMicState("idle");
           setSpeechStatus(message.text || "Speech error.", true);

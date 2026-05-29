@@ -13,10 +13,13 @@ Studio, and other JetBrains IDEs.
 - **AI Skills with a slash palette** — type `/` to invoke `/plan`, `/explain`,
   `/refactor`, `/test`, `/indic`. Keyword auto-routing picks the right skill
   from natural-language prompts (toggle in Settings → CodeSetu)
-- **Voice** — mic button + read-aloud toggle in the composer. STT/TTS
-  backends: browser, Sarvam Saaras+Bulbul, OpenAI-compatible Whisper, Hugging
-  Face Whisper, or local-only / air-gapped. Configure in Settings → CodeSetu →
-  Speech section.
+- **Voice (STT)** — mic button in the composer with push-to-toggle and
+  push-to-talk (hold) plus a spacebar hotkey when the composer is empty.
+  Default backend in JetBrains is **Sarvam Saarika** (browser
+  SpeechRecognition does not work in JCEF — see "Voice in JetBrains" below).
+  Other backends: OpenAI-compatible Whisper, Hugging Face Whisper. Configure
+  via `Tools → CodeSetu → Setup Speech Provider` or Settings → CodeSetu →
+  Speech.
 - Provider settings for Sarvam and OpenAI-compatible APIs
 - Provider diagnostics for missing model, failed connection, and successful connection
 - Workspace skills/checks from `.codesetu/skills/*.md` and `.codesetu/checks/*.md`

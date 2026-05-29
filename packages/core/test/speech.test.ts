@@ -23,20 +23,20 @@ describe("normalizeSpeechProvider", () => {
     expect(normalizeSpeechProvider("sarvam")).toBe("sarvam");
     expect(normalizeSpeechProvider("huggingface")).toBe("huggingface");
     expect(normalizeSpeechProvider("openai-compatible")).toBe("openai-compatible");
-    expect(normalizeSpeechProvider("local")).toBe("local");
   });
 
   it("falls back to browser for unknown or empty values", () => {
     expect(normalizeSpeechProvider(undefined)).toBe("browser");
     expect(normalizeSpeechProvider("")).toBe("browser");
     expect(normalizeSpeechProvider("nonsense")).toBe("browser");
+    // "local" was removed in v0.3 — should normalize to browser, not crash.
+    expect(normalizeSpeechProvider("local")).toBe("browser");
   });
 });
 
 describe("createSpeechProvider", () => {
-  it("returns null provider for browser/local (webview handles them)", () => {
+  it("returns null provider for browser (webview handles it)", () => {
     expect(createSpeechProvider({ provider: "browser" }).provider).toBeNull();
-    expect(createSpeechProvider({ provider: "local" }).provider).toBeNull();
   });
 
   it("throws when a server-side provider is requested without an API key", () => {
@@ -75,9 +75,9 @@ describe("createSpeechProvider", () => {
 
 describe("SarvamSpeechProvider", () => {
   it("posts multipart to /speech-to-text and returns the transcript", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({ transcript: "नमस्ते दुनिया", language_code: "hi-IN" }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ transcript: "नमस्ते दुनिया", language_code: "hi-IN" }));
     const provider = new SarvamSpeechProvider({
       apiKey: "sk_test",
       baseURL: "https://api.sarvam.ai",
@@ -96,23 +96,8 @@ describe("SarvamSpeechProvider", () => {
     expect(init.body).toBeInstanceOf(FormData);
   });
 
-  it("returns audio bytes from /text-to-speech base64 response", async () => {
-    const base64 = Buffer.from(new Uint8Array([10, 20, 30, 40])).toString("base64");
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ audios: [base64] }));
-    const provider = new SarvamSpeechProvider({
-      apiKey: "sk_test",
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-
-    const audio = await provider.synthesize("hello", { language: "en-IN" });
-    expect(audio.mimeType).toBe("audio/wav");
-    expect(Array.from(audio.bytes)).toEqual([10, 20, 30, 40]);
-  });
-
   it("throws when the API returns a non-2xx response", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response("forbidden", { status: 403 }));
+    const fetchMock = vi.fn().mockResolvedValue(new Response("forbidden", { status: 403 }));
     const provider = new SarvamSpeechProvider({
       apiKey: "sk_test",
       fetch: fetchMock as unknown as typeof fetch,
@@ -141,22 +126,6 @@ describe("OpenAICompatibleSpeechProvider", () => {
     expect(call?.[0]).toBe("https://api.openai.com/v1/audio/transcriptions");
     const init = call?.[1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer sk_test");
-  });
-
-  it("returns audio/mpeg bytes for /audio/speech", async () => {
-    const audioBytes = new Uint8Array([1, 1, 2, 3, 5, 8]);
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(audioBytes.buffer.slice(0), { status: 200 }));
-    const provider = new OpenAICompatibleSpeechProvider({
-      apiKey: "sk_test",
-      baseURL: "https://api.openai.com/v1",
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-
-    const audio = await provider.synthesize("hello", { voice: "alloy" });
-    expect(audio.mimeType).toBe("audio/mpeg");
-    expect(audio.bytes.byteLength).toBe(audioBytes.byteLength);
   });
 });
 

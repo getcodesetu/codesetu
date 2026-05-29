@@ -73,12 +73,9 @@ export {
 export {
   DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
   DEFAULT_HUGGINGFACE_STT_MODEL,
-  DEFAULT_HUGGINGFACE_TTS_MODEL,
   DEFAULT_SARVAM_LANGUAGE,
   DEFAULT_SARVAM_SPEECH_BASE_URL,
   DEFAULT_SARVAM_STT_MODEL,
-  DEFAULT_SARVAM_TTS_MODEL,
-  DEFAULT_SARVAM_TTS_VOICE,
   HuggingFaceSpeechProvider,
   OpenAICompatibleSpeechProvider,
   SPEECH_PROVIDER_IDS,
@@ -93,7 +90,6 @@ export {
   type SpeechFactoryOptions,
   type SpeechProvider,
   type SpeechProviderId,
-  type SynthesizeOptions,
   type TranscribeOptions,
   type TranscriptionResult,
 } from "./speech/index.js";
