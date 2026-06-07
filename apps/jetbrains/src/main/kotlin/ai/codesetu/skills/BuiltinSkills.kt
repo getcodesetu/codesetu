@@ -7,9 +7,11 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * Kotlin mirror of packages/core/src/skills/builtin.ts. Keep the skill ids,
- * slash commands, keywords, and bodies in sync until the Phase 2 file-based
- * loader replaces both copies. The canonical text lives at skills/<id>/SKILL.md.
+ * Fallback built-in skills. The runtime source of truth is the bundled
+ * skills/<id>/SKILL.md files, loaded via loadBuiltinSkills (BuiltinSkillsLoader.kt);
+ * these constants are used per-skill only when a file is missing or unparseable,
+ * so skills never silently vanish. The id list here also drives which SKILL.md
+ * files the loader reads. Canonical text lives at the repo-root skills/<id>/SKILL.md.
  */
 package ai.codesetu.skills
 

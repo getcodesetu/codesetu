@@ -93,4 +93,8 @@ data class ChatChunkChoice(
 data class ChatCompletionDelta(
   val content: String? = null,
   val refusal: String? = null,
+  // Reasoning models stream chain-of-thought in a non-standard field; some use
+  // `reasoning_content`, others `reasoning`. Captured so the UI can show it.
+  @SerialName("reasoning_content") val reasoningContent: String? = null,
+  val reasoning: String? = null,
 )

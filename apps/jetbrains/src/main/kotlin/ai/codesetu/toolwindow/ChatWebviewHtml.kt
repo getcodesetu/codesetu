@@ -1,7 +1,7 @@
 package ai.codesetu.toolwindow
 
 import ai.codesetu.settings.CodeSetuSettingsState
-import ai.codesetu.skills.BUILTIN_SKILLS
+import ai.codesetu.skills.loadBuiltinSkills
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
@@ -58,7 +58,7 @@ object ChatWebviewHtml {
   }
 
   private fun slashCommandsJson(): String {
-    val entries = BUILTIN_SKILLS.flatMap { skill ->
+    val entries = loadBuiltinSkills().flatMap { skill ->
       skill.slashCommands.map { command ->
         Triple(command, skill.instruction.name, skill.instruction.description)
       }

@@ -1,5 +1,6 @@
 package ai.codesetu.toolwindow
 
+import ai.codesetu.actions.SetupSpeechProviderAction
 import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
@@ -14,7 +15,7 @@ import ai.codesetu.settings.CodeSetuModelCatalog
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.providerDefaults
 import ai.codesetu.settings.resolveCodeSetuModel
-import ai.codesetu.skills.BUILTIN_SKILLS
+import ai.codesetu.skills.loadBuiltinSkills
 import ai.codesetu.skills.routeSkills
 import ai.codesetu.speech.AudioPayload
 import ai.codesetu.speech.CodeSetuSpeechClient
@@ -27,6 +28,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
@@ -39,11 +41,15 @@ import javax.swing.JLabel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 class CodeSetuToolWindowFactory : ToolWindowFactory {
   override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
@@ -127,6 +133,13 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
           CodeSetuSettingsState.getInstance().state.chatPlanModeOn = planMode
         }
       }
+      "permissionDenied" -> {
+        val reason = obj["reason"]?.jsonPrimitive?.contentOrNull ?: "other"
+        val detail = obj["message"]?.jsonPrimitive?.contentOrNull
+        ApplicationManager.getApplication().invokeLater {
+          showMicPermissionPopup(reason, detail)
+        }
+      }
       "transcribe" -> {
         val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
         val mimeType = obj["mimeType"]?.jsonPrimitive?.contentOrNull ?: "audio/webm"
@@ -136,6 +149,72 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         }
       }
     }
+  }
+
+  private fun showMicPermissionPopup(reason: String, detail: String?) {
+    val (title, body, settingsUrl) = micPermissionGuide(reason)
+    val detailLine = if (detail.isNullOrBlank()) "" else "\n\n$detail"
+    val full = "$body$detailLine"
+
+    val options = if (settingsUrl != null) {
+      arrayOf("Open Mic Settings", "Switch Speech Provider", "Dismiss")
+    } else {
+      arrayOf("Switch Speech Provider", "Dismiss")
+    }
+    val choice = Messages.showDialog(project, full, title, options, 0, Messages.getWarningIcon())
+    val picked = options.getOrNull(choice)
+    when (picked) {
+      "Open Mic Settings" -> {
+        if (settingsUrl != null) {
+          // BrowserUtil handles custom URI schemes (x-apple.systempreferences,
+          // ms-settings) via the platform's default URL handler.
+          BrowserUtil.browse(settingsUrl)
+        }
+      }
+      "Switch Speech Provider" -> SetupSpeechProviderAction.openWizard(project)
+    }
+  }
+
+  private fun micPermissionGuide(reason: String): Triple<String, String, String?> = when (reason) {
+    "no-device" -> Triple(
+      "No microphone detected",
+      "Plug in a microphone (or pick one as the system input device) and try again.",
+      null,
+    )
+    "in-use" -> Triple(
+      "Microphone is in use by another app",
+      "Close any video-conferencing or recording app holding the mic and try again.",
+      null,
+    )
+    "network" -> Triple(
+      "Browser speech recognition needs network access",
+      "Browser WebSpeech in JCEF cannot reach the Google recognition service (the embedded Chromium build ships without the cloud-speech keys). Run Tools → CodeSetu → Setup Speech Provider and pick Sarvam (or another server backend).",
+      null,
+    )
+    "unsupported" -> Triple(
+      "Mic capture is unavailable in this webview",
+      "JCEF in this IDE build does not expose the media-stream API. Make sure you are on IntelliJ 2024+ and that the bundled JCEF is enabled (Help → Find Action → 'Choose Boot Runtime' → confirm a JBR with JCEF).",
+      null,
+    )
+    else -> defaultPermissionGuide()
+  }
+
+  private fun defaultPermissionGuide(): Triple<String, String, String?> = when {
+    SystemInfo.isMac -> Triple(
+      "Microphone access blocked",
+      "macOS is blocking the mic for this IDE.\n\nOpen System Settings → Privacy & Security → Microphone, then enable the row for IntelliJ IDEA (or PyCharm / WebStorm / whatever you launched).\n\nYou may need to quit and reopen the IDE after granting access.",
+      "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+    )
+    SystemInfo.isWindows -> Triple(
+      "Microphone access blocked",
+      "Windows is blocking the mic for this IDE.\n\nOpen Settings → Privacy & Security → Microphone, turn on 'Microphone access' and 'Let desktop apps access your microphone', then come back.",
+      "ms-settings:privacy-microphone",
+    )
+    else -> Triple(
+      "Microphone access blocked",
+      "Linux mic permissions depend on your audio server (PipeWire, PulseAudio) and on whether the IDE is sandboxed (Flatpak, Snap).\n\n • PulseAudio: run `pavucontrol` and check the Recording tab.\n • PipeWire: `wpctl status` to confirm the input source is unmuted.\n • Flatpak IntelliJ: `flatpak override --user --device=all com.jetbrains.IntelliJ-IDEA-Community` then restart.",
+      null,
+    )
   }
 
   private fun runTranscribe(requestId: String, mimeType: String, base64: String) {
@@ -198,7 +277,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     val autoRoute = CodeSetuSettingsState.getInstance().state.skillsAutoRoute
     val routed = routeSkills(
       userText = userText,
-      skills = BUILTIN_SKILLS,
+      skills = loadBuiltinSkills(),
       pinnedIds = pinnedIds,
       autoRoute = autoRoute,
     )
@@ -210,17 +289,21 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "$effectiveUserText\n\nCurrent IDE context:\n\n$contextMarkdown"
     }
     history.add(ChatMessage("user", userMessage))
-    val messages =
-      listOf(ChatMessage("system", buildSystemMessage(instructions, routed.selected))) + history
+    val systemPrompt = buildSystemMessage(instructions, routed.selected)
+    val messages = listOf(ChatMessage("system", systemPrompt)) + history
+
+    // Surface exactly what we're about to send for the "Context sent to AI" panel.
+    pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
 
     var started = false
     val response = try {
-      client.streamChat(messages) { chunk ->
+      client.streamChat(messages) { piece ->
         if (!started) {
           started = true
           push(message("assistantMessageStart"))
         }
-        push(message("assistantMessageDelta") { put("text", chunk) })
+        piece.reasoning?.let { push(message("assistantReasoningDelta") { put("text", it) }) }
+        piece.content?.let { push(message("assistantMessageDelta") { put("text", it) }) }
       }
     } catch (error: Exception) {
       if (started) {
@@ -406,6 +489,43 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     }.toString()
 
   private fun busy(value: Boolean): String = message("busy") { put("value", value) }
+
+  /** Emit the "Context sent to AI" preview: routed skills, the IDE-context
+   *  summary, and the full assembled payload for deep inspection. */
+  private fun pushContextPreview(
+    ideContext: IdeContextPayload,
+    selectedSkills: List<WorkspaceInstruction>,
+    systemPrompt: String,
+    contextMarkdown: String,
+  ) {
+    push(
+      message("contextPreview") {
+        putJsonObject("preview") {
+          putJsonArray("skills") {
+            selectedSkills.forEach { skill ->
+              addJsonObject {
+                put("name", skill.name)
+                loadBuiltinSkills().firstOrNull { it.id == skill.id }
+                  ?.slashCommands?.firstOrNull()
+                  ?.let { put("slash", it) }
+              }
+            }
+          }
+          putJsonObject("ideContext") {
+            ideContext.activeFilePath?.let { put("activeFilePath", it) }
+            ideContext.languageId?.let { put("languageId", it) }
+            put("hasSelection", !ideContext.selectedText.isNullOrEmpty())
+            ideContext.selectedText?.let { put("selectedText", it) }
+            put("snippetCount", ideContext.relatedSnippets.size)
+          }
+          putJsonObject("full") {
+            put("systemPrompt", systemPrompt)
+            put("contextMarkdown", contextMarkdown)
+          }
+        }
+      },
+    )
+  }
 
   override fun dispose() {
     Disposer.dispose(jsQuery)

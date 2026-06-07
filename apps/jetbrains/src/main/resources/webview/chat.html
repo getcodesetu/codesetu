@@ -107,6 +107,56 @@
         border: 1px solid var(--vscode-inputValidation-errorBorder);
       }
 
+      /* Collapsible "thinking" + "context sent to AI" accordions. */
+      .thinking,
+      .context-preview {
+        margin: 0 0 8px;
+        border: 1px solid rgba(127, 127, 127, 0.18);
+        border-radius: 8px;
+        background: rgba(127, 127, 127, 0.05);
+        font-size: 0.92em;
+      }
+      .context-preview {
+        margin: -2px 0 4px;
+      }
+      .thinking[hidden] {
+        display: none;
+      }
+      .thinking > summary,
+      .context-preview > summary,
+      .ctx-full > summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--vscode-descriptionForeground, #888);
+        user-select: none;
+      }
+      .thinking .think-body,
+      .context-preview .ctx-body {
+        padding: 2px 12px 10px;
+        color: var(--vscode-descriptionForeground, #999);
+        white-space: normal;
+      }
+      .think-label {
+        font-style: italic;
+      }
+      .context-preview .ctx-row {
+        margin: 5px 0;
+      }
+      .context-preview .ctx-label {
+        opacity: 0.8;
+      }
+      .ctx-full {
+        margin-top: 8px;
+        border: none;
+        background: none;
+      }
+      .ctx-full > summary {
+        padding: 4px 0;
+      }
+      .answer > :first-child {
+        margin-top: 0;
+      }
+
       #welcome[hidden] {
         display: none;
       }
@@ -745,6 +795,9 @@
               </span>
             </div>
             <div class="toolbar-group secondary">
+              <!-- Mic/dictation parked for now to match the VS Code plugin
+                   (focus is on the chat/skills features). Re-enable by removing
+                   hidden/display:none here and flipping DICTATION_ENABLED to true. -->
               <button
                 id="mic-button"
                 class="icon-button mic-button"
@@ -752,6 +805,8 @@
                 data-state="idle"
                 aria-label="Dictate"
                 title="Dictate — tap to toggle"
+                hidden
+                style="display: none"
               >
                 <svg class="composer-icon" data-icon="mic" viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="9" y="3" width="6" height="12" rx="3" />
@@ -849,8 +904,8 @@
       const welcome = document.getElementById("welcome");
       const welcomeConfigure = document.getElementById("welcome-configure");
       const welcomeDocs = document.getElementById("welcome-docs");
-      let activeAssistantMessage;
-      let activeAssistantRaw = "";
+      // The in-progress assistant turn: DOM refs + accumulated content/reasoning.
+      let activeAssistant;
       // Tracks whether the most recent assistant turn was produced under plan
       // mode. When true and plan mode is still on, the Approve & Run row shows.
       let lastTurnWasPlan = false;
@@ -935,8 +990,13 @@
         if (slashFiltered.length === 0) return false;
         const entry = slashFiltered[slashSelectedIndex];
         if (!entry) return false;
-        textarea.value = entry.command + " ";
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        // Replace only the command token, keeping anything typed after it.
+        const text = textarea.value;
+        const firstSpace = text.search(/\s/);
+        const rest = firstSpace === -1 ? "" : text.slice(firstSpace);
+        textarea.value = entry.command + (rest.length > 0 ? rest : " ");
+        const caret = entry.command.length + 1;
+        textarea.setSelectionRange(caret, caret);
         closeSlashMenu();
         return true;
       }
@@ -947,16 +1007,28 @@
           closeSlashMenu();
           return;
         }
+        const firstSpace = text.search(/\s/);
+        // Once a space follows the command, the user is writing their message,
+        // not picking a command — close the palette so Enter sends normally.
+        if (firstSpace !== -1) {
+          closeSlashMenu();
+          return;
+        }
         // Mutually exclusive with the composer (+) menu.
         setMenuOpen(false);
-        const firstSpace = text.search(/\s/);
-        const prefix = firstSpace === -1 ? text : text.slice(0, firstSpace);
-        renderSlashMenu(prefix);
+        renderSlashMenu(text);
       }
 
       textarea.addEventListener("input", maybeOpenSlashMenu);
       textarea.addEventListener("keydown", (event) => {
-        if (slashMenu.hidden) return;
+        if (slashMenu.hidden) {
+          // Palette closed: Enter sends, Shift+Enter inserts a newline.
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+          }
+          return;
+        }
         if (event.key === "ArrowDown") {
           event.preventDefault();
           updateSlashSelection(1);
@@ -1006,6 +1078,35 @@
       let recorderChunks = [];
       let listening = false;
 
+      // Proactively request mic permission so the user always sees a clear
+      // failure path. The host turns the posted "permissionDenied" message
+      // into an OS-aware popup with an "Open Mic Settings" button.
+      async function ensureMicPermission() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          post({
+            type: "permissionDenied",
+            reason: "unsupported",
+            message: "navigator.mediaDevices is unavailable in this webview.",
+          });
+          throw new Error("unsupported");
+        }
+        try {
+          return await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+          const name = error && error.name ? String(error.name) : "Unknown";
+          let reason = "other";
+          if (name === "NotAllowedError" || name === "SecurityError") reason = "denied";
+          else if (name === "NotFoundError" || name === "OverconstrainedError") reason = "no-device";
+          else if (name === "NotReadableError" || name === "TrackStartError") reason = "in-use";
+          post({
+            type: "permissionDenied",
+            reason,
+            message: name + (error && error.message ? ": " + error.message : ""),
+          });
+          throw error;
+        }
+      }
+
       function appendToTextarea(text) {
         if (!text) return;
         const trimmed = String(text).trim();
@@ -1017,7 +1118,7 @@
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
       }
 
-      function startBrowserStt() {
+      async function startBrowserStt() {
         if (!SpeechRecognitionCtor) {
           setSpeechStatus(
             "Browser SpeechRecognition is unavailable in this IDE's JCEF runtime. Switch to a server provider.",
@@ -1025,6 +1126,15 @@
           );
           return;
         }
+        let permissionStream;
+        try {
+          permissionStream = await ensureMicPermission();
+        } catch (_) {
+          listening = false;
+          setMicState("idle");
+          return;
+        }
+        permissionStream.getTracks().forEach((track) => track.stop());
         try {
           recognition = new SpeechRecognitionCtor();
         } catch (error) {
@@ -1048,7 +1158,18 @@
           if (interim) setSpeechStatus("Listening: " + interim, false);
         });
         recognition.addEventListener("error", (event) => {
-          setSpeechStatus("Speech recognition error: " + (event.error || "unknown"), true);
+          const code = event.error || "unknown";
+          setSpeechStatus("Speech recognition error: " + code, true);
+          if (code === "not-allowed" || code === "service-not-allowed") {
+            post({ type: "permissionDenied", reason: "denied", message: "WebSpeech error: " + code });
+          } else if (code === "network") {
+            post({
+              type: "permissionDenied",
+              reason: "network",
+              message:
+                "WebSpeech in JCEF cannot reach the Google recognition service (the embedded Chromium build ships without the cloud-speech keys). Switch to Sarvam or another server STT provider.",
+            });
+          }
           listening = false;
           setMicState("idle");
         });
@@ -1065,21 +1186,12 @@
       }
 
       async function startServerStt() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setSpeechStatus(
-            "getUserMedia is unavailable. JCEF needs --enable-media-stream — see the JetBrains README.",
-            true,
-          );
-          return;
-        }
         let stream;
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (error) {
-          setSpeechStatus(
-            "Microphone permission denied. In JCEF this usually means the IDE needs --enable-media-stream.",
-            true,
-          );
+          stream = await ensureMicPermission();
+        } catch (_) {
+          listening = false;
+          setMicState("idle");
           return;
         }
         recorderChunks = [];
@@ -1119,7 +1231,13 @@
         setSpeechStatus("Listening… (tap mic to stop)", false);
       }
 
+      // Dictation is parked (mic button hidden). This flag keeps both the mic
+      // button and spacebar push-to-talk dormant. Flip to true (and unhide the
+      // button) to bring voice back.
+      const DICTATION_ENABLED = false;
+
       function startListening() {
+        if (!DICTATION_ENABLED) return;
         if (listening) return;
         if (useBrowserStt) {
           startBrowserStt();
@@ -1347,19 +1465,200 @@
         return message;
       }
 
+      // Split answer text from reasoning the model emitted inline as
+      // <think>…</think>. Handles multiple blocks and an unclosed trailing tag.
+      // Runs on accumulated text each render, so it's chunk-boundary safe.
+      function splitThink(raw) {
+        let think = "";
+        let answer = "";
+        let rest = String(raw);
+        while (true) {
+          const open = rest.indexOf("<think>");
+          if (open === -1) { answer += rest; break; }
+          answer += rest.slice(0, open);
+          const after = rest.slice(open + 7);
+          const close = after.indexOf("</think>");
+          if (close === -1) { think += after; break; }
+          think += after.slice(0, close);
+          rest = after.slice(close + 8);
+        }
+        return { think: think, answer: answer };
+      }
+
       function startAssistantMessage() {
-        activeAssistantRaw = "";
-        activeAssistantMessage = appendMessage("assistant", "");
-        return activeAssistantMessage;
+        const article = document.createElement("article");
+        article.className = "message assistant";
+
+        const thinking = document.createElement("details");
+        thinking.className = "thinking";
+        thinking.hidden = true;
+        thinking.open = true;
+        const summary = document.createElement("summary");
+        const thinkLabel = document.createElement("span");
+        thinkLabel.className = "think-label";
+        thinkLabel.textContent = "Thinking…";
+        summary.appendChild(thinkLabel);
+        const thinkBody = document.createElement("div");
+        thinkBody.className = "think-body";
+        thinking.appendChild(summary);
+        thinking.appendChild(thinkBody);
+
+        const answer = document.createElement("div");
+        answer.className = "answer";
+
+        article.appendChild(thinking);
+        article.appendChild(answer);
+        transcript.appendChild(article);
+        welcome.hidden = true;
+        article.scrollIntoView({ block: "end", behavior: "smooth" });
+
+        activeAssistant = {
+          article: article,
+          thinking: thinking,
+          thinkLabel: thinkLabel,
+          thinkBody: thinkBody,
+          answer: answer,
+          content: "",
+          reasoning: "",
+          thinkStart: 0,
+          thinkDone: false,
+        };
+        return activeAssistant;
+      }
+
+      function renderActiveAssistant() {
+        const a = activeAssistant;
+        if (!a) return;
+        const split = splitThink(a.content);
+        const thinkingText =
+          a.reasoning + (a.reasoning && split.think ? NEWLINE : "") + split.think;
+
+        if (thinkingText.trim().length > 0) {
+          if (a.thinkStart === 0) a.thinkStart = Date.now();
+          a.thinking.hidden = false;
+          a.thinkBody.innerHTML = renderMarkdown(thinkingText);
+        }
+
+        a.answer.innerHTML = renderMarkdown(split.answer);
+
+        if (!a.thinkDone && a.thinkStart > 0 && split.answer.trim().length > 0) {
+          a.thinkDone = true;
+          const secs = Math.max(1, Math.round((Date.now() - a.thinkStart) / 1000));
+          a.thinkLabel.textContent = "Thought for " + secs + "s";
+          a.thinking.open = false;
+        }
+
+        a.article.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
+      function appendAssistantReasoning(text) {
+        if (!activeAssistant) startAssistantMessage();
+        if (activeAssistant.thinkStart === 0) activeAssistant.thinkStart = Date.now();
+        activeAssistant.reasoning += text;
+        renderActiveAssistant();
       }
 
       function appendAssistantDelta(text) {
-        if (!activeAssistantMessage) {
-          startAssistantMessage();
+        if (!activeAssistant) startAssistantMessage();
+        activeAssistant.content += text;
+        renderActiveAssistant();
+      }
+
+      function finalizeAssistant() {
+        const a = activeAssistant;
+        if (!a) return;
+        if (!a.thinkDone && a.thinkStart > 0) {
+          const secs = Math.max(1, Math.round((Date.now() - a.thinkStart) / 1000));
+          a.thinkLabel.textContent = "Thought for " + secs + "s";
+          a.thinking.open = false;
         }
-        activeAssistantRaw += text;
-        activeAssistantMessage.innerHTML = renderMarkdown(activeAssistantRaw);
-        activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
+        activeAssistant = undefined;
+      }
+
+      function ctxRow(label, value) {
+        const row = document.createElement("div");
+        row.className = "ctx-row";
+        const l = document.createElement("span");
+        l.className = "ctx-label";
+        l.textContent = label + ": ";
+        row.appendChild(l);
+        row.appendChild(document.createTextNode(value));
+        return row;
+      }
+
+      function ctxPre(label, value) {
+        const wrap = document.createElement("div");
+        wrap.className = "ctx-row";
+        const l = document.createElement("div");
+        l.className = "ctx-label";
+        l.textContent = label;
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.textContent = value;
+        pre.appendChild(code);
+        wrap.appendChild(l);
+        wrap.appendChild(pre);
+        return wrap;
+      }
+
+      // "Context sent to AI" accordion under the current user turn. All values
+      // use textContent (never innerHTML) so the payload can't inject markup.
+      function renderContextPreview(preview) {
+        const ctx = preview.ideContext || {};
+        const full = preview.full || {};
+
+        const details = document.createElement("details");
+        details.className = "context-preview";
+        const summary = document.createElement("summary");
+        summary.textContent = "Context sent to AI";
+        details.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "ctx-body";
+
+        const skills = (preview.skills || []).map((s) =>
+          s.slash ? s.slash + " (" + s.name + ")" : s.name,
+        );
+        body.appendChild(ctxRow("Skill", skills.length ? skills.join(", ") : "(auto — none routed)"));
+
+        if (ctx.activeFilePath) {
+          body.appendChild(
+            ctxRow("Active file", ctx.activeFilePath + (ctx.languageId ? " (" + ctx.languageId + ")" : "")),
+          );
+        }
+
+        const selRow = document.createElement("div");
+        selRow.className = "ctx-row";
+        const selLabel = document.createElement("span");
+        selLabel.className = "ctx-label";
+        selLabel.textContent = "Selected code: ";
+        selRow.appendChild(selLabel);
+        if (ctx.hasSelection && ctx.selectedText) {
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          code.textContent = ctx.selectedText;
+          pre.appendChild(code);
+          selRow.appendChild(pre);
+        } else {
+          selRow.appendChild(document.createTextNode("(none)"));
+        }
+        body.appendChild(selRow);
+
+        body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+
+        const fullDetails = document.createElement("details");
+        fullDetails.className = "ctx-full";
+        const fullSummary = document.createElement("summary");
+        fullSummary.textContent = "View full payload";
+        fullDetails.appendChild(fullSummary);
+        if (full.systemPrompt) fullDetails.appendChild(ctxPre("System prompt", full.systemPrompt));
+        if (full.contextMarkdown) fullDetails.appendChild(ctxPre("IDE context", full.contextMarkdown));
+        body.appendChild(fullDetails);
+
+        details.appendChild(body);
+        transcript.appendChild(details);
+        welcome.hidden = true;
+        details.scrollIntoView({ block: "end", behavior: "smooth" });
       }
 
       function setMenuOpen(isOpen) {
@@ -1427,15 +1726,16 @@
       });
 
       window.__codesetuReceive = function (message) {
+        if (message.type === "contextPreview") {
+          renderContextPreview(message.preview);
+        }
+
         if (message.type === "assistantMessage") {
-          if (activeAssistantMessage) {
-            activeAssistantMessage.innerHTML = renderMarkdown(message.text);
-            activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
-            activeAssistantMessage = undefined;
-            activeAssistantRaw = "";
-          } else {
-            appendMessage("assistant", message.text);
-          }
+          // Non-streamed reply: render it all at once (still splits inline <think>).
+          if (!activeAssistant) startAssistantMessage();
+          activeAssistant.content = message.text;
+          renderActiveAssistant();
+          finalizeAssistant();
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
         }
@@ -1444,13 +1744,16 @@
           startAssistantMessage();
         }
 
+        if (message.type === "assistantReasoningDelta") {
+          appendAssistantReasoning(message.text);
+        }
+
         if (message.type === "assistantMessageDelta") {
           appendAssistantDelta(message.text);
         }
 
         if (message.type === "assistantMessageDone") {
-          activeAssistantMessage = undefined;
-          activeAssistantRaw = "";
+          finalizeAssistant();
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
         }

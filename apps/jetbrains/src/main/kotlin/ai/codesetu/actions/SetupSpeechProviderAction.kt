@@ -72,65 +72,79 @@ private val OPTIONS = listOf(
 class SetupSpeechProviderAction : AnAction() {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project ?: return
-
-    ApplicationManager.getApplication().invokeLater {
-      val labels = OPTIONS.map { "${it.label} — ${it.description}" }
-      JBPopupFactory.getInstance()
-        .createPopupChooserBuilder(labels)
-        .setTitle("Choose a CodeSetu speech provider")
-        .setItemChosenCallback { choice ->
-          val option = OPTIONS.firstOrNull { "${it.label} — ${it.description}" == choice } ?: return@setItemChosenCallback
-          applyChoice(project, option)
-        }
-        .createPopup()
-        .showInFocusCenter()
-    }
+    openWizard(project)
   }
 
-  private fun applyChoice(project: com.intellij.openapi.project.Project, option: SpeechProviderOption) {
-    val state = CodeSetuSettingsState.getInstance()
-    state.state.speechSttProvider = option.id
+  companion object {
+    /** Reusable entry point so other actions / popups can pop the wizard. */
+    fun openWizard(project: com.intellij.openapi.project.Project) {
+      ApplicationManager.getApplication().invokeLater {
+        val labels = OPTIONS.map { "${it.label} — ${it.description}" }
+        JBPopupFactory.getInstance()
+          .createPopupChooserBuilder(labels)
+          .setTitle("Choose a CodeSetu speech provider")
+          .setItemChosenCallback { choice ->
+            val option = OPTIONS.firstOrNull { "${it.label} — ${it.description}" == choice }
+              ?: return@setItemChosenCallback
+            applyChoice(project, option)
+          }
+          .createPopup()
+          .showInFocusCenter()
+      }
+    }
 
-    if (!option.needsKey) {
+    private fun applyChoice(
+      project: com.intellij.openapi.project.Project,
+      option: SpeechProviderOption,
+    ) {
+      val state = CodeSetuSettingsState.getInstance()
+      state.state.speechSttProvider = option.id
+
+      if (!option.needsKey) {
+        Messages.showInfoMessage(
+          project,
+          "CodeSetu speech: using the ${option.id} backend (no key needed).",
+          "CodeSetu",
+        )
+        return
+      }
+
+      val baseUrl = Messages.showInputDialog(
+        project,
+        "Speech base URL",
+        "Configure Speech Provider",
+        null,
+        option.baseUrl,
+        null,
+      ) ?: return
+
+      val model = Messages.showInputDialog(
+        project,
+        "STT model id",
+        "Configure Speech Provider",
+        null,
+        option.model,
+        null,
+      ) ?: return
+
+      val apiKey = Messages.showPasswordDialog(
+        project,
+        option.apiKeyPrompt,
+        "Configure Speech Provider",
+        null,
+      ) ?: return
+
+      state.state.speechSttBaseUrl = baseUrl.trim()
+      state.state.speechSttModel = model.trim()
+      if (apiKey.isNotBlank()) {
+        state.setSpeechApiKey(apiKey)
+      }
+
       Messages.showInfoMessage(
         project,
-        "CodeSetu speech: using the ${option.id} backend (no key needed).",
+        "CodeSetu speech provider settings updated.",
         "CodeSetu",
       )
-      return
     }
-
-    val baseUrl = Messages.showInputDialog(
-      project,
-      "Speech base URL",
-      "Configure Speech Provider",
-      null,
-      option.baseUrl,
-      null,
-    ) ?: return
-
-    val model = Messages.showInputDialog(
-      project,
-      "STT model id",
-      "Configure Speech Provider",
-      null,
-      option.model,
-      null,
-    ) ?: return
-
-    val apiKey = Messages.showPasswordDialog(
-      project,
-      option.apiKeyPrompt,
-      "Configure Speech Provider",
-      null,
-    ) ?: return
-
-    state.state.speechSttBaseUrl = baseUrl.trim()
-    state.state.speechSttModel = model.trim()
-    if (apiKey.isNotBlank()) {
-      state.setSpeechApiKey(apiKey)
-    }
-
-    Messages.showInfoMessage(project, "CodeSetu speech provider settings updated.", "CodeSetu")
   }
 }

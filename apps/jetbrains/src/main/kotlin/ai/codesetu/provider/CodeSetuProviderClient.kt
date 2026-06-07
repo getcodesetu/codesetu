@@ -47,7 +47,7 @@ class CodeSetuProviderClient(
     messages: List<ChatMessage>,
     maxTokens: Int = 4096,
     temperature: Double = 0.2,
-    onChunk: (String) -> Unit,
+    onChunk: (StreamPiece) -> Unit,
   ): String {
     val state = CodeSetuSettingsState.getInstance().state
     val body = buildChatCompletionRequestJson(
@@ -89,15 +89,16 @@ class CodeSetuProviderClient(
         }
 
         // Skip malformed/partial SSE payloads instead of aborting the whole stream.
-        val text = try {
-          getAssistantChunkText(json.decodeFromString<ChatCompletionChunk>(data))
+        val piece = try {
+          getAssistantChunkPiece(json.decodeFromString<ChatCompletionChunk>(data))
         } catch (error: Exception) {
-          ""
+          StreamPiece()
         }
 
-        if (text.isNotEmpty()) {
-          assistantText.append(text)
-          onChunk(text)
+        piece.reasoning?.takeIf { it.isNotEmpty() }?.let { onChunk(StreamPiece(reasoning = it)) }
+        piece.content?.takeIf { it.isNotEmpty() }?.let {
+          assistantText.append(it)
+          onChunk(StreamPiece(content = it))
         }
       }
     }
@@ -105,6 +106,9 @@ class CodeSetuProviderClient(
     return assistantText.toString()
   }
 }
+
+/** A streamed slice of a completion: answer `content`, `reasoning`, or neither. */
+data class StreamPiece(val content: String? = null, val reasoning: String? = null)
 
 // Sarvam needs a low reasoning effort to avoid exhausting its token budget;
 // other providers (OpenAI-compatible, Hugging Face) may reject an unknown field.
@@ -119,6 +123,14 @@ fun getAssistantText(response: ChatCompletionResponse): String {
 fun getAssistantChunkText(chunk: ChatCompletionChunk): String {
   val delta = chunk.choices.firstOrNull()?.delta
   return delta?.content ?: delta?.refusal.orEmpty()
+}
+
+fun getAssistantChunkPiece(chunk: ChatCompletionChunk): StreamPiece {
+  val delta = chunk.choices.firstOrNull()?.delta
+  return StreamPiece(
+    content = delta?.content ?: delta?.refusal,
+    reasoning = delta?.reasoningContent ?: delta?.reasoning,
+  )
 }
 
 fun buildChatCompletionRequestJson(
