@@ -674,7 +674,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 id="plan-mode-pill"
                 class="mode-pill"
                 data-active="false"
-                title="Plan mode is active — the assistant will plan, not edit"
+                title="Plan Mode is active — the assistant will plan, not edit"
               >
                 <span class="dot" aria-hidden="true"></span>
                 Plan
