@@ -146,7 +146,7 @@ function providerStreaming(chunks: ChatCompletionChunk[]): SarvamProvider {
       },
     },
     completions: {
-      create: (params) => Promise.resolve(fimResponse),
+      create: () => Promise.resolve(fimResponse),
     },
   } as SarvamOpenAIClient;
   return new SarvamProvider({ client });
