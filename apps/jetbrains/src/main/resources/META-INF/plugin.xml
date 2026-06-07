@@ -60,9 +60,10 @@
     <h3>0.3.0</h3>
     <ul>
       <li><b>Plan Mode</b> — composer toggle that asks the assistant for a numbered plan instead of code; "Approve &amp; Run" sends the canonical approval phrase and exits the mode. Toggle state persists across IDE restarts.</li>
-      <li><b>AI Skills with slash palette</b> — type <code>/</code> in the composer to invoke <code>/plan</code>, <code>/explain</code>, <code>/refactor</code>, <code>/test</code>, <code>/indic</code>. Keyword auto-routing picks a skill from natural-language prompts (toggle in Settings → CodeSetu).</li>
-      <li><b>Voice dictation</b> — mic button with push-to-toggle, push-to-talk (hold), and spacebar hotkey when composer is empty. Defaults to <b>Sarvam Saarika</b> STT in JetBrains (browser SpeechRecognition does not work in JCEF). Other backends: OpenAI-compatible Whisper, Hugging Face Whisper. New <i>Tools → CodeSetu → Setup Speech Provider</i> wizard.</li>
-      <li>Registers a <code>JBCefAppRequiredArgumentsProvider</code> that adds the CEF flags needed for <code>getUserMedia</code> in the chat webview.</li>
+      <li><b>AI Skills with slash palette</b> — type <code>/</code> in the composer to invoke <code>/plan</code>, <code>/explain</code>, <code>/refactor</code>, <code>/test</code>, <code>/indic</code>. Keyword auto-routing picks a skill from natural-language prompts (toggle in Settings → CodeSetu). Skills now load from bundled <code>SKILL.md</code> files.</li>
+      <li><b>"Context sent to AI" preview</b> — a collapsible panel under each turn showing the routed skill, your selected code, related snippets, and the full assembled payload, so you can see exactly what the model receives.</li>
+      <li><b>"Thought for Ns" thinking panel</b> — when a model streams its reasoning, it's shown in a collapsible panel above the answer that opens while it thinks and collapses once the reply starts.</li>
+      <li><b>Composer UX</b> — Enter sends and Shift+Enter inserts a newline; the slash palette closes once you start typing your message.</li>
     </ul>
     <h3>0.2.0</h3>
     <ul>
