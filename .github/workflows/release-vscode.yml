@@ -15,10 +15,6 @@ jobs:
   release:
     name: Build and publish
     runs-on: ubuntu-latest
-    # Job-level env so the Open VSX step's `if` can read it (step-level env is
-    # not visible in that same step's `if` condition).
-    env:
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
 
     steps:
       - name: Check out repository
@@ -74,12 +70,6 @@ jobs:
         run: |
           cd apps/vscode
           pnpm dlx @vscode/vsce publish --no-dependencies --pat "$VSCE_PAT"
-
-      - name: Publish to Open VSX
-        if: ${{ !inputs.dry-run && env.OVSX_PAT != '' }}
-        run: |
-          VSIX=$(ls artifacts/codesetu-*.vsix | head -n1)
-          pnpm dlx ovsx publish "$VSIX" --pat "$OVSX_PAT"
 
       - name: Configure git identity for tagging
         if: ${{ !inputs.dry-run }}
