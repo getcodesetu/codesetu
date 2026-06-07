@@ -6,3 +6,8 @@ node_modules/
 .claude/
 # Generated lockfile — not Prettier-managed.
 pnpm-lock.yaml
+# Canonical built-in skill files: SKILL.md frontmatter uses deliberate
+# single-line inline arrays (slashCommands/keywords) that the runtime loader
+# parses line-by-line. Prettier would reflow long arrays to multi-line YAML and
+# break that parser, so keep these out of Prettier's reach.
+skills/

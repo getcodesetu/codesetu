@@ -4,7 +4,10 @@ import ai.codesetu.model.IdeActionId
 import ai.codesetu.model.IdeContextPayload
 import ai.codesetu.model.WorkspaceInstruction
 
-fun buildSystemMessage(instructions: List<WorkspaceInstruction>): String {
+fun buildSystemMessage(
+  instructions: List<WorkspaceInstruction>,
+  pinnedSkills: List<WorkspaceInstruction> = emptyList(),
+): String {
   val parts = mutableListOf(
     "You are CodeSetu, an AI coding assistant for Indian developers. Be concise, correct, practical, and privacy-aware.",
     "Use the supplied IDE context as the source of truth. Ask for missing context when needed.",
@@ -12,6 +15,10 @@ fun buildSystemMessage(instructions: List<WorkspaceInstruction>): String {
 
   if (instructions.isNotEmpty()) {
     parts.add(formatWorkspaceInstructions(instructions))
+  }
+
+  if (pinnedSkills.isNotEmpty()) {
+    parts.add(formatPinnedSkills(pinnedSkills))
   }
 
   return parts.joinToString("\n\n")
@@ -23,6 +30,13 @@ private fun formatWorkspaceInstructions(instructions: List<WorkspaceInstruction>
       .joinToString("\n")
   }
   return "Workspace instructions\n\n$rendered"
+}
+
+private fun formatPinnedSkills(skills: List<WorkspaceInstruction>): String {
+  val rendered = skills.joinToString("\n\n") { skill ->
+    listOf("Skill: ${skill.name} (${skill.id})", skill.description, skill.body).joinToString("\n")
+  }
+  return "Active skills\n\n$rendered"
 }
 
 fun buildActionInstruction(actionId: IdeActionId): String =

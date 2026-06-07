@@ -12,13 +12,14 @@ import type { IdeActionId } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { buildEditorActionRequest } from "./actionMessages";
-import { ChatPanel, type ChatResponder } from "./chatPanel";
+import { ChatPanel, type ChatResponder, type SpeechBridge } from "./chatPanel";
 import { collectVSCodeContext } from "./ideContext";
 
 interface RegisterCodeActionsOptions {
   context: vscode.ExtensionContext;
   responder: ChatResponder;
   outputChannel: vscode.OutputChannel;
+  speechBridge?: () => SpeechBridge;
 }
 
 const commandMap: Array<{ command: string; actionId: IdeActionId }> = [
@@ -42,6 +43,7 @@ export function registerCodeSetuEditorActions(
         options.outputChannel,
         request.text,
         { ideContext: request.ideContext },
+        options.speechBridge?.(),
       );
     }),
   );

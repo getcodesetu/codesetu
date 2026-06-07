@@ -56,6 +56,23 @@ kotlin {
   jvmToolchain(21)
 }
 
+// Bundle the canonical built-in skills (single source of truth lives at the repo
+// root /skills) into plugin resources so the runtime loader can read them from
+// the classpath. The Gradle root here is apps/jetbrains, so the repo-root skills
+// dir is two levels up. Only <id>/SKILL.md files are copied (README.md skipped).
+val copyBuiltinSkills by tasks.registering(Copy::class) {
+  from(rootProject.projectDir.resolve("../../skills")) {
+    include("*/SKILL.md")
+  }
+  into(layout.buildDirectory.dir("generated-resources/skills"))
+}
+
+sourceSets["main"].resources.srcDir(layout.buildDirectory.dir("generated-resources"))
+
+tasks.named("processResources") {
+  dependsOn(copyBuiltinSkills)
+}
+
 intellijPlatform {
   pluginConfiguration {
     ideaVersion {

@@ -57,6 +57,18 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <h3>0.3.1</h3>
+    <ul>
+      <li><b>"Context sent to AI" preview</b> — a collapsible panel under each turn showing the routed skill, your selected code, related snippets, and the full assembled payload, so you can see exactly what the model receives.</li>
+      <li><b>"Thought for Ns" thinking panel</b> — when a model streams its reasoning, it's shown in a collapsible panel above the answer that opens while it thinks and collapses once the reply starts.</li>
+      <li><b>Skills load from bundled <code>SKILL.md</code> files</b> — built-in skills now have a single source of truth instead of hard-coded copies.</li>
+      <li><b>Composer UX</b> — Enter sends and Shift+Enter inserts a newline; the slash palette closes once you start typing your message.</li>
+    </ul>
+    <h3>0.3.0</h3>
+    <ul>
+      <li><b>Plan Mode</b> — composer toggle that asks the assistant for a numbered plan instead of code; "Approve &amp; Run" sends the canonical approval phrase and exits the mode. Toggle state persists across IDE restarts.</li>
+      <li><b>AI Skills with slash palette</b> — type <code>/</code> in the composer to invoke <code>/plan</code>, <code>/explain</code>, <code>/refactor</code>, <code>/test</code>, <code>/indic</code>. Keyword auto-routing picks a skill from natural-language prompts (toggle in Settings → CodeSetu).</li>
+    </ul>
     <h3>0.2.0</h3>
     <ul>
       <li>Chat tool window rendered with the CodeSetu webview design (markdown replies, model chip)</li>
@@ -85,6 +97,11 @@
         class="ai.codesetu.actions.DiagnoseProviderAction"
         text="Diagnose Provider"
         description="Test the configured CodeSetu provider"/>
+      <action
+        id="ai.codesetu.SetupSpeechProviderAction"
+        class="ai.codesetu.actions.SetupSpeechProviderAction"
+        text="Setup Speech Provider"
+        description="Configure the mic speech-to-text backend (Sarvam, OpenAI-compatible, HuggingFace)"/>
       <action
         id="ai.codesetu.ExplainSelectionAction"
         class="ai.codesetu.actions.ExplainSelectionAction"
@@ -121,5 +138,13 @@
     <applicationConfigurable
       instance="ai.codesetu.settings.CodeSetuSettingsConfigurable"
       displayName="CodeSetu"/>
+    <!--
+      Adds the CEF flags required for the chat webview's mic button. Without
+      this, getUserMedia throws NotSupportedError in the JCEF browser. See
+      CodeSetuJBCefArgsProvider for the per-flag rationale and the README's
+      "Voice in JetBrains" section for the user-facing trade-off.
+    -->
+    <jbCefAppRequiredArgumentsProvider
+      implementation="ai.codesetu.toolwindow.CodeSetuJBCefArgsProvider"/>
   </extensions>
 </idea-plugin>

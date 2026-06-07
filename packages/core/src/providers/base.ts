@@ -32,7 +32,19 @@ export type {
 };
 
 export type ChatMessage = ChatCompletionMessageParam;
-export type ChatCompletionStream = AsyncIterable<string>;
+
+/**
+ * A streamed piece of a chat completion. Reasoning models emit their
+ * chain-of-thought separately from the answer; we surface both so the UI can
+ * show a "thinking" panel. A chunk carries `content` (answer text), `reasoning`
+ * (thinking text), or — rarely — neither (skipped by the provider).
+ */
+export interface ChatStreamChunk {
+  content?: string;
+  reasoning?: string;
+}
+
+export type ChatCompletionStream = AsyncIterable<ChatStreamChunk>;
 export type ChatCompletionChunkStream = AsyncIterable<ChatCompletionChunk>;
 
 export interface ChatCompletionRequest {

@@ -27,6 +27,7 @@ import type {
   ChatCompletionChunkStream,
   ChatCompletionRequest,
   ChatCompletionStream,
+  ChatStreamChunk,
   FimCompletionRequest,
   LlmProvider,
 } from "./base.js";
@@ -109,10 +110,10 @@ export class OpenAICompatibleProvider implements LlmProvider {
     const stream = await this.client.chat.completions.create(params);
 
     for await (const chunk of stream) {
-      const text = getTextFromChunk(chunk);
+      const piece = readChunk(chunk);
 
-      if (text.length > 0) {
-        yield text;
+      if (piece.content !== undefined || piece.reasoning !== undefined) {
+        yield piece;
       }
     }
   }
@@ -162,19 +163,34 @@ export class OpenAICompatibleProvider implements LlmProvider {
   }
 }
 
-function getTextFromChunk(chunk: ChatCompletionChunk): string {
-  const delta = chunk.choices[0]?.delta;
-  const content = delta?.content;
+/**
+ * Pull answer text and reasoning out of a streamed delta. Reasoning models
+ * deliver chain-of-thought in a non-standard `reasoning_content` (some use
+ * `reasoning`) field that the OpenAI SDK type doesn't declare, so we read it
+ * defensively. Empty pieces are dropped by the caller.
+ */
+function readChunk(chunk: ChatCompletionChunk): ChatStreamChunk {
+  const delta = chunk.choices[0]?.delta as
+    | (ChatCompletionChunk["choices"][number]["delta"] & {
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+      })
+    | undefined;
 
-  if (typeof content === "string") {
-    return content;
+  const piece: ChatStreamChunk = {};
+
+  if (typeof delta?.content === "string" && delta.content.length > 0) {
+    piece.content = delta.content;
+  } else if (typeof delta?.refusal === "string" && delta.refusal.length > 0) {
+    piece.content = delta.refusal;
   }
 
-  if (typeof delta?.refusal === "string") {
-    return delta.refusal;
+  const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+  if (typeof reasoning === "string" && reasoning.length > 0) {
+    piece.reasoning = reasoning;
   }
 
-  return "";
+  return piece;
 }
 
 function firstConfigValue(...values: Array<string | undefined>): string | undefined {

@@ -17,7 +17,9 @@
 export type {
   ChatCompletion,
   ChatCompletionRequest,
+  ChatCompletionStream,
   ChatMessage,
+  ChatStreamChunk,
   FimCompletionRequest,
   LlmProvider,
 } from "./providers/base.js";
@@ -46,7 +48,55 @@ export {
   type ProviderId,
 } from "./providers/registry.js";
 export { getAssistantText } from "./providers/response.js";
-export { IDE_ACTIONS, buildActionUserMessage, buildCodeSetuSystemMessage } from "./ide/actions.js";
+export {
+  IDE_ACTIONS,
+  buildActionUserMessage,
+  buildCodeSetuSystemMessage,
+  type SystemMessageOptions,
+} from "./ide/actions.js";
+export {
+  PLAN_MODE_APPROVE_PHRASE,
+  PLAN_MODE_SKILL,
+  PLAN_MODE_SKILL_ID,
+  isPlanModeApproval,
+} from "./ide/planMode.js";
+export {
+  BUILTIN_SKILLS_FALLBACK,
+  EXPLAIN_CODE_SKILL,
+  INDIC_COMMENTS_SKILL,
+  REFACTOR_SKILL,
+  WRITE_TESTS_SKILL,
+  findBuiltinSkill,
+  parseBuiltinSkills,
+  routeSkills,
+  type BuiltinSkill,
+  type ParseBuiltinSkillsResult,
+  type RouteSkillsInput,
+  type RouteSkillsResult,
+} from "./skills/index.js";
+export {
+  DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
+  DEFAULT_HUGGINGFACE_STT_MODEL,
+  DEFAULT_SARVAM_LANGUAGE,
+  DEFAULT_SARVAM_SPEECH_BASE_URL,
+  DEFAULT_SARVAM_STT_MODEL,
+  HuggingFaceSpeechProvider,
+  OpenAICompatibleSpeechProvider,
+  SPEECH_PROVIDER_IDS,
+  SarvamSpeechProvider,
+  createSpeechProvider,
+  normalizeSpeechProvider,
+  type AudioBlob,
+  type CreateSpeechProviderResult,
+  type HuggingFaceSpeechProviderOptions,
+  type OpenAICompatibleSpeechOptions,
+  type SarvamSpeechProviderOptions,
+  type SpeechFactoryOptions,
+  type SpeechProvider,
+  type SpeechProviderId,
+  type TranscribeOptions,
+  type TranscriptionResult,
+} from "./speech/index.js";
 export { buildContextMarkdown, trimMiddle, type IdeContextMarkdownOptions } from "./ide/context.js";
 export { diagnoseProvider } from "./ide/diagnostics.js";
 export {

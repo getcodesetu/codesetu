@@ -14,6 +14,10 @@ artifacts/
 *.tgz
 *.tsbuildinfo
 
+# Generated: built-in skills copied from repo-root skills/ at build time
+# (single source of truth is /skills; this copy ships in the .vsix)
+apps/vscode/skills/
+
 # Local environment and secrets
 .env
 .env.*

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { parseFrontmatter, splitFrontmatter } from "./frontmatter.js";
 import type {
   WorkspaceInstruction,
   WorkspaceInstructionParseResult,
@@ -64,15 +65,14 @@ function parseSource(
 ):
   | { instruction: WorkspaceInstruction; warning?: never }
   | { instruction?: never; warning: string } {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(source.content);
+  const split = splitFrontmatter(source.content);
 
-  if (match === null) {
+  if (split === undefined) {
     return { warning: `${source.path}: missing YAML frontmatter` };
   }
 
-  const frontmatter = match[1] ?? "";
-  const body = (match[2] ?? "").trim();
-  const fields = parseFrontmatter(frontmatter);
+  const { body } = split;
+  const fields = parseFrontmatter(split.frontmatter).scalars;
 
   for (const field of REQUIRED_FIELDS) {
     const value = fields[field];
@@ -102,34 +102,4 @@ function parseSource(
       body,
     },
   };
-}
-
-function parseFrontmatter(
-  frontmatter: string,
-): Partial<Record<(typeof REQUIRED_FIELDS)[number], string>> {
-  const fields: Partial<Record<(typeof REQUIRED_FIELDS)[number], string>> = {};
-
-  for (const line of frontmatter.split(/\r?\n/)) {
-    const separatorIndex = line.indexOf(":");
-
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const value = line
-      .slice(separatorIndex + 1)
-      .trim()
-      .replace(/^["']|["']$/g, "");
-
-    if (isRequiredField(key)) {
-      fields[key] = value;
-    }
-  }
-
-  return fields;
-}
-
-function isRequiredField(value: string): value is (typeof REQUIRED_FIELDS)[number] {
-  return REQUIRED_FIELDS.some((field) => field === value);
 }
