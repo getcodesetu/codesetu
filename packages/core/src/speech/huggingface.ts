@@ -41,7 +41,9 @@ export class HuggingFaceSpeechProvider extends OpenAICompatibleSpeechProvider {
       apiKey: options.apiKey,
       baseURL: options.baseURL ?? DEFAULT_HUGGINGFACE_SPEECH_BASE_URL,
       defaultModel: options.defaultModel ?? DEFAULT_HUGGINGFACE_STT_MODEL,
-      ...(options.defaultLanguage === undefined ? {} : { defaultLanguage: options.defaultLanguage }),
+      ...(options.defaultLanguage === undefined
+        ? {}
+        : { defaultLanguage: options.defaultLanguage }),
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     });
   }

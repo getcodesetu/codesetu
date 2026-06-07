@@ -303,8 +303,9 @@ export class ChatPanel {
     const platform = process.platform;
     const guide = buildMicPermissionGuide(platform, message.reason);
     const detail =
-      (message.message !== undefined && message.message.length > 0 ? `${message.message}\n\n` : "") +
-      guide.detail;
+      (message.message !== undefined && message.message.length > 0
+        ? `${message.message}\n\n`
+        : "") + guide.detail;
     const settingsButton = guide.settingsUrl !== undefined ? "Open Mic Settings" : undefined;
     // A modal dialog always gets a built-in "Cancel" button, so we don't add
     // our own "Dismiss" — that would show two redundant close buttons.
@@ -515,8 +516,7 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   if (typeof message !== "object" || message === null) return false;
   const candidate = message as Partial<DictationRequest>;
   return (
-    candidate.type === "dictation" &&
-    (candidate.action === "start" || candidate.action === "stop")
+    candidate.type === "dictation" && (candidate.action === "start" || candidate.action === "stop")
   );
 }
 
@@ -546,7 +546,8 @@ function buildMicPermissionGuide(
   if (reason === "no-device") {
     return {
       title: "No microphone detected",
-      detail: "Plug in a microphone (or check that one is selected as the system input device) and try again.",
+      detail:
+        "Plug in a microphone (or check that one is selected as the system input device) and try again.",
     };
   }
   if (reason === "in-use") {
@@ -578,8 +579,7 @@ function buildMicPermissionGuide(
         "macOS is blocking the mic for the editor that's running CodeSetu.\n\n" +
         "Open System Settings → Privacy & Security → Microphone, then enable the row for Visual Studio Code (or Code – Insiders / VSCodium, whichever you launched).\n\n" +
         "You may need to quit and reopen VSCode after granting access.",
-      settingsUrl:
-        "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+      settingsUrl: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
     };
   }
   if (platform === "win32") {

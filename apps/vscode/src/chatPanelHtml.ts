@@ -45,10 +45,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
   const modelLabel = escapeHtml(options.modelLabel);
   // Serialized into the script body via JSON. JSON.stringify can produce "</"
   // sequences that would close the script tag, so escape the slash.
-  const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(
-    /</g,
-    "\\u003c",
-  );
+  const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(/</g, "\\u003c");
   // CSP connect-src allowlist. 'self' covers the webview origin; any extra
   // entries are configured speech endpoints (Sarvam / HF / local Whisper).
   const connectSources = ["'self'", ...(options.speechConnectSources ?? [])].join(" ");

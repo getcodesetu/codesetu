@@ -123,7 +123,10 @@ function reasoningChunk(reasoning: string): ChatCompletionChunk {
     choices: [
       {
         index: 0,
-        delta: { reasoning_content: reasoning, role: "assistant" } as ChatCompletionChunk["choices"][number]["delta"],
+        delta: {
+          reasoning_content: reasoning,
+          role: "assistant",
+        } as ChatCompletionChunk["choices"][number]["delta"],
         finish_reason: null,
         logprobs: null,
       },

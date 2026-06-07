@@ -101,7 +101,14 @@ export const WRITE_TESTS_SKILL: BuiltinSkill = {
     "Generate focused tests for the selected code in the project's existing test framework. Use when the user asks for tests or coverage.",
   body: WRITE_TESTS_BODY,
   slashCommands: ["/test", "/tests"],
-  keywords: ["write tests", "add tests", "test this", "unit test", "test coverage", "cover with tests"],
+  keywords: [
+    "write tests",
+    "add tests",
+    "test this",
+    "unit test",
+    "test coverage",
+    "cover with tests",
+  ],
 };
 
 export const INDIC_COMMENTS_SKILL: BuiltinSkill = {

@@ -661,8 +661,14 @@
       }
 
       @keyframes codesetuMicPulse {
-        0% { transform: scale(1); opacity: 0.6; }
-        100% { transform: scale(1.4); opacity: 0; }
+        0% {
+          transform: scale(1);
+          opacity: 0.6;
+        }
+        100% {
+          transform: scale(1.4);
+          opacity: 0;
+        }
       }
 
       .speech-status {
@@ -879,10 +885,18 @@
             </span>
           </label>
         </div>
-        <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
+        <div
+          id="slash-menu"
+          class="menu slash-menu"
+          hidden
+          role="listbox"
+          aria-label="Slash commands"
+        ></div>
         <div id="approve-row" class="approve-row" data-show="false">
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
-          <span class="approve-hint">Sends &ldquo;APPROVED — proceed with implementation&rdquo; and exits Plan Mode.</span>
+          <span class="approve-hint"
+            >Sends &ldquo;APPROVED — proceed with implementation&rdquo; and exits Plan Mode.</span
+          >
         </div>
         <div id="speech-status" class="speech-status" aria-live="polite"></div>
       </form>
@@ -938,10 +952,14 @@
 
       function escapeAttr(value) {
         return String(value)
-          .split("&").join("&amp;")
-          .split('"').join("&quot;")
-          .split("<").join("&lt;")
-          .split(">").join("&gt;");
+          .split("&")
+          .join("&amp;")
+          .split('"')
+          .join("&quot;")
+          .split("<")
+          .join("&lt;")
+          .split(">")
+          .join("&gt;");
       }
 
       function renderSlashMenu(filter) {
@@ -954,18 +972,19 @@
         }
         slashSelectedIndex = 0;
         slashMenu.innerHTML = slashFiltered
-          .map((entry, index) =>
-            '<button type="button" class="slash-row" role="option" data-index="' +
-            index +
-            '" aria-selected="' +
-            (index === 0 ? "true" : "false") +
-            '"><span class="cmd">' +
-            escapeAttr(entry.command) +
-            '</span><span class="meta"><span class="name">' +
-            escapeAttr(entry.skillName) +
-            '</span><span class="desc">' +
-            escapeAttr(entry.description) +
-            "</span></span></button>",
+          .map(
+            (entry, index) =>
+              '<button type="button" class="slash-row" role="option" data-index="' +
+              index +
+              '" aria-selected="' +
+              (index === 0 ? "true" : "false") +
+              '"><span class="cmd">' +
+              escapeAttr(entry.command) +
+              '</span><span class="meta"><span class="name">' +
+              escapeAttr(entry.skillName) +
+              '</span><span class="desc">' +
+              escapeAttr(entry.description) +
+              "</span></span></button>",
           )
           .join("");
         slashMenu.hidden = false;
@@ -1096,7 +1115,8 @@
           const name = error && error.name ? String(error.name) : "Unknown";
           let reason = "other";
           if (name === "NotAllowedError" || name === "SecurityError") reason = "denied";
-          else if (name === "NotFoundError" || name === "OverconstrainedError") reason = "no-device";
+          else if (name === "NotFoundError" || name === "OverconstrainedError")
+            reason = "no-device";
           else if (name === "NotReadableError" || name === "TrackStartError") reason = "in-use";
           post({
             type: "permissionDenied",
@@ -1161,7 +1181,11 @@
           const code = event.error || "unknown";
           setSpeechStatus("Speech recognition error: " + code, true);
           if (code === "not-allowed" || code === "service-not-allowed") {
-            post({ type: "permissionDenied", reason: "denied", message: "WebSpeech error: " + code });
+            post({
+              type: "permissionDenied",
+              reason: "denied",
+              message: "WebSpeech error: " + code,
+            });
           } else if (code === "network") {
             post({
               type: "permissionDenied",
@@ -1343,7 +1367,6 @@
         });
       }
 
-
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
       const TICK = String.fromCharCode(96);
@@ -1474,11 +1497,17 @@
         let rest = String(raw);
         while (true) {
           const open = rest.indexOf("<think>");
-          if (open === -1) { answer += rest; break; }
+          if (open === -1) {
+            answer += rest;
+            break;
+          }
           answer += rest.slice(0, open);
           const after = rest.slice(open + 7);
           const close = after.indexOf("</think>");
-          if (close === -1) { think += after; break; }
+          if (close === -1) {
+            think += after;
+            break;
+          }
           think += after.slice(0, close);
           rest = after.slice(close + 8);
         }
@@ -1619,11 +1648,16 @@
         const skills = (preview.skills || []).map((s) =>
           s.slash ? s.slash + " (" + s.name + ")" : s.name,
         );
-        body.appendChild(ctxRow("Skill", skills.length ? skills.join(", ") : "(auto — none routed)"));
+        body.appendChild(
+          ctxRow("Skill", skills.length ? skills.join(", ") : "(auto — none routed)"),
+        );
 
         if (ctx.activeFilePath) {
           body.appendChild(
-            ctxRow("Active file", ctx.activeFilePath + (ctx.languageId ? " (" + ctx.languageId + ")" : "")),
+            ctxRow(
+              "Active file",
+              ctx.activeFilePath + (ctx.languageId ? " (" + ctx.languageId + ")" : ""),
+            ),
           );
         }
 
@@ -1652,7 +1686,8 @@
         fullSummary.textContent = "View full payload";
         fullDetails.appendChild(fullSummary);
         if (full.systemPrompt) fullDetails.appendChild(ctxPre("System prompt", full.systemPrompt));
-        if (full.contextMarkdown) fullDetails.appendChild(ctxPre("IDE context", full.contextMarkdown));
+        if (full.contextMarkdown)
+          fullDetails.appendChild(ctxPre("IDE context", full.contextMarkdown));
         body.appendChild(fullDetails);
 
         details.appendChild(body);

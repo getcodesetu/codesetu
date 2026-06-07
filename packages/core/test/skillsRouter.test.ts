@@ -32,7 +32,9 @@ describe("routeSkills", () => {
       ),
     ).toContain("write-tests");
     expect(
-      routeSkills({ userText: "/tests", skills: BUILTIN_SKILLS_FALLBACK }).selected.map((s) => s.id),
+      routeSkills({ userText: "/tests", skills: BUILTIN_SKILLS_FALLBACK }).selected.map(
+        (s) => s.id,
+      ),
     ).toContain("write-tests");
   });
 

@@ -150,7 +150,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   };
 
-  const buildSpeechBridge = (): SpeechBridge => buildHostSpeechBridge(context.secrets, outputChannel);
+  const buildSpeechBridge = (): SpeechBridge =>
+    buildHostSpeechBridge(context.secrets, outputChannel);
 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
@@ -322,10 +323,7 @@ function lastUserMessageText(messages: readonly ChatMessage[]): string {
   return "";
 }
 
-function withLastUserMessage(
-  messages: readonly ChatMessage[],
-  newContent: string,
-): ChatMessage[] {
+function withLastUserMessage(messages: readonly ChatMessage[], newContent: string): ChatMessage[] {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message?.role === "user") {

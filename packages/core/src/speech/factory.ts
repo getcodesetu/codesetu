@@ -98,9 +98,7 @@ export function createSpeechProvider(options: SpeechFactoryOptions): CreateSpeec
 
   // openai-compatible: requires an explicit baseURL.
   if (options.baseURL === undefined || options.baseURL.trim().length === 0) {
-    throw new Error(
-      'Speech provider "openai-compatible" requires a base URL pointing at /v1.',
-    );
+    throw new Error('Speech provider "openai-compatible" requires a base URL pointing at /v1.');
   }
   return {
     providerId,

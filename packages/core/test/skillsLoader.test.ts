@@ -72,15 +72,16 @@ body`;
     expect(missingField.skills).toHaveLength(0);
     expect(missingField.warnings[0]).toContain("missing required field");
 
-    const emptyBody = parseBuiltinSkills([
-      source(`---\nid: e\nname: E\ndescription: d\n---\n`),
-    ]);
+    const emptyBody = parseBuiltinSkills([source(`---\nid: e\nname: E\ndescription: d\n---\n`)]);
     expect(emptyBody.skills).toHaveLength(0);
     expect(emptyBody.warnings[0]).toContain("empty skill body");
   });
 
   it("dedupes by id, keeping the first occurrence", () => {
-    const { skills, warnings } = parseBuiltinSkills([source(VALID), source(VALID, "skills/y/SKILL.md")]);
+    const { skills, warnings } = parseBuiltinSkills([
+      source(VALID),
+      source(VALID, "skills/y/SKILL.md"),
+    ]);
     expect(skills).toHaveLength(1);
     expect(warnings.some((w) => w.includes("duplicate skill id"))).toBe(true);
   });

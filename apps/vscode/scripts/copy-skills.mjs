@@ -41,4 +41,6 @@ if (copied === 0) {
   console.error(`copy-skills: no SKILL.md files found under ${srcDir}`);
   process.exit(1);
 }
-console.log(`copy-skills: copied ${copied} SKILL.md file(s) into ${path.relative(repoRoot, destDir)}`);
+console.log(
+  `copy-skills: copied ${copied} SKILL.md file(s) into ${path.relative(repoRoot, destDir)}`,
+);
