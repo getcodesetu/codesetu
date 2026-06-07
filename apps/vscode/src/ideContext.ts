@@ -45,9 +45,33 @@ export function buildEditorContext(options: BuildEditorContextOptions): IdeConte
   };
 }
 
+// When the chat webview panel has focus, vscode.window.activeTextEditor is
+// undefined — so capturing context "live" on send would drop the user's
+// selection and active file. We remember the last real text editor and fall
+// back to it. Its `.selection` stays current even after it loses focus.
+let lastActiveEditor: vscodeTypes.TextEditor | undefined;
+
+/**
+ * Start tracking the active text editor so collectVSCodeContext can recover the
+ * user's selection after the chat webview steals focus. Call once at activation;
+ * returns a Disposable to register in the extension's subscriptions.
+ */
+export function trackActiveEditor(vscode: VSCodeApi): vscodeTypes.Disposable {
+  if (vscode.window.activeTextEditor !== undefined) {
+    lastActiveEditor = vscode.window.activeTextEditor;
+  }
+  return vscode.window.onDidChangeActiveTextEditor((editor) => {
+    // Ignore the transition to `undefined` (a webview/panel gained focus) —
+    // keep the last real editor so its selection survives.
+    if (editor !== undefined) {
+      lastActiveEditor = editor;
+    }
+  });
+}
+
 export async function collectVSCodeContext(): Promise<IdeContextPayload> {
   const vscode: VSCodeApi = await import("vscode");
-  const editor = vscode.window.activeTextEditor;
+  const editor = vscode.window.activeTextEditor ?? lastActiveEditor;
 
   if (editor === undefined) {
     return {};

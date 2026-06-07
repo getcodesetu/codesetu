@@ -3,6 +3,8 @@ id: write-tests
 name: Write Tests
 description: Generate focused tests for the selected code in the project's existing test framework. Use when the user asks for tests, coverage, or "test this".
 whenToUse: When the user wants tests authored for the selected code. Slash invocation is /test or /tests.
+slashCommands: [/test, /tests]
+keywords: [write tests, add tests, test this, unit test, test coverage, cover with tests]
 ---
 
 # Write Tests

@@ -3,6 +3,8 @@ id: refactor
 name: Refactor
 description: Propose a focused refactor of the selected code with rationale, preserving behavior. Use when the user says "refactor", "clean up", "simplify", or "improve readability".
 whenToUse: When the user wants the code's shape changed but its behavior preserved. Slash invocation is /refactor.
+slashCommands: [/refactor]
+keywords: [refactor, clean up, cleanup, simplify, improve readability, tidy]
 ---
 
 # Refactor

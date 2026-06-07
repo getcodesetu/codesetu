@@ -14,18 +14,21 @@
  * limitations under the License.
  */
 
+import type { ChatStreamChunk } from "@codesetu/core";
+
 export interface ResolveAssistantResponseOptions {
   completeChat: () => Promise<string>;
   emptyMessage: string;
-  onChunk?: (chunk: string) => void;
+  onChunk?: (chunk: ChatStreamChunk) => void;
   onStreamFallback?: (reason: unknown) => void;
-  streamChat: () => AsyncIterable<string>;
+  streamChat: () => AsyncIterable<ChatStreamChunk>;
 }
 
 export async function resolveAssistantResponse(
   options: ResolveAssistantResponseOptions,
 ): Promise<string> {
-  if (options.onChunk === undefined) {
+  const onChunk = options.onChunk;
+  if (onChunk === undefined) {
     return normalizeAssistantText(await options.completeChat(), options.emptyMessage);
   }
 
@@ -35,21 +38,30 @@ export async function resolveAssistantResponse(
 
   try {
     for await (const chunk of options.streamChat()) {
-      if (chunk.length === 0) {
+      // Reasoning (chain-of-thought) precedes/interleaves the answer — forward
+      // it immediately so the "thinking" panel streams live.
+      if (chunk.reasoning !== undefined && chunk.reasoning.length > 0) {
+        onChunk({ reasoning: chunk.reasoning });
+      }
+
+      const content = chunk.content;
+      if (content === undefined || content.length === 0) {
         continue;
       }
 
-      text += chunk;
+      // Only answer content counts toward the returned text. Buffer leading
+      // whitespace so the rendered answer doesn't start with blank lines.
+      text += content;
 
       if (didEmitChunk) {
-        options.onChunk(chunk);
+        onChunk({ content });
         continue;
       }
 
-      bufferedText += chunk;
+      bufferedText += content;
 
       if (bufferedText.trim().length > 0) {
-        options.onChunk(bufferedText);
+        onChunk({ content: bufferedText });
         bufferedText = "";
         didEmitChunk = true;
       }

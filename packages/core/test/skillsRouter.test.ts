@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { BUILTIN_SKILLS, routeSkills } from "../src/index.js";
+import { BUILTIN_SKILLS_FALLBACK, routeSkills } from "../src/index.js";
 
 describe("routeSkills", () => {
   it("pins a skill by id regardless of message content", () => {
     const result = routeSkills({
       userText: "tell me a joke about cats",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
       pinnedIds: ["plan-mode"],
     });
 
@@ -17,7 +17,7 @@ describe("routeSkills", () => {
   it("routes /explain to the explain-code skill and strips the command", () => {
     const result = routeSkills({
       userText: "/explain how the auth middleware fits together",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
     });
 
     expect(result.selected.map((s) => s.id)).toContain("explain-code");
@@ -27,19 +27,19 @@ describe("routeSkills", () => {
 
   it("routes /test and /tests to write-tests", () => {
     expect(
-      routeSkills({ userText: "/test the parser", skills: BUILTIN_SKILLS }).selected.map(
+      routeSkills({ userText: "/test the parser", skills: BUILTIN_SKILLS_FALLBACK }).selected.map(
         (s) => s.id,
       ),
     ).toContain("write-tests");
     expect(
-      routeSkills({ userText: "/tests", skills: BUILTIN_SKILLS }).selected.map((s) => s.id),
+      routeSkills({ userText: "/tests", skills: BUILTIN_SKILLS_FALLBACK }).selected.map((s) => s.id),
     ).toContain("write-tests");
   });
 
   it("ignores a slash that is not at the start of the message", () => {
     const result = routeSkills({
       userText: "the path /explain is just a URL",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
     });
 
     expect(result.consumedSlash).toBeUndefined();
@@ -49,7 +49,7 @@ describe("routeSkills", () => {
   it("auto-routes by keyword when no slash is present", () => {
     const result = routeSkills({
       userText: "please refactor this function for readability",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
     });
 
     expect(result.selected.map((s) => s.id)).toContain("refactor");
@@ -58,7 +58,7 @@ describe("routeSkills", () => {
   it("auto-routes Indic keyword (Hindi) to indic-comments", () => {
     const result = routeSkills({
       userText: "Add comments in हिंदी for this function",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
     });
 
     expect(result.selected.map((s) => s.id)).toContain("indic-comments");
@@ -67,7 +67,7 @@ describe("routeSkills", () => {
   it("respects autoRoute=false — no keyword routing without a slash", () => {
     const result = routeSkills({
       userText: "please refactor this function",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
       autoRoute: false,
     });
 
@@ -79,7 +79,7 @@ describe("routeSkills", () => {
       // Both "explain" and "refactor" keywords are present; only the higher
       // scorer should be auto-included.
       userText: "explain this and then refactor it for readability",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
     });
 
     const autoIds = result.selected.map((s) => s.id);
@@ -91,7 +91,7 @@ describe("routeSkills", () => {
   it("never duplicates a pinned skill that also matches a slash or keyword", () => {
     const result = routeSkills({
       userText: "/plan refactor the parser for readability",
-      skills: BUILTIN_SKILLS,
+      skills: BUILTIN_SKILLS_FALLBACK,
       pinnedIds: ["plan-mode"],
     });
 

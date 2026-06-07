@@ -3,6 +3,8 @@ id: explain-code
 name: Explain Code
 description: Produce a structured explanation of selected code or the active file. Use when the user asks "what does this do" or "explain this".
 whenToUse: When the user wants to understand existing code — their selection, the active file, or a function they referenced. Slash invocation is /explain.
+slashCommands: [/explain]
+keywords: [explain, what does, what is this, how does this, walk me through]
 ---
 
 # Explain Code

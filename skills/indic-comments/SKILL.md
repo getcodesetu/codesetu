@@ -3,6 +3,8 @@ id: indic-comments
 name: Indic Code Comments
 description: Generate or translate code comments in Indian languages (Hindi, Tamil, Bengali, Marathi, Telugu, Kannada, Malayalam, Gujarati, Punjabi, Odia). Use when the user asks for comments in an Indic language.
 whenToUse: When the user requests comments in Hindi, हिंदी, Tamil, தமிழ், Bengali, বাংলা, or another Indian language. Slash invocation is /indic.
+slashCommands: [/indic]
+keywords: [hindi, हिंदी, tamil, தமிழ், bengali, বাংলা, marathi, telugu, kannada, malayalam, gujarati, punjabi, odia, indic, comments in, translate comments]
 ---
 
 # Indic Code Comments

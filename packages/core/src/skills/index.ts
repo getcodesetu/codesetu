@@ -15,7 +15,7 @@
  */
 
 export {
-  BUILTIN_SKILLS,
+  BUILTIN_SKILLS_FALLBACK,
   EXPLAIN_CODE_SKILL,
   INDIC_COMMENTS_SKILL,
   REFACTOR_SKILL,
@@ -23,4 +23,5 @@ export {
   findBuiltinSkill,
   type BuiltinSkill,
 } from "./builtin.js";
+export { parseBuiltinSkills, type ParseBuiltinSkillsResult } from "./loader.js";
 export { routeSkills, type RouteSkillsInput, type RouteSkillsResult } from "./router.js";

@@ -139,7 +139,13 @@ const PLAN_MODE_BUILTIN: BuiltinSkill = {
   keywords: ["plan this", "make a plan", "propose a plan", "step by step plan"],
 };
 
-export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
+/**
+ * Fallback built-in skills. The runtime source of truth is the bundled
+ * skills/<id>/SKILL.md files, loaded via parseBuiltinSkills (see ./loader.ts).
+ * Hosts fall back to this constant only when file loading fails or yields
+ * nothing, so skills never silently vanish. Keep the order: plan-mode first.
+ */
+export const BUILTIN_SKILLS_FALLBACK: readonly BuiltinSkill[] = [
   PLAN_MODE_BUILTIN,
   EXPLAIN_CODE_SKILL,
   REFACTOR_SKILL,
@@ -148,5 +154,5 @@ export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
 ];
 
 export function findBuiltinSkill(id: string): BuiltinSkill | undefined {
-  return BUILTIN_SKILLS.find((skill) => skill.id === id);
+  return BUILTIN_SKILLS_FALLBACK.find((skill) => skill.id === id);
 }

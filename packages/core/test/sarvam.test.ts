@@ -30,6 +30,7 @@ import {
   SarvamProvider,
   type SarvamOpenAIClient,
 } from "../src/providers/sarvam.js";
+import type { ChatStreamChunk } from "../src/providers/base.js";
 
 const chatResponse: ChatCompletion = {
   id: "chatcmpl-test",
@@ -110,6 +111,42 @@ function chatChunk(content: string): ChatCompletionChunk {
       },
     ],
   };
+}
+
+/** A reasoning chunk — `reasoning_content` is non-standard, so cast it in. */
+function reasoningChunk(reasoning: string): ChatCompletionChunk {
+  return {
+    id: "chatcmpl-test",
+    object: "chat.completion.chunk",
+    created: 0,
+    model: DEFAULT_SARVAM_MODEL,
+    choices: [
+      {
+        index: 0,
+        delta: { reasoning_content: reasoning, role: "assistant" } as ChatCompletionChunk["choices"][number]["delta"],
+        finish_reason: null,
+        logprobs: null,
+      },
+    ],
+  };
+}
+
+/** A SarvamProvider whose streaming endpoint yields the given chunks. */
+function providerStreaming(chunks: ChatCompletionChunk[]): SarvamProvider {
+  const client: SarvamOpenAIClient = {
+    chat: {
+      completions: {
+        create: ((params: ChatCompletionCreateParamsStreaming) =>
+          params.stream === true
+            ? Promise.resolve(toAsyncIterable(chunks))
+            : Promise.resolve(chatResponse)) as SarvamOpenAIClient["chat"]["completions"]["create"],
+      },
+    },
+    completions: {
+      create: (params) => Promise.resolve(fimResponse),
+    },
+  } as SarvamOpenAIClient;
+  return new SarvamProvider({ client });
 }
 
 describe("SarvamProvider", () => {
@@ -204,7 +241,7 @@ describe("SarvamProvider", () => {
   it("streams chat completion text chunks", async () => {
     const { client, chatCalls } = createMockClient();
     const provider = new SarvamProvider({ client });
-    const chunks: string[] = [];
+    const chunks: ChatStreamChunk[] = [];
 
     for await (const chunk of provider.streamChat({
       messages: [{ role: "user", content: "Say namaste." }],
@@ -214,7 +251,7 @@ describe("SarvamProvider", () => {
       chunks.push(chunk);
     }
 
-    expect(chunks).toEqual(["Namaste", " from Sarvam"]);
+    expect(chunks).toEqual([{ content: "Namaste" }, { content: " from Sarvam" }]);
     expect(chatCalls).toEqual([
       {
         model: DEFAULT_SARVAM_MODEL,
@@ -224,6 +261,27 @@ describe("SarvamProvider", () => {
         reasoning_effort: "low",
         stream: true,
       },
+    ]);
+  });
+
+  it("captures reasoning_content separately from answer content", async () => {
+    const provider = providerStreaming([
+      reasoningChunk("Let me think… "),
+      reasoningChunk("the user wants a greeting."),
+      chatChunk("Namaste"),
+    ]);
+    const chunks: ChatStreamChunk[] = [];
+
+    for await (const chunk of provider.streamChat({
+      messages: [{ role: "user", content: "Say namaste." }],
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { reasoning: "Let me think… " },
+      { reasoning: "the user wants a greeting." },
+      { content: "Namaste" },
     ]);
   });
 

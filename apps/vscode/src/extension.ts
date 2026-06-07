@@ -15,7 +15,6 @@
  */
 
 import {
-  BUILTIN_SKILLS,
   PLAN_MODE_SKILL_ID,
   buildCodeSetuSystemMessage,
   buildContextMarkdown,
@@ -26,6 +25,7 @@ import {
   type AudioBlob,
   type ChatCompletionRequest,
   type ChatMessage,
+  type ChatStreamChunk,
   type IdeContextPayload,
   type ProviderFactoryOptions,
   type SpeechProvider,
@@ -34,15 +34,16 @@ import {
 import * as vscode from "vscode";
 
 import { completeAssistantText } from "./chatCompletionRetry";
-import { ChatPanel, type ChatResponder, type SpeechBridge } from "./chatPanel";
+import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
-import { collectVSCodeContext } from "./ideContext";
+import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
+import { loadBuiltinSkills } from "./skills";
 import {
   getStoredApiKey,
   getStoredSpeechApiKey,
@@ -59,6 +60,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarItem.tooltip = "CodeSetu is ready";
   statusBarItem.command = "codesetu.openChat";
   statusBarItem.show();
+
+  // Remember the last real editor so chat context survives the webview taking
+  // focus (vscode.window.activeTextEditor goes undefined while the panel is up).
+  context.subscriptions.push(trackActiveEditor(vscode));
 
   // The API key lives in the OS secret store. Migrate any legacy plaintext value
   // out of settings.json, then keep an in-memory copy refreshed on change so the
@@ -94,6 +99,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return [...result.skills, ...result.checks];
   };
 
+  // Built-in skills load once from the bundled SKILL.md files (single source of
+  // truth); falls back to the constants if the bundle is missing/unparseable.
+  const builtinSkills = await loadBuiltinSkills(context, outputChannel);
+  ChatPanel.configureBuiltinSkills(builtinSkills);
+
   const responder: ChatResponder = async (messages, requestContext) => {
     const configuration = readCodeSetuConfiguration();
     const lastUserText = lastUserMessageText(messages);
@@ -104,7 +114,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const planModeActive = requestContext?.planMode === true && !isPlanModeApproval(lastUserText);
     const routed = routeSkills({
       userText: lastUserText,
-      skills: BUILTIN_SKILLS,
+      skills: builtinSkills,
       pinnedIds: planModeActive ? [PLAN_MODE_SKILL_ID] : [],
       autoRoute: configuration.skillsAutoRoute,
     });
@@ -117,14 +127,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ? withLastUserMessage(messages, routed.cleanedUserText)
         : messages;
 
+    const ideContext =
+      requestContext?.ideContext ??
+      ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {});
+    const instructions = await loadInstructions();
+
+    // Surface exactly what we're about to send — selected code, routed skills,
+    // and the full assembled payload — for the chat's "Context sent to AI" panel.
+    requestContext?.onContextPreview?.(
+      buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
+    );
+
     return sendChatRequest(
       providerMessages,
       buildProviderOptions(),
       statusBarItem,
       outputChannel,
-      await loadInstructions(),
-      requestContext?.ideContext ??
-        ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {}),
+      instructions,
+      ideContext,
       requestContext?.onChunk,
       routed.selected,
     );
@@ -228,7 +248,7 @@ async function sendChatRequest(
   outputChannel: vscode.OutputChannel,
   instructions: readonly WorkspaceInstruction[] = [],
   ideContext: IdeContextPayload = {},
-  onChunk?: (chunk: string) => void,
+  onChunk?: (chunk: ChatStreamChunk) => void,
   pinnedSkills: readonly WorkspaceInstruction[] = [],
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
@@ -327,4 +347,40 @@ function hasIdeContext(context: IdeContextPayload): boolean {
     context.cursorSuffix !== undefined ||
     (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0)
   );
+}
+
+/**
+ * Assemble the "Context sent to AI" preview from the same pieces the request is
+ * built from — so the panel shows exactly what the model receives: routed
+ * skills (with their slash), the IDE context summary (selection, file,
+ * snippets), and the full system prompt + context markdown for deep inspection.
+ */
+function buildContextPreview(
+  ideContext: IdeContextPayload,
+  selectedSkills: readonly WorkspaceInstruction[],
+  instructions: readonly WorkspaceInstruction[],
+  builtinSkills: readonly { id: string; slashCommands: readonly string[] }[],
+): ContextPreview {
+  const selection = ideContext.selectedText;
+  return {
+    skills: selectedSkills.map((skill) => {
+      const slash = builtinSkills.find((b) => b.id === skill.id)?.slashCommands[0];
+      return { name: skill.name, ...(slash === undefined ? {} : { slash }) };
+    }),
+    ideContext: {
+      ...(ideContext.activeFilePath === undefined
+        ? {}
+        : { activeFilePath: ideContext.activeFilePath }),
+      ...(ideContext.languageId === undefined ? {} : { languageId: ideContext.languageId }),
+      hasSelection: selection !== undefined && selection.length > 0,
+      ...(selection === undefined ? {} : { selectedText: selection }),
+      snippetCount: ideContext.relatedSnippets?.length ?? 0,
+    },
+    full: {
+      systemPrompt: buildCodeSetuSystemMessage([...instructions], {
+        pinnedSkills: [...selectedSkills],
+      }),
+      contextMarkdown: hasIdeContext(ideContext) ? buildContextMarkdown(ideContext) : "",
+    },
+  };
 }

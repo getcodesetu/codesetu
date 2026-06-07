@@ -17,26 +17,45 @@
 import crypto from "node:crypto";
 
 import {
-  BUILTIN_SKILLS,
+  BUILTIN_SKILLS_FALLBACK,
   type AudioBlob,
+  type BuiltinSkill,
   type ChatMessage,
+  type ChatStreamChunk,
   type IdeContextPayload,
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
+import { DictationController, NoRecorderError } from "./dictation";
 import { readSpeechConfiguration } from "./speechConfiguration";
 
 // Cap the rolling transcript sent to the provider so long sessions don't
 // overflow the context window. The most recent turns are always kept.
 const MAX_HISTORY_CHARS = 100_000;
 
+/** Preview of what the responder is about to send to the model, for the
+ *  collapsible "Context sent to AI" panel. */
+export interface ContextPreview {
+  skills: { name: string; slash?: string }[];
+  ideContext: {
+    activeFilePath?: string;
+    languageId?: string;
+    hasSelection: boolean;
+    selectedText?: string;
+    snippetCount: number;
+  };
+  full: { systemPrompt: string; contextMarkdown: string };
+}
+
 export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
   planMode?: boolean;
-  onChunk?: (chunk: string) => void;
+  onChunk?: (chunk: ChatStreamChunk) => void;
+  /** Called once the payload is assembled, before the reply streams. */
+  onContextPreview?: (preview: ContextPreview) => void;
 }
 
 export interface SendUserMessageOptions {
@@ -74,8 +93,28 @@ interface UiStateRequest {
   planMode?: boolean;
 }
 
+interface PermissionDeniedRequest {
+  type: "permissionDenied";
+  reason: "denied" | "no-device" | "in-use" | "network" | "unsupported" | "other";
+  message?: string;
+}
+
+interface DictationRequest {
+  type: "dictation";
+  action: "start" | "stop";
+}
+
 export class ChatPanel {
   private static currentPanel: ChatPanel | undefined;
+  // Built-in skills resolved at activation (loaded from bundled SKILL.md, or the
+  // fallback constants). Set once via configureBuiltinSkills; used to build the
+  // slash-command palette. Defaults to the fallback so the palette is never empty.
+  private static builtinSkills: readonly BuiltinSkill[] = BUILTIN_SKILLS_FALLBACK;
+
+  /** Set the built-in skills used for the slash palette (call once at activation). */
+  public static configureBuiltinSkills(skills: readonly BuiltinSkill[]): void {
+    ChatPanel.builtinSkills = skills;
+  }
 
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
@@ -83,6 +122,8 @@ export class ChatPanel {
   // Webview-owned UI state mirrored to the host so editor actions (which don't
   // go through the composer) can inherit the user's current Plan Mode pick.
   private currentPlanMode = false;
+  // Host-side mic capture for dictation (the webview can't reach the mic).
+  private readonly dictation: DictationController;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -91,13 +132,24 @@ export class ChatPanel {
     private readonly speechBridge: SpeechBridge | undefined,
   ) {
     this.panel = panel;
+    this.dictation = new DictationController(speechBridge, {
+      onState: (state) => this.postWebview({ type: "dictationState", state }),
+      onResult: (text) => this.postWebview({ type: "dictationResult", text }),
+      onError: (message) => this.postWebview({ type: "dictationError", message }),
+      log: (line) => this.outputChannel.appendLine(line),
+    });
     this.panel.webview.html = this.renderHtml(this.panel.webview);
     this.panel.webview.onDidReceiveMessage((message: unknown) => {
       void this.handleMessage(message);
     });
     this.panel.onDidDispose(() => {
+      this.dictation.dispose();
       ChatPanel.currentPanel = undefined;
     });
+  }
+
+  private postWebview(message: Record<string, unknown>): void {
+    void this.panel.webview.postMessage(message);
   }
 
   public static createOrShow(
@@ -165,6 +217,16 @@ export class ChatPanel {
       return;
     }
 
+    if (isPermissionDeniedRequest(message)) {
+      void this.handlePermissionDenied(message);
+      return;
+    }
+
+    if (isDictationRequest(message)) {
+      await this.handleDictation(message);
+      return;
+    }
+
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
@@ -196,6 +258,69 @@ export class ChatPanel {
     } catch (error: unknown) {
       this.outputChannel.appendLine(`Transcription failed: ${formatErrorMessage(error)}`);
       this.postSpeechError(message.requestId, formatErrorMessage(error));
+    }
+  }
+
+  /**
+   * Drive host-side dictation. Capture runs in the extension host (a recorder
+   * CLI) and the resulting WAV is transcribed by the configured server STT
+   * provider — the webview only toggles start/stop and renders state.
+   */
+  private async handleDictation(message: DictationRequest): Promise<void> {
+    if (message.action === "stop") {
+      await this.dictation.stop(readSpeechConfiguration().language);
+      return;
+    }
+    try {
+      await this.dictation.start();
+    } catch (error: unknown) {
+      if (error instanceof NoRecorderError) {
+        // Missing recorder is a setup problem, not a transient error — make it
+        // discoverable with a modal rather than a tiny inline status line.
+        const choice = await vscode.window.showWarningMessage(
+          "Dictation needs a recorder",
+          { modal: true, detail: error.message },
+          "Open Install Docs",
+        );
+        if (choice === "Open Install Docs") {
+          await vscode.env.openExternal(vscode.Uri.parse("https://sox.sourceforge.net/"));
+        }
+        this.postWebview({ type: "dictationState", state: "idle" });
+        return;
+      }
+      this.outputChannel.appendLine(`Dictation start failed: ${formatErrorMessage(error)}`);
+      this.postWebview({ type: "dictationError", message: formatErrorMessage(error) });
+      this.postWebview({ type: "dictationState", state: "idle" });
+    }
+  }
+
+  // NOTE: VS Code dictation now captures in the extension host (see
+  // dictation.ts), not the webview, so the webview never calls getUserMedia and
+  // never posts "permissionDenied". This handler is therefore unreachable in
+  // VS Code today; it's kept for the JetBrains-style webview flow and for
+  // if/when VS Code grants webview mic access (microsoft/vscode#250568).
+  private async handlePermissionDenied(message: PermissionDeniedRequest): Promise<void> {
+    const platform = process.platform;
+    const guide = buildMicPermissionGuide(platform, message.reason);
+    const detail =
+      (message.message !== undefined && message.message.length > 0 ? `${message.message}\n\n` : "") +
+      guide.detail;
+    const settingsButton = guide.settingsUrl !== undefined ? "Open Mic Settings" : undefined;
+    // A modal dialog always gets a built-in "Cancel" button, so we don't add
+    // our own "Dismiss" — that would show two redundant close buttons.
+    const actions = [
+      ...(settingsButton !== undefined ? [settingsButton] : []),
+      "Switch Speech Provider",
+    ];
+    const choice = await vscode.window.showWarningMessage(
+      guide.title,
+      { modal: true, detail },
+      ...actions,
+    );
+    if (choice === settingsButton && guide.settingsUrl !== undefined) {
+      await vscode.env.openExternal(vscode.Uri.parse(guide.settingsUrl));
+    } else if (choice === "Switch Speech Provider") {
+      await vscode.commands.executeCommand("codesetu.setupSpeechProvider");
     }
   }
 
@@ -237,17 +362,33 @@ export class ChatPanel {
 
     try {
       let isStreamingAssistantMessage = false;
+      const ensureStarted = (): void => {
+        if (!isStreamingAssistantMessage) {
+          isStreamingAssistantMessage = true;
+          void this.panel.webview.postMessage({ type: "assistantMessageStart" });
+        }
+      };
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
         planMode: options.planMode ?? this.currentPlanMode,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
+        onContextPreview: (preview) => {
+          void this.panel.webview.postMessage({ type: "contextPreview", preview });
+        },
         onChunk: (chunk) => {
-          if (!isStreamingAssistantMessage) {
-            isStreamingAssistantMessage = true;
-            void this.panel.webview.postMessage({ type: "assistantMessageStart" });
+          ensureStarted();
+          if (chunk.reasoning !== undefined) {
+            void this.panel.webview.postMessage({
+              type: "assistantReasoningDelta",
+              text: chunk.reasoning,
+            });
           }
-
-          void this.panel.webview.postMessage({ type: "assistantMessageDelta", text: chunk });
+          if (chunk.content !== undefined) {
+            void this.panel.webview.postMessage({
+              type: "assistantMessageDelta",
+              text: chunk.content,
+            });
+          }
         },
       });
       this.history.push({ role: "assistant", content: response });
@@ -295,7 +436,7 @@ export class ChatPanel {
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
-      slashCommands: BUILTIN_SKILLS.flatMap((skill) =>
+      slashCommands: ChatPanel.builtinSkills.flatMap((skill) =>
         skill.slashCommands.map((command) => ({
           command,
           skillName: skill.name,
@@ -368,6 +509,97 @@ function isUiStateRequest(message: unknown): message is UiStateRequest {
     candidate.type === "uiState" &&
     (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
   );
+}
+
+function isDictationRequest(message: unknown): message is DictationRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<DictationRequest>;
+  return (
+    candidate.type === "dictation" &&
+    (candidate.action === "start" || candidate.action === "stop")
+  );
+}
+
+function isPermissionDeniedRequest(message: unknown): message is PermissionDeniedRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<PermissionDeniedRequest>;
+  return candidate.type === "permissionDenied" && typeof candidate.reason === "string";
+}
+
+interface MicPermissionGuide {
+  title: string;
+  detail: string;
+  /** OS-specific deep-link to the right Settings pane, when one exists. */
+  settingsUrl?: string;
+}
+
+/**
+ * Build the OS-specific instructions shown to the user when getUserMedia
+ * fails. Settings deep-links are well-known custom URI schemes that
+ * vscode.env.openExternal handles natively (x-apple.systempreferences on
+ * macOS, ms-settings on Windows).
+ */
+function buildMicPermissionGuide(
+  platform: NodeJS.Platform,
+  reason: PermissionDeniedRequest["reason"],
+): MicPermissionGuide {
+  if (reason === "no-device") {
+    return {
+      title: "No microphone detected",
+      detail: "Plug in a microphone (or check that one is selected as the system input device) and try again.",
+    };
+  }
+  if (reason === "in-use") {
+    return {
+      title: "Microphone is in use by another app",
+      detail: "Close any video-conferencing or recording app holding the mic and try again.",
+    };
+  }
+  if (reason === "network") {
+    return {
+      title: "Browser speech recognition needs network access",
+      detail:
+        "Chromium's WebSpeech relies on Google's online recognition service. Either reconnect, or switch to a server STT provider (Sarvam / OpenAI-compatible / Hugging Face) via CodeSetu: Setup Speech Provider.",
+    };
+  }
+  if (reason === "unsupported") {
+    return {
+      title: "Mic capture is unavailable in this webview",
+      detail:
+        "Your VSCode build may be missing the media-stream subsystem. Update VSCode and retry; if it persists, please report the issue.",
+    };
+  }
+
+  // "denied" or "other" — give OS-specific steps and the deep link.
+  if (platform === "darwin") {
+    return {
+      title: "Microphone access blocked",
+      detail:
+        "macOS is blocking the mic for the editor that's running CodeSetu.\n\n" +
+        "Open System Settings → Privacy & Security → Microphone, then enable the row for Visual Studio Code (or Code – Insiders / VSCodium, whichever you launched).\n\n" +
+        "You may need to quit and reopen VSCode after granting access.",
+      settingsUrl:
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+    };
+  }
+  if (platform === "win32") {
+    return {
+      title: "Microphone access blocked",
+      detail:
+        "Windows is blocking the mic for the editor that's running CodeSetu.\n\n" +
+        "Open Settings → Privacy & Security → Microphone, turn on 'Microphone access' and 'Let desktop apps access your microphone', then return to VSCode.",
+      settingsUrl: "ms-settings:privacy-microphone",
+    };
+  }
+  // Linux: no standard deep-link. Instructions vary by distro / audio server.
+  return {
+    title: "Microphone access blocked",
+    detail:
+      "Linux mic permissions depend on your audio server (PipeWire, PulseAudio) and on whether VSCode is sandboxed (Flatpak, Snap).\n\n" +
+      " • PulseAudio: run `pavucontrol` and check the Recording tab for VSCode.\n" +
+      " • PipeWire: `wpctl status` to confirm the input source is unmuted.\n" +
+      " • Flatpak VSCode: `flatpak override --user --device=all com.visualstudio.code` then restart VSCode.",
+  };
 }
 
 function isSendMessageRequest(message: unknown): message is SendMessageRequest {

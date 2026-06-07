@@ -17,7 +17,9 @@
 export type {
   ChatCompletion,
   ChatCompletionRequest,
+  ChatCompletionStream,
   ChatMessage,
+  ChatStreamChunk,
   FimCompletionRequest,
   LlmProvider,
 } from "./providers/base.js";
@@ -59,14 +61,16 @@ export {
   isPlanModeApproval,
 } from "./ide/planMode.js";
 export {
-  BUILTIN_SKILLS,
+  BUILTIN_SKILLS_FALLBACK,
   EXPLAIN_CODE_SKILL,
   INDIC_COMMENTS_SKILL,
   REFACTOR_SKILL,
   WRITE_TESTS_SKILL,
   findBuiltinSkill,
+  parseBuiltinSkills,
   routeSkills,
   type BuiltinSkill,
+  type ParseBuiltinSkillsResult,
   type RouteSkillsInput,
   type RouteSkillsResult,
 } from "./skills/index.js";

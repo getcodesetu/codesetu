@@ -159,6 +159,56 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         border: 1px solid var(--vscode-inputValidation-errorBorder);
       }
 
+      /* Collapsible "thinking" + "context sent to AI" accordions. */
+      .thinking,
+      .context-preview {
+        margin: 0 0 8px;
+        border: 1px solid rgba(127, 127, 127, 0.18);
+        border-radius: 8px;
+        background: rgba(127, 127, 127, 0.05);
+        font-size: 0.92em;
+      }
+      .context-preview {
+        margin: -2px 0 4px;
+      }
+      .thinking[hidden] {
+        display: none;
+      }
+      .thinking > summary,
+      .context-preview > summary,
+      .ctx-full > summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        color: var(--vscode-descriptionForeground, #888);
+        user-select: none;
+      }
+      .thinking .think-body,
+      .context-preview .ctx-body {
+        padding: 2px 12px 10px;
+        color: var(--vscode-descriptionForeground, #999);
+        white-space: normal;
+      }
+      .think-label {
+        font-style: italic;
+      }
+      .context-preview .ctx-row {
+        margin: 5px 0;
+      }
+      .context-preview .ctx-label {
+        opacity: 0.8;
+      }
+      .ctx-full {
+        margin-top: 8px;
+        border: none;
+        background: none;
+      }
+      .ctx-full > summary {
+        padding: 4px 0;
+      }
+      .answer > :first-child {
+        margin-top: 0;
+      }
+
       .composer-wrap {
         position: relative;
         display: grid;
@@ -634,6 +684,14 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               </span>
             </div>
             <div class="toolbar-group secondary">
+              <!--
+                Mic/dictation is HIDDEN for now. The host-side capture pipeline
+                (extension-host SoX/ffmpeg recorder → server STT provider) exists
+                in dictation.ts and is wired up, but the feature is parked while
+                we focus elsewhere. To re-enable: remove hidden/display:none here
+                and flip DICTATION_ENABLED to true in the script below.
+                (VS Code webviews can't reach the mic directly — microsoft/vscode#250568.)
+              -->
               <button
                 id="mic-button"
                 class="icon-button mic-button"
@@ -641,6 +699,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 data-state="idle"
                 aria-label="Dictate"
                 title="Dictate — tap to toggle, hold for push-to-talk"
+                hidden
+                style="display: none"
               >
                 <svg class="composer-icon" data-icon="mic" viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="9" y="3" width="6" height="12" rx="3" />
@@ -720,8 +780,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
       const modelLabel = document.getElementById("model-label");
-      let activeAssistantMessage;
-      let activeAssistantRaw = "";
+      // The in-progress assistant turn: DOM refs + accumulated content/reasoning.
+      // undefined when no turn is streaming.
+      let activeAssistant;
       // Tracks whether the most recent assistant turn was produced under plan
       // mode. When true and plan mode is still on, the Approve & Run row shows.
       let lastTurnWasPlan = false;
@@ -824,8 +885,13 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         if (slashFiltered.length === 0) return false;
         const entry = slashFiltered[slashSelectedIndex];
         if (!entry) return false;
-        textarea.value = entry.command + " ";
-        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        // Replace only the command token, keeping anything typed after it.
+        const text = textarea.value;
+        const firstSpace = text.search(/\\s/);
+        const rest = firstSpace === -1 ? "" : text.slice(firstSpace);
+        textarea.value = entry.command + (rest.length > 0 ? rest : " ");
+        const caret = entry.command.length + 1;
+        textarea.setSelectionRange(caret, caret);
         closeSlashMenu();
         return true;
       }
@@ -836,16 +902,29 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           closeSlashMenu();
           return;
         }
+        const firstSpace = text.search(/\\s/);
+        // Once a space follows the command, the user is writing their message,
+        // not picking a command — close the palette so Enter sends normally
+        // (otherwise Enter re-selects from the menu and wipes the message).
+        if (firstSpace !== -1) {
+          closeSlashMenu();
+          return;
+        }
         // Mutually exclusive with the composer (+) menu.
         setMenuOpen(false);
-        const firstSpace = text.search(/\\s/);
-        const prefix = firstSpace === -1 ? text : text.slice(0, firstSpace);
-        renderSlashMenu(prefix);
+        renderSlashMenu(text);
       }
 
       textarea.addEventListener("input", maybeOpenSlashMenu);
       textarea.addEventListener("keydown", (event) => {
-        if (slashMenu.hidden) return;
+        if (slashMenu.hidden) {
+          // Palette closed: Enter sends, Shift+Enter inserts a newline.
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+          }
+          return;
+        }
         if (event.key === "ArrowDown") {
           event.preventDefault();
           updateSlashSelection(1);
@@ -873,6 +952,12 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       });
 
       // Voice (STT only) ---------------------------------------------------------
+      // Capture runs in the extension HOST, not here: VS Code webviews can't
+      // reach the microphone (sandboxed iframe, no allow="microphone" —
+      // microsoft/vscode#250568). The mic button just toggles host-side
+      // dictation and renders the state the host posts back. The host records
+      // via a CLI (SoX/ffmpeg) and transcribes with the configured server STT
+      // provider (Sarvam / OpenAI-compatible / Hugging Face).
       const speechConfig = ${speechConfigJson};
       const micButton = document.getElementById("mic-button");
       const speechStatus = document.getElementById("speech-status");
@@ -886,16 +971,13 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         micButton.setAttribute("data-state", state);
       }
 
-      // ---- STT: browser path uses WebSpeech; server path uses MediaRecorder.
-      const SttProvider = speechConfig.sttProvider || "browser";
-      const useBrowserStt = SttProvider === "browser";
-      const SpeechRecognitionCtor =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
-
-      let recognition;
-      let mediaRecorder;
-      let recorderChunks = [];
       let listening = false;
+
+      // Dictation is parked for now: the mic button is hidden and both it and
+      // spacebar push-to-talk funnel through startListening(), so this single
+      // flag keeps the feature dormant. Flip to true (and unhide the button) to
+      // bring back host-side dictation.
+      const DICTATION_ENABLED = false;
 
       function appendToTextarea(text) {
         if (!text) return;
@@ -908,109 +990,14 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         textarea.setSelectionRange(textarea.value.length, textarea.value.length);
       }
 
-      function startBrowserStt() {
-        if (!SpeechRecognitionCtor) {
-          setSpeechStatus(
-            "Browser SpeechRecognition is unavailable. Switch the speech provider in settings.",
-            true,
-          );
-          return;
-        }
-        try {
-          recognition = new SpeechRecognitionCtor();
-        } catch (error) {
-          setSpeechStatus("Could not start speech recognition: " + error, true);
-          return;
-        }
-        recognition.lang = speechConfig.language || "en-US";
-        recognition.interimResults = true;
-        recognition.continuous = false;
-        let finalText = "";
-        recognition.addEventListener("result", (event) => {
-          let interim = "";
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            if (result.isFinal) {
-              finalText += result[0].transcript;
-            } else {
-              interim += result[0].transcript;
-            }
-          }
-          if (interim) setSpeechStatus("Listening: " + interim, false);
-        });
-        recognition.addEventListener("error", (event) => {
-          setSpeechStatus("Speech recognition error: " + (event.error || "unknown"), true);
-          stopListening();
-        });
-        recognition.addEventListener("end", () => {
-          if (finalText) appendToTextarea(finalText);
-          setSpeechStatus("", false);
-          listening = false;
-          setMicState("idle");
-        });
-        recognition.start();
-        listening = true;
-        setMicState("listening");
-        setSpeechStatus("Listening… (tap mic to stop)", false);
-      }
-
-      async function startServerStt() {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setSpeechStatus("getUserMedia is unavailable in this environment.", true);
-          return;
-        }
-        let stream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (error) {
-          setSpeechStatus("Microphone permission denied or unavailable.", true);
-          return;
-        }
-        recorderChunks = [];
-        try {
-          mediaRecorder = new MediaRecorder(stream);
-        } catch (error) {
-          setSpeechStatus("MediaRecorder is unavailable.", true);
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        mediaRecorder.addEventListener("dataavailable", (event) => {
-          if (event.data && event.data.size > 0) recorderChunks.push(event.data);
-        });
-        mediaRecorder.addEventListener("stop", async () => {
-          stream.getTracks().forEach((track) => track.stop());
-          if (recorderChunks.length === 0) {
-            setSpeechStatus("", false);
-            listening = false;
-            setMicState("idle");
-            return;
-          }
-          setMicState("transcribing");
-          setSpeechStatus("Transcribing…", false);
-          const blob = new Blob(recorderChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-          const base64 = await blobToBase64(blob);
-          const requestId = String(Date.now()) + "-" + Math.random().toString(36).slice(2);
-          pendingTranscriptions.set(requestId, () => {});
-          vscode.postMessage({
-            type: "transcribe",
-            requestId,
-            mimeType: blob.type,
-            base64,
-          });
-        });
-        mediaRecorder.start();
-        listening = true;
-        setMicState("listening");
-        setSpeechStatus("Listening… (tap mic to stop)", false);
-      }
-
       function startListening() {
+        if (!DICTATION_ENABLED) return;
         if (listening) return;
-        if (useBrowserStt) {
-          startBrowserStt();
-        } else {
-          void startServerStt();
-        }
+        // Optimistic: a second tap can stop before the host confirms "recording".
+        listening = true;
+        setMicState("listening");
+        setSpeechStatus("Starting mic…", false);
+        vscode.postMessage({ type: "dictation", action: "start" });
       }
 
       function stopListening() {
@@ -1018,10 +1005,25 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           setMicState("idle");
           return;
         }
-        if (useBrowserStt && recognition) {
-          try { recognition.stop(); } catch (_) {}
-        } else if (mediaRecorder && mediaRecorder.state !== "inactive") {
-          mediaRecorder.stop();
+        listening = false;
+        vscode.postMessage({ type: "dictation", action: "stop" });
+      }
+
+      // Host-driven dictation state: the host owns capture, so it tells us when
+      // recording actually started, when it's transcribing, and when it's done.
+      function applyDictationState(state) {
+        if (state === "recording") {
+          listening = true;
+          setMicState("listening");
+          setSpeechStatus("Listening… (tap mic to stop)", false);
+        } else if (state === "transcribing") {
+          setMicState("transcribing");
+          setSpeechStatus("Transcribing…", false);
+        } else {
+          listening = false;
+          setMicState("idle");
+          // Leave any error text in place; clear only the transient statuses.
+          if (!speechStatus.classList.contains("error")) setSpeechStatus("", false);
         }
       }
 
@@ -1037,11 +1039,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         startListening();
       }
 
+      // Set when a pointerdown stops an in-progress capture, so the matching
+      // pointerup doesn't immediately re-start it. (stopListening() flips
+      // "listening" to false synchronously, so endMicPress can't rely on it.)
+      let suppressTapStart = false;
+
       micButton.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         if (listening && !holdMode) {
           // A second tap while a tap-toggled capture is running just stops it.
           stopListening();
+          suppressTapStart = true;
           return;
         }
         if (listening) return;
@@ -1054,6 +1062,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         if (pressTimer) {
           clearTimeout(pressTimer);
           pressTimer = undefined;
+        }
+        if (suppressTapStart) {
+          suppressTapStart = false;
+          return;
         }
         if (holdMode) {
           stopListening();
@@ -1096,22 +1108,6 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           holdMode = false;
         }
       });
-
-      const pendingTranscriptions = new Map();
-
-      function blobToBase64(blob) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = String(reader.result || "");
-            const commaIndex = result.indexOf(",");
-            resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
-          };
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-      }
-
 
       const NEWLINE = String.fromCharCode(10);
       const FENCE = String.fromCharCode(96, 96, 96);
@@ -1205,20 +1201,203 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         return message;
       }
 
+      // Split answer text from reasoning the model emitted inline as
+      // <think>…</think>. Handles multiple blocks and an unclosed trailing tag
+      // (everything after it is thinking until </think> arrives). Runs on the
+      // accumulated text each render, so it's robust to chunk boundaries.
+      function splitThink(raw) {
+        let think = "";
+        let answer = "";
+        let rest = String(raw);
+        while (true) {
+          const open = rest.indexOf("<think>");
+          if (open === -1) { answer += rest; break; }
+          answer += rest.slice(0, open);
+          const after = rest.slice(open + 7);
+          const close = after.indexOf("</think>");
+          if (close === -1) { think += after; break; }
+          think += after.slice(0, close);
+          rest = after.slice(close + 8);
+        }
+        return { think: think, answer: answer };
+      }
+
       function startAssistantMessage() {
-        activeAssistantRaw = "";
-        activeAssistantMessage = appendMessage("assistant", "");
-        return activeAssistantMessage;
+        const article = document.createElement("article");
+        article.className = "message assistant";
+
+        const thinking = document.createElement("details");
+        thinking.className = "thinking";
+        thinking.hidden = true;
+        thinking.open = true;
+        const summary = document.createElement("summary");
+        const thinkLabel = document.createElement("span");
+        thinkLabel.className = "think-label";
+        thinkLabel.textContent = "Thinking…";
+        summary.appendChild(thinkLabel);
+        const thinkBody = document.createElement("div");
+        thinkBody.className = "think-body";
+        thinking.appendChild(summary);
+        thinking.appendChild(thinkBody);
+
+        const answer = document.createElement("div");
+        answer.className = "answer";
+
+        article.appendChild(thinking);
+        article.appendChild(answer);
+        transcript.appendChild(article);
+        article.scrollIntoView({ block: "end", behavior: "smooth" });
+
+        activeAssistant = {
+          article: article,
+          thinking: thinking,
+          thinkLabel: thinkLabel,
+          thinkBody: thinkBody,
+          answer: answer,
+          content: "",
+          reasoning: "",
+          thinkStart: 0,
+          thinkDone: false,
+        };
+        return activeAssistant;
+      }
+
+      function renderActiveAssistant() {
+        const a = activeAssistant;
+        if (!a) return;
+        const split = splitThink(a.content);
+        const thinkingText =
+          a.reasoning + (a.reasoning && split.think ? NEWLINE : "") + split.think;
+
+        if (thinkingText.trim().length > 0) {
+          if (a.thinkStart === 0) a.thinkStart = Date.now();
+          a.thinking.hidden = false;
+          a.thinkBody.innerHTML = renderMarkdown(thinkingText);
+        }
+
+        a.answer.innerHTML = renderMarkdown(split.answer);
+
+        // Once the real answer starts, stamp "Thought for Ns" and collapse.
+        if (!a.thinkDone && a.thinkStart > 0 && split.answer.trim().length > 0) {
+          a.thinkDone = true;
+          const secs = Math.max(1, Math.round((Date.now() - a.thinkStart) / 1000));
+          a.thinkLabel.textContent = "Thought for " + secs + "s";
+          a.thinking.open = false;
+        }
+
+        a.article.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
+      function appendAssistantReasoning(text) {
+        if (!activeAssistant) startAssistantMessage();
+        if (activeAssistant.thinkStart === 0) activeAssistant.thinkStart = Date.now();
+        activeAssistant.reasoning += text;
+        renderActiveAssistant();
       }
 
       function appendAssistantDelta(text) {
-        if (!activeAssistantMessage) {
-          startAssistantMessage();
+        if (!activeAssistant) startAssistantMessage();
+        activeAssistant.content += text;
+        renderActiveAssistant();
+      }
+
+      // Finalize the streaming turn: if there was thinking but no answer text
+      // closed it out, still stamp the elapsed label and collapse it.
+      function finalizeAssistant() {
+        const a = activeAssistant;
+        if (!a) return;
+        if (!a.thinkDone && a.thinkStart > 0) {
+          const secs = Math.max(1, Math.round((Date.now() - a.thinkStart) / 1000));
+          a.thinkLabel.textContent = "Thought for " + secs + "s";
+          a.thinking.open = false;
+        }
+        activeAssistant = undefined;
+      }
+
+      function ctxRow(label, value) {
+        const row = document.createElement("div");
+        row.className = "ctx-row";
+        const l = document.createElement("span");
+        l.className = "ctx-label";
+        l.textContent = label + ": ";
+        row.appendChild(l);
+        row.appendChild(document.createTextNode(value));
+        return row;
+      }
+
+      function ctxPre(label, value) {
+        const wrap = document.createElement("div");
+        wrap.className = "ctx-row";
+        const l = document.createElement("div");
+        l.className = "ctx-label";
+        l.textContent = label;
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.textContent = value;
+        pre.appendChild(code);
+        wrap.appendChild(l);
+        wrap.appendChild(pre);
+        return wrap;
+      }
+
+      // Render the "Context sent to AI" accordion under the current user turn.
+      // All values use textContent — never innerHTML — so nothing the payload
+      // contains can inject markup.
+      function renderContextPreview(preview) {
+        const ctx = preview.ideContext || {};
+        const full = preview.full || {};
+
+        const details = document.createElement("details");
+        details.className = "context-preview";
+        const summary = document.createElement("summary");
+        summary.textContent = "Context sent to AI";
+        details.appendChild(summary);
+
+        const body = document.createElement("div");
+        body.className = "ctx-body";
+
+        const skills = (preview.skills || []).map((s) =>
+          s.slash ? s.slash + " (" + s.name + ")" : s.name,
+        );
+        body.appendChild(ctxRow("Skill", skills.length ? skills.join(", ") : "(auto — none routed)"));
+
+        if (ctx.activeFilePath) {
+          body.appendChild(
+            ctxRow("Active file", ctx.activeFilePath + (ctx.languageId ? " (" + ctx.languageId + ")" : "")),
+          );
         }
 
-        activeAssistantRaw += text;
-        activeAssistantMessage.innerHTML = renderMarkdown(activeAssistantRaw);
-        activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
+        const selRow = document.createElement("div");
+        selRow.className = "ctx-row";
+        const selLabel = document.createElement("span");
+        selLabel.className = "ctx-label";
+        selLabel.textContent = "Selected code: ";
+        selRow.appendChild(selLabel);
+        if (ctx.hasSelection && ctx.selectedText) {
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          code.textContent = ctx.selectedText;
+          pre.appendChild(code);
+          selRow.appendChild(pre);
+        } else {
+          selRow.appendChild(document.createTextNode("(none)"));
+        }
+        body.appendChild(selRow);
+
+        body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+
+        const fullDetails = document.createElement("details");
+        fullDetails.className = "ctx-full";
+        const fullSummary = document.createElement("summary");
+        fullSummary.textContent = "View full payload";
+        fullDetails.appendChild(fullSummary);
+        if (full.systemPrompt) fullDetails.appendChild(ctxPre("System prompt", full.systemPrompt));
+        if (full.contextMarkdown) fullDetails.appendChild(ctxPre("IDE context", full.contextMarkdown));
+        body.appendChild(fullDetails);
+
+        details.appendChild(body);
+        transcript.appendChild(details);
+        details.scrollIntoView({ block: "end", behavior: "smooth" });
       }
 
       function setMenuOpen(isOpen) {
@@ -1293,15 +1472,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       window.addEventListener("message", (event) => {
         const message = event.data;
 
+        if (message.type === "contextPreview") {
+          renderContextPreview(message.preview);
+        }
+
         if (message.type === "assistantMessage") {
-          if (activeAssistantMessage) {
-            activeAssistantMessage.innerHTML = renderMarkdown(message.text);
-            activeAssistantMessage.scrollIntoView({ block: "end", behavior: "smooth" });
-            activeAssistantMessage = undefined;
-            activeAssistantRaw = "";
-          } else {
-            appendMessage("assistant", message.text);
-          }
+          // Non-streamed reply: render the whole thing in one go (still splits
+          // out any inline <think> reasoning).
+          if (!activeAssistant) startAssistantMessage();
+          activeAssistant.content = message.text;
+          renderActiveAssistant();
+          finalizeAssistant();
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
         }
@@ -1310,31 +1491,32 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           startAssistantMessage();
         }
 
+        if (message.type === "assistantReasoningDelta") {
+          appendAssistantReasoning(message.text);
+        }
+
         if (message.type === "assistantMessageDelta") {
           appendAssistantDelta(message.text);
         }
 
         if (message.type === "assistantMessageDone") {
-          activeAssistantMessage = undefined;
-          activeAssistantRaw = "";
+          finalizeAssistant();
           lastTurnWasPlan = pendingTurnWasPlan;
           updatePlanModeUi();
         }
 
-        if (message.type === "transcription") {
-          const callback = pendingTranscriptions.get(message.requestId);
-          if (callback) pendingTranscriptions.delete(message.requestId);
-          appendToTextarea(message.text);
-          setSpeechStatus("", false);
-          listening = false;
-          setMicState("idle");
+        if (message.type === "dictationState") {
+          applyDictationState(message.state);
         }
 
-        if (message.type === "speechError") {
-          pendingTranscriptions.delete(message.requestId);
+        if (message.type === "dictationResult") {
+          appendToTextarea(message.text);
+        }
+
+        if (message.type === "dictationError") {
           listening = false;
           setMicState("idle");
-          setSpeechStatus(message.text || "Speech error.", true);
+          setSpeechStatus(message.message || "Dictation error.", true);
         }
 
         if (message.type === "userMessage") {

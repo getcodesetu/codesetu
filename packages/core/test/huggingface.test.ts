@@ -29,6 +29,7 @@ import {
   HuggingFaceProvider,
   type HuggingFaceOpenAIClient,
 } from "../src/providers/huggingface.js";
+import type { ChatStreamChunk } from "../src/providers/base.js";
 
 const chatResponse: ChatCompletion = {
   id: "chatcmpl-test",
@@ -166,7 +167,7 @@ describe("HuggingFaceProvider", () => {
   it("streams chat completion text chunks", async () => {
     const { client } = createMockClient();
     const provider = new HuggingFaceProvider({ client });
-    const chunks: string[] = [];
+    const chunks: ChatStreamChunk[] = [];
 
     for await (const chunk of provider.streamChat({
       messages: [{ role: "user", content: "Say hello." }],
@@ -176,7 +177,7 @@ describe("HuggingFaceProvider", () => {
       chunks.push(chunk);
     }
 
-    expect(chunks).toEqual(["Hello", " from HF"]);
+    expect(chunks).toEqual([{ content: "Hello" }, { content: " from HF" }]);
   });
 });
 

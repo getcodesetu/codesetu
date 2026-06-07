@@ -3,6 +3,8 @@ id: plan-mode
 name: Plan Mode
 description: Produce a numbered plan and clarifying questions before any implementation. No code edits while plan mode is active.
 whenToUse: When the user toggles Plan Mode in the chat, or starts a turn with /plan. Stay in plan-mode behavior until the user replies with APPROVED or RUN.
+slashCommands: [/plan]
+keywords: [plan this, make a plan, propose a plan, step by step plan]
 ---
 
 # Plan Mode
