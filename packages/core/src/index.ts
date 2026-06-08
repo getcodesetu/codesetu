@@ -120,3 +120,25 @@ export {
   type SarvamProviderOptions,
 } from "./providers/sarvam.js";
 export { listTools, registerTool, type CodeSetuTool } from "./tools/index.js";
+export type { AgentHost, ExecOptions, ExecResult } from "./agent/index.js";
+export {
+  BASH_TOOL,
+  DEFAULT_AGENT_TOOLS,
+  DEFAULT_BASH_TIMEOUT_MS,
+  DEFAULT_MAX_ITERATIONS,
+  EDIT_TOOL,
+  MAX_TOOL_OUTPUT_CHARS,
+  READ_TOOL,
+  WRITE_TOOL,
+  runAgentLoop,
+  type AgentEvent,
+  type AgentLoopOptions,
+  type AgentLoopResult,
+  type AgentTool,
+  type AgentToolContext,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type StoppedReason,
+  type ToolResult,
+  type ToolRisk,
+} from "./agent/index.js";

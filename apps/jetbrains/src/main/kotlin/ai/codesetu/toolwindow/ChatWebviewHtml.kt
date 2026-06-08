@@ -27,6 +27,7 @@ object ChatWebviewHtml {
       .replace("__SPEECH_CONFIG_JSON__", speechConfigJson(state))
       .replace("__SPEECH_CONNECT_SOURCES__", speechConnectSources(state))
       .replace("__PLAN_MODE_INITIAL__", state.chatPlanModeOn.toString())
+      .replace("__AGENT_MODE_INITIAL__", state.chatAgentModeOn.toString())
   }
 
   private fun speechConfigJson(state: CodeSetuSettingsState.State): String =

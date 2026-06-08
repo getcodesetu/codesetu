@@ -1,6 +1,13 @@
 package ai.codesetu.toolwindow
 
 import ai.codesetu.actions.SetupSpeechProviderAction
+import ai.codesetu.agent.AGENT_MODE_SYSTEM_NOTE
+import ai.codesetu.agent.AgentEvent
+import ai.codesetu.agent.ApprovalDecision
+import ai.codesetu.agent.ApprovalRequest
+import ai.codesetu.agent.IntellijAgentHost
+import ai.codesetu.agent.defaultAgentTools
+import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
@@ -39,6 +46,7 @@ import com.intellij.ui.jcef.JBCefJSQuery
 import javax.swing.JComponent
 import javax.swing.JLabel
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.add
@@ -100,9 +108,15 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   /** Entry point for editor actions (Explain/Refactor/...) with pre-captured context. */
   fun sendMessage(text: String, capturedIdeContext: IdeContextPayload? = null) {
-    // Editor actions inherit the user's current Plan Mode pick from settings.
-    val planMode = CodeSetuSettingsState.getInstance().state.chatPlanModeOn
-    runChat(text, includeContext = true, captured = capturedIdeContext, planMode = planMode)
+    // Editor actions inherit the user's current Plan / Agent Mode pick from settings.
+    val settings = CodeSetuSettingsState.getInstance().state
+    runChat(
+      text,
+      includeContext = true,
+      captured = capturedIdeContext,
+      planMode = settings.chatPlanModeOn,
+      agentMode = settings.chatAgentModeOn,
+    )
   }
 
   private fun handlePost(request: String) {
@@ -123,15 +137,15 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "sendMessage" -> {
         val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return
         val include = obj["includeIdeContext"]?.jsonPrimitive?.booleanOrNull ?: true
-        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull
-          ?: CodeSetuSettingsState.getInstance().state.chatPlanModeOn
-        runChat(text, include, null, planMode)
+        val settings = CodeSetuSettingsState.getInstance().state
+        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatPlanModeOn
+        val agentMode = obj["agentMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatAgentModeOn
+        runChat(text, include, null, planMode, agentMode)
       }
       "uiState" -> {
-        val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull
-        if (planMode != null) {
-          CodeSetuSettingsState.getInstance().state.chatPlanModeOn = planMode
-        }
+        val state = CodeSetuSettingsState.getInstance().state
+        obj["planMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatPlanModeOn = it }
+        obj["agentMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatAgentModeOn = it }
       }
       "permissionDenied" -> {
         val reason = obj["reason"]?.jsonPrimitive?.contentOrNull ?: "other"
@@ -246,6 +260,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     includeContext: Boolean,
     captured: IdeContextPayload?,
     planMode: Boolean = false,
+    agentMode: Boolean = false,
   ) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
@@ -261,12 +276,17 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
 
       ApplicationManager.getApplication().executeOnPooledThread {
-        runRequest(trimmed, ideContext, planMode)
+        runRequest(trimmed, ideContext, planMode, agentMode)
       }
     }
   }
 
-  private fun runRequest(userText: String, ideContext: IdeContextPayload, planMode: Boolean) {
+  private fun runRequest(
+    userText: String,
+    ideContext: IdeContextPayload,
+    planMode: Boolean,
+    agentMode: Boolean = false,
+  ) {
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
@@ -294,6 +314,13 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
     // Surface exactly what we're about to send for the "Context sent to AI" panel.
     pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
+
+    if (agentMode) {
+      val agentMessages =
+        listOf(ChatMessage("system", "$systemPrompt\n\n$AGENT_MODE_SYSTEM_NOTE")) + history
+      runAgentTurn(agentMessages)
+      return
+    }
 
     var started = false
     val response = try {
@@ -348,6 +375,129 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     }
     finish()
   }
+
+  /**
+   * Agent-mode turn: drive the tool-calling loop and stream the model's
+   * narration, tool activity, and final answer to the chat (reusing the same
+   * assistantMessage* webview protocol as the streaming path). Runs on a pooled
+   * thread; the approval dialog hops to the EDT via invokeAndWait.
+   */
+  private fun runAgentTurn(messages: List<ChatMessage>) {
+    val host = IntellijAgentHost(project)
+    var started = false
+    fun ensureStarted() {
+      if (!started) {
+        started = true
+        push(message("assistantMessageStart"))
+      }
+    }
+
+    val result = try {
+      runAgentLoop(
+        client = client,
+        initialMessages = messages,
+        tools = defaultAgentTools(),
+        host = host,
+        maxTokens = 4096,
+        temperature = 0.2,
+        requestApproval = { request -> requestToolApproval(request) },
+        onEvent = { event ->
+          when (event) {
+            is AgentEvent.AssistantText -> {
+              ensureStarted()
+              push(message("assistantMessageDelta") { put("text", "${event.text}\n") })
+            }
+            is AgentEvent.ToolCallStarted -> {
+              ensureStarted()
+              push(
+                message("assistantMessageDelta") {
+                  put("text", "\n\n`🔧 ${event.name}` ${summarizeArgs(event.name, event.args)}\n")
+                },
+              )
+            }
+            is AgentEvent.ToolResultReady -> {
+              if (event.isError) {
+                ensureStarted()
+                val label = if (event.denied) "🚫 denied" else "⚠️ error"
+                push(message("assistantMessageDelta") { put("text", "\n> $label: ${firstLine(event.content)}\n") })
+              }
+            }
+            is AgentEvent.IterationLimit -> {
+              ensureStarted()
+              push(
+                message("assistantMessageDelta") {
+                  put("text", "\n\n_Stopped after ${event.limit} steps. Ask me to continue if needed._\n")
+                },
+              )
+            }
+          }
+        },
+      )
+    } catch (error: Exception) {
+      val detail = error.message ?: error.toString()
+      if (started) {
+        push(message("assistantMessageDelta") { put("text", "\n\nCodeSetu could not complete that request: $detail") })
+        push(message("assistantMessageDone"))
+      } else {
+        push(message("error") { put("text", "CodeSetu could not complete that request: $detail") })
+      }
+      finish()
+      return
+    }
+
+    if (result.text.isNotBlank()) {
+      history.add(ChatMessage("assistant", result.text))
+    }
+    if (started) {
+      push(message("assistantMessageDone"))
+    } else {
+      push(message("assistantMessage") { put("text", result.text.ifBlank { "CodeSetu did not return any text." }) })
+    }
+    finish()
+  }
+
+  /** Modal approval gate for a mutating tool call (must run on the EDT). */
+  private fun requestToolApproval(request: ApprovalRequest): ApprovalDecision {
+    var decision = ApprovalDecision.DENY
+    ApplicationManager.getApplication().invokeAndWait {
+      val options = arrayOf("Approve", "Approve for session", "Deny")
+      val choice = Messages.showDialog(
+        project,
+        describeApproval(request),
+        "CodeSetu wants to run \"${request.tool.name}\"",
+        options,
+        0,
+        Messages.getWarningIcon(),
+      )
+      decision = when (options.getOrNull(choice)) {
+        "Approve" -> ApprovalDecision.APPROVE
+        "Approve for session" -> ApprovalDecision.APPROVE_ALWAYS
+        else -> ApprovalDecision.DENY
+      }
+    }
+    return decision
+  }
+
+  private fun describeApproval(request: ApprovalRequest): String = when (request.tool.name) {
+    "bash" -> "Command:\n${request.args["command"]?.jsonPrimitive?.contentOrNull ?: request.rawArguments}"
+    "write_file" -> "Write file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
+    "edit_file" -> "Edit file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
+    else -> request.rawArguments
+  }
+
+  private fun summarizeArgs(toolName: String, args: JsonObject): String =
+    if (toolName == "bash") {
+      "`${truncateInline(args["command"]?.jsonPrimitive?.contentOrNull ?: "")}`"
+    } else {
+      args["path"]?.jsonPrimitive?.contentOrNull?.let { "`$it`" } ?: ""
+    }
+
+  private fun truncateInline(text: String, limit: Int = 120): String {
+    val oneLine = text.replace(Regex("\\s+"), " ").trim()
+    return if (oneLine.length > limit) "${oneLine.substring(0, limit)}…" else oneLine
+  }
+
+  private fun firstLine(text: String): String = truncateInline(text.split("\n").firstOrNull() ?: "", 200)
 
   private fun showModelPicker() {
     ApplicationManager.getApplication().invokeLater {

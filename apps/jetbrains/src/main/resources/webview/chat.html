@@ -799,6 +799,15 @@
                 <span class="dot" aria-hidden="true"></span>
                 Plan
               </span>
+              <span
+                id="agent-mode-pill"
+                class="mode-pill"
+                data-active="false"
+                title="Agent mode is active — the assistant can edit files and run commands (with your approval)"
+              >
+                <span class="dot" aria-hidden="true"></span>
+                Agent
+              </span>
             </div>
             <div class="toolbar-group secondary">
               <!-- Mic/dictation parked for now to match the VS Code plugin
@@ -884,6 +893,22 @@
               <span class="switch-track"></span>
             </span>
           </label>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="agent" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v3" />
+                  <rect x="5" y="6" width="14" height="12" rx="2" />
+                  <path d="M9 11h.01M15 11h.01M9 15h6" />
+                </svg>
+              </span>
+              Agent Mode
+            </span>
+            <span class="switch">
+              <input id="agent-mode" type="checkbox" />
+              <span class="switch-track"></span>
+            </span>
+          </label>
         </div>
         <div
           id="slash-menu"
@@ -911,6 +936,8 @@
       const includeContext = document.getElementById("include-context");
       const planModeToggle = document.getElementById("plan-mode");
       const planModePill = document.getElementById("plan-mode-pill");
+      const agentModeToggle = document.getElementById("agent-mode");
+      const agentModePill = document.getElementById("agent-mode-pill");
       const approveRow = document.getElementById("approve-row");
       const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
@@ -925,24 +952,41 @@
       let lastTurnWasPlan = false;
       let pendingTurnWasPlan = false;
 
-      function updatePlanModeUi() {
+      function updateModeUi() {
         planModePill.setAttribute("data-active", String(planModeToggle.checked));
+        agentModePill.setAttribute("data-active", String(agentModeToggle.checked));
         const showApprove = planModeToggle.checked && lastTurnWasPlan;
         approveRow.setAttribute("data-show", String(showApprove));
       }
+      // Back-compat alias: existing call sites still call updatePlanModeUi().
+      const updatePlanModeUi = updateModeUi;
 
       planModeToggle.checked = __PLAN_MODE_INITIAL__;
-      function postPlanModeUiState() {
-        post({ type: "uiState", planMode: planModeToggle.checked });
+      agentModeToggle.checked = __AGENT_MODE_INITIAL__;
+      function postModeUiState() {
+        post({
+          type: "uiState",
+          planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
+        });
       }
-      updatePlanModeUi();
+      // Back-compat alias for existing call sites.
+      const postPlanModeUiState = postModeUiState;
+      updateModeUi();
       planModeToggle.addEventListener("change", () => {
-        updatePlanModeUi();
-        postPlanModeUiState();
+        // Plan ("plan, don't edit") and Agent ("edit and run") are opposites.
+        if (planModeToggle.checked) agentModeToggle.checked = false;
+        updateModeUi();
+        postModeUiState();
       });
-      // Tell the host the initial Plan Mode state so editor-action submissions
-      // (Tools → CodeSetu → Explain Selection etc.) inherit it.
-      postPlanModeUiState();
+      agentModeToggle.addEventListener("change", () => {
+        if (agentModeToggle.checked) planModeToggle.checked = false;
+        updateModeUi();
+        postModeUiState();
+      });
+      // Tell the host the initial Plan / Agent Mode state so editor-action
+      // submissions (Tools → CodeSetu → Explain Selection etc.) inherit it.
+      postModeUiState();
 
       // Slash command palette ---------------------------------------------------
       const slashCommands = __SLASH_COMMANDS_JSON__;
@@ -1742,6 +1786,7 @@
           text: text,
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
         });
       }
 

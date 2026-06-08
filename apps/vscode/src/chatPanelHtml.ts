@@ -679,6 +679,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 <span class="dot" aria-hidden="true"></span>
                 Plan
               </span>
+              <span
+                id="agent-mode-pill"
+                class="mode-pill"
+                data-active="false"
+                title="Agent Mode is active — the assistant can edit files and run commands (with your approval)"
+              >
+                <span class="dot" aria-hidden="true"></span>
+                Agent
+              </span>
             </div>
             <div class="toolbar-group secondary">
               <!--
@@ -753,6 +762,22 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="agent" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v3" />
+                  <rect x="5" y="6" width="14" height="12" rx="2" />
+                  <path d="M9 11h.01M15 11h.01M9 15h6" />
+                </svg>
+              </span>
+              Agent Mode
+            </span>
+            <span class="switch">
+              <input id="agent-mode" type="checkbox" />
+              <span class="switch-track"></span>
+            </span>
+          </label>
         </div>
         <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
         <div id="approve-row" class="approve-row" data-show="false">
@@ -773,6 +798,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const includeContext = document.getElementById("include-context");
       const planModeToggle = document.getElementById("plan-mode");
       const planModePill = document.getElementById("plan-mode-pill");
+      const agentModeToggle = document.getElementById("agent-mode");
+      const agentModePill = document.getElementById("agent-mode-pill");
       const approveRow = document.getElementById("approve-row");
       const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
@@ -789,6 +816,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       if (savedState.planMode === true) {
         planModeToggle.checked = true;
       }
+      if (savedState.agentMode === true) {
+        agentModeToggle.checked = true;
+      }
       if (savedState.includeContext === false) {
         includeContext.checked = false;
       }
@@ -796,31 +826,54 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       function persistState() {
         vscode.setState({
           planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
           includeContext: includeContext.checked,
         });
       }
 
-      function updatePlanModeUi() {
+      function updateModeUi() {
         planModePill.setAttribute("data-active", String(planModeToggle.checked));
+        agentModePill.setAttribute("data-active", String(agentModeToggle.checked));
         const showApprove = planModeToggle.checked && lastTurnWasPlan;
         approveRow.setAttribute("data-show", String(showApprove));
       }
+      // Back-compat alias: existing call sites still invoke updatePlanModeUi().
+      const updatePlanModeUi = updateModeUi;
 
-      updatePlanModeUi();
+      updateModeUi();
 
-      function postPlanModeUiState() {
-        vscode.postMessage({ type: "uiState", planMode: planModeToggle.checked });
+      function postModeUiState() {
+        vscode.postMessage({
+          type: "uiState",
+          planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
+        });
       }
+      // Back-compat alias for existing call sites.
+      const postPlanModeUiState = postModeUiState;
 
       planModeToggle.addEventListener("change", () => {
+        // Plan ("don't edit, just plan") and Agent ("edit and run") are opposites;
+        // turning one on turns the other off.
+        if (planModeToggle.checked) {
+          agentModeToggle.checked = false;
+        }
         persistState();
-        updatePlanModeUi();
-        postPlanModeUiState();
+        updateModeUi();
+        postModeUiState();
+      });
+      agentModeToggle.addEventListener("change", () => {
+        if (agentModeToggle.checked) {
+          planModeToggle.checked = false;
+        }
+        persistState();
+        updateModeUi();
+        postModeUiState();
       });
       includeContext.addEventListener("change", persistState);
-      // Tell the host the initial Plan Mode state so editor-action submissions
+      // Tell the host the initial mode state so editor-action submissions
       // (which don't go through the composer) inherit it.
-      postPlanModeUiState();
+      postModeUiState();
 
       // Slash command palette ---------------------------------------------------
       const slashCommands = ${slashCommandsJson};
@@ -1443,6 +1496,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           text,
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
         });
       }
 

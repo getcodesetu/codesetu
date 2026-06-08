@@ -2,6 +2,7 @@ package ai.codesetu.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 enum class ProviderKind(val id: String) {
   SARVAM("sarvam"),
@@ -50,6 +51,11 @@ data class WorkspaceInstruction(
 data class ChatMessage(
   val role: String,
   val content: String,
+  // Set on assistant turns that request tool calls, and echoed back verbatim so
+  // the follow-up tool-result messages are valid. Null/omitted on plain turns.
+  @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null,
+  // Set on role="tool" result messages to bind the result to its call.
+  @SerialName("tool_call_id") val toolCallId: String? = null,
 )
 
 @Serializable
@@ -60,6 +66,36 @@ data class ChatCompletionRequest(
   @SerialName("max_tokens") val maxTokens: Int = 1024,
   @SerialName("reasoning_effort") val reasoningEffort: String? = null,
   val stream: Boolean = false,
+  val tools: List<Tool>? = null,
+  @SerialName("tool_choice") val toolChoice: String? = null,
+)
+
+/** A tool advertised to the model (OpenAI function-calling shape). */
+@Serializable
+data class Tool(
+  val type: String = "function",
+  val function: ToolFunction,
+)
+
+@Serializable
+data class ToolFunction(
+  val name: String,
+  val description: String,
+  val parameters: JsonObject,
+)
+
+/** A tool call requested by the model, or echoed back on the assistant turn. */
+@Serializable
+data class ToolCall(
+  val id: String = "",
+  val type: String = "function",
+  val function: ToolCallFunction = ToolCallFunction(),
+)
+
+@Serializable
+data class ToolCallFunction(
+  val name: String = "",
+  val arguments: String = "",
 )
 
 @Serializable
@@ -77,6 +113,7 @@ data class ChatCompletionMessage(
   val role: String? = null,
   val content: String? = null,
   val refusal: String? = null,
+  @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null,
 )
 
 @Serializable

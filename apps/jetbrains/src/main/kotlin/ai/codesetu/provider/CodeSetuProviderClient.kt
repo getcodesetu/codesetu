@@ -1,10 +1,12 @@
 package ai.codesetu.provider
 
+import ai.codesetu.model.ChatCompletionMessage
 import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.ProviderKind
+import ai.codesetu.model.Tool
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.resolveCodeSetuModel
 import java.net.URI
@@ -41,6 +43,44 @@ class CodeSetuProviderClient(
     }
 
     return getAssistantText(json.decodeFromString<ChatCompletionResponse>(response.body()))
+  }
+
+  /**
+   * Non-streaming chat that exposes the full assistant message, including any
+   * `tool_calls`. The agent loop uses this — tool calls arrive on the message,
+   * not as stream deltas, so streaming would force us to reassemble them.
+   */
+  fun chatWithTools(
+    messages: List<ChatMessage>,
+    tools: List<Tool>,
+    maxTokens: Int = 4096,
+    temperature: Double = 0.2,
+  ): ChatCompletionMessage {
+    val state = CodeSetuSettingsState.getInstance().state
+    val body = buildChatCompletionRequestJson(
+      model = resolveCodeSetuModel(state.model),
+      messages = messages,
+      maxTokens = maxTokens,
+      temperature = temperature,
+      reasoningEffort = reasoningEffortFor(state.provider),
+      tools = tools,
+      json = json,
+    )
+    val request = HttpRequest.newBuilder()
+      .uri(URI.create(state.baseUrl.trimEnd('/') + "/chat/completions"))
+      .header("Authorization", "Bearer ${CodeSetuSettingsState.getInstance().getApiKey()}")
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build()
+    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+    if (response.statusCode() !in 200..299) {
+      error("Provider request failed with HTTP ${response.statusCode()}: ${response.body()}")
+    }
+
+    return json.decodeFromString<ChatCompletionResponse>(response.body())
+      .choices.firstOrNull()?.message
+      ?: ChatCompletionMessage()
   }
 
   fun streamChat(
@@ -140,6 +180,7 @@ fun buildChatCompletionRequestJson(
   temperature: Double,
   reasoningEffort: String? = null,
   stream: Boolean = false,
+  tools: List<Tool>? = null,
   json: Json = Json,
 ): String =
   json.encodeToString(
@@ -150,5 +191,6 @@ fun buildChatCompletionRequestJson(
       temperature = temperature,
       reasoningEffort = reasoningEffort,
       stream = stream,
+      tools = tools,
     ),
   )

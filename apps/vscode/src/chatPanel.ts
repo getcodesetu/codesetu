@@ -53,6 +53,8 @@ export interface ChatResponderContext {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
   planMode?: boolean;
+  /** When true, drive the tool-calling agent loop instead of a single reply. */
+  agentMode?: boolean;
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
@@ -62,6 +64,7 @@ export interface SendUserMessageOptions {
   ideContext?: IdeContextPayload;
   includeIdeContext?: boolean;
   planMode?: boolean;
+  agentMode?: boolean;
 }
 
 export type ChatResponder = (
@@ -79,6 +82,7 @@ interface SendMessageRequest {
   text: string;
   includeIdeContext?: boolean;
   planMode?: boolean;
+  agentMode?: boolean;
 }
 
 interface TranscribeRequest {
@@ -91,6 +95,7 @@ interface TranscribeRequest {
 interface UiStateRequest {
   type: "uiState";
   planMode?: boolean;
+  agentMode?: boolean;
 }
 
 interface PermissionDeniedRequest {
@@ -122,6 +127,8 @@ export class ChatPanel {
   // Webview-owned UI state mirrored to the host so editor actions (which don't
   // go through the composer) can inherit the user's current Plan Mode pick.
   private currentPlanMode = false;
+  // Likewise mirror Agent Mode so editor-action submissions inherit the pick.
+  private currentAgentMode = false;
   // Host-side mic capture for dictation (the webview can't reach the mic).
   private readonly dictation: DictationController;
 
@@ -214,6 +221,9 @@ export class ChatPanel {
       if (typeof message.planMode === "boolean") {
         this.currentPlanMode = message.planMode;
       }
+      if (typeof message.agentMode === "boolean") {
+        this.currentAgentMode = message.agentMode;
+      }
       return;
     }
 
@@ -234,6 +244,7 @@ export class ChatPanel {
     await this.submitMessage(message.text, {
       includeIdeContext: message.includeIdeContext,
       planMode: message.planMode,
+      agentMode: message.agentMode,
     });
   }
 
@@ -372,6 +383,7 @@ export class ChatPanel {
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
         planMode: options.planMode ?? this.currentPlanMode,
+        agentMode: options.agentMode ?? this.currentAgentMode,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         onContextPreview: (preview) => {
           void this.panel.webview.postMessage({ type: "contextPreview", preview });
@@ -508,7 +520,8 @@ function isUiStateRequest(message: unknown): message is UiStateRequest {
   const candidate = message as Partial<UiStateRequest>;
   return (
     candidate.type === "uiState" &&
-    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean") &&
+    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean")
   );
 }
 
@@ -613,7 +626,8 @@ function isSendMessageRequest(message: unknown): message is SendMessageRequest {
     typeof candidate.text === "string" &&
     (candidate.includeIdeContext === undefined ||
       typeof candidate.includeIdeContext === "boolean") &&
-    (candidate.planMode === undefined || typeof candidate.planMode === "boolean")
+    (candidate.planMode === undefined || typeof candidate.planMode === "boolean") &&
+    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean")
   );
 }
 
