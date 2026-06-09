@@ -6,6 +6,7 @@ import ai.codesetu.agent.AgentEvent
 import ai.codesetu.agent.ApprovalDecision
 import ai.codesetu.agent.ApprovalRequest
 import ai.codesetu.agent.IntellijAgentHost
+import ai.codesetu.agent.GetDiagnosticsTool
 import ai.codesetu.agent.defaultAgentTools
 import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
@@ -406,7 +407,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       runAgentLoop(
         client = client,
         initialMessages = messages,
-        tools = defaultAgentTools(),
+        tools = defaultAgentTools() + GetDiagnosticsTool(project),
         host = host,
         maxTokens = 4096,
         temperature = 0.2,

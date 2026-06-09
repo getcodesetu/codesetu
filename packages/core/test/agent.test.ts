@@ -28,6 +28,7 @@ import {
   TODO_WRITE_TOOL,
   WRITE_TOOL,
   diffLines,
+  formatDiagnostics,
   runAgentLoop,
   sanitizeToolMessages,
   type AgentEvent,
@@ -284,6 +285,33 @@ describe("agent tools", () => {
     expect(result.content).toContain("boom");
     expect(result.content).toContain("exit code: 1");
     expect(host.execCalls).toEqual(["false"]);
+  });
+});
+
+describe("formatDiagnostics", () => {
+  it("reports an empty set cleanly", () => {
+    expect(formatDiagnostics([])).toBe("No diagnostics found.");
+  });
+
+  it("counts and orders errors before warnings", () => {
+    const out = formatDiagnostics([
+      { path: "b.ts", line: 5, severity: "warning", message: "unused" },
+      { path: "a.ts", line: 2, severity: "error", message: "boom" },
+    ]);
+    expect(out).toContain("1 error(s), 1 warning(s)");
+    const lines = out.split("\n");
+    expect(lines[1]).toBe("a.ts:2: [error] boom");
+    expect(lines[2]).toBe("b.ts:5: [warning] unused");
+  });
+
+  it("caps long lists", () => {
+    const many = Array.from({ length: 150 }, (_, i) => ({
+      path: "a.ts",
+      line: i + 1,
+      severity: "error" as const,
+      message: "x",
+    }));
+    expect(formatDiagnostics(many, 10)).toContain("more)");
   });
 });
 

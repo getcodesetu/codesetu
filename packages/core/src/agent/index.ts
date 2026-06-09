@@ -17,6 +17,12 @@
 export type { AgentHost, DirEntry, ExecOptions, ExecResult } from "./host.js";
 export { MAX_DIFF_LINES, diffLines } from "./diff.js";
 export {
+  MAX_DIAGNOSTICS,
+  formatDiagnostics,
+  type Diagnostic,
+  type DiagnosticSeverity,
+} from "./diagnostics.js";
+export {
   BASH_TOOL,
   DEFAULT_AGENT_TOOLS,
   DEFAULT_BASH_TIMEOUT_MS,

@@ -27,6 +27,7 @@ import {
 import * as vscode from "vscode";
 
 import { createNodeAgentHost } from "./agentHost";
+import { createVscodeNativeTools } from "./agentNativeTools";
 
 /**
  * A short addendum to the system prompt that flips the assistant from "describe
@@ -64,7 +65,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   const result = await runAgentLoop({
     provider: options.provider,
     messages: options.messages,
-    tools: [...DEFAULT_AGENT_TOOLS],
+    tools: [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)],
     host,
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
