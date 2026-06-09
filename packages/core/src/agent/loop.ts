@@ -64,6 +64,11 @@ export interface AgentLoopOptions {
   maxIterations?: number;
   /** Called for every mutating tool call that isn't already session-approved. */
   requestApproval: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+  /**
+   * Project-policy gate consulted before prompting: "allow" runs without asking,
+   * "deny" blocks the call outright, "prompt" (default) asks the user.
+   */
+  resolvePolicy?: (tool: AgentTool, args: Record<string, unknown>) => "allow" | "deny" | "prompt";
   onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
 }
@@ -85,7 +90,7 @@ export const DEFAULT_MAX_ITERATIONS = 16;
  * guardrail trips. This is the piece that turns a chat assistant into an agent.
  */
 export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoopResult> {
-  const { provider, tools, host, requestApproval, onEvent, signal } = options;
+  const { provider, tools, host, requestApproval, resolvePolicy, onEvent, signal } = options;
   const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const messages: ChatMessage[] = [...options.messages];
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -146,27 +151,51 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       onEvent?.({ type: "tool_call", id: call.id, name: tool.name, args: parsed });
 
       if (tool.risk === "mutating" && !alwaysApproved.has(tool.name)) {
-        let preview: string | undefined;
-        if (tool.preview !== undefined) {
-          try {
-            preview = await tool.preview(parsed, { host, ...(signal ? { signal } : {}) });
-          } catch {
-            preview = undefined; // a preview failure must never block the action
-          }
-        }
-        const decision = await requestApproval({
-          tool,
-          args: parsed,
-          rawArguments: call.arguments,
-          ...(preview === undefined ? {} : { preview }),
-        });
-        if (decision === "deny") {
-          emitResult(messages, onEvent, call.id, tool.name, "User denied this action.", true, true);
+        const policy = resolvePolicy?.(tool, parsed) ?? "prompt";
+        if (policy === "deny") {
+          emitResult(
+            messages,
+            onEvent,
+            call.id,
+            tool.name,
+            "Blocked by workspace policy (.codesetu/agent.json denyCommands).",
+            true,
+            true,
+          );
           continue;
         }
-        if (decision === "approve_always") {
-          alwaysApproved.add(tool.name);
+        if (policy === "prompt") {
+          let preview: string | undefined;
+          if (tool.preview !== undefined) {
+            try {
+              preview = await tool.preview(parsed, { host, ...(signal ? { signal } : {}) });
+            } catch {
+              preview = undefined; // a preview failure must never block the action
+            }
+          }
+          const decision = await requestApproval({
+            tool,
+            args: parsed,
+            rawArguments: call.arguments,
+            ...(preview === undefined ? {} : { preview }),
+          });
+          if (decision === "deny") {
+            emitResult(
+              messages,
+              onEvent,
+              call.id,
+              tool.name,
+              "User denied this action.",
+              true,
+              true,
+            );
+            continue;
+          }
+          if (decision === "approve_always") {
+            alwaysApproved.add(tool.name);
+          }
         }
+        // policy === "allow" falls through to execute without prompting.
       }
 
       let content: string;

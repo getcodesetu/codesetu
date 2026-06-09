@@ -23,6 +23,13 @@ export {
   type DiagnosticSeverity,
 } from "./diagnostics.js";
 export {
+  EMPTY_AGENT_POLICY,
+  createBashCommandPolicy,
+  parseAgentPolicy,
+  type AgentPolicy,
+  type PolicyDecision,
+} from "./policy.js";
+export {
   BASH_TOOL,
   DEFAULT_AGENT_TOOLS,
   DEFAULT_BASH_TIMEOUT_MS,

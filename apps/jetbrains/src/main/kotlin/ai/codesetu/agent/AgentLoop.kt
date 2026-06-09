@@ -103,6 +103,7 @@ fun runAgentLoop(
   temperature: Double,
   maxIterations: Int = DEFAULT_MAX_ITERATIONS,
   requestApproval: (ApprovalRequest) -> ApprovalDecision,
+  resolvePolicy: (AgentTool, JsonObject) -> String = { _, _ -> "prompt" },
   onEvent: (AgentEvent) -> Unit,
   isCancelled: () -> Boolean = { false },
   json: Json = Json { ignoreUnknownKeys = true },
@@ -150,20 +151,36 @@ fun runAgentLoop(
       onEvent(AgentEvent.ToolCallStarted(tool.name, args))
 
       if (tool.risk == ToolRisk.MUTATING && !alwaysApproved.contains(tool.name)) {
-        val preview =
-          try {
-            tool.preview(args, host)
-          } catch (error: Exception) {
-            null // a preview failure must never block the action
-          }
-        when (requestApproval(ApprovalRequest(tool, args, call.function.arguments, preview))) {
-          ApprovalDecision.DENY -> {
-            addToolResult(messages, onEvent, call.id, tool.name, "User denied this action.", isError = true, denied = true)
-            continue
-          }
-          ApprovalDecision.APPROVE_ALWAYS -> alwaysApproved.add(tool.name)
-          ApprovalDecision.APPROVE -> Unit
+        val policyDecision = resolvePolicy(tool, args)
+        if (policyDecision == "deny") {
+          addToolResult(
+            messages,
+            onEvent,
+            call.id,
+            tool.name,
+            "Blocked by workspace policy (.codesetu/agent.json denyCommands).",
+            isError = true,
+            denied = true,
+          )
+          continue
         }
+        if (policyDecision == "prompt") {
+          val preview =
+            try {
+              tool.preview(args, host)
+            } catch (error: Exception) {
+              null // a preview failure must never block the action
+            }
+          when (requestApproval(ApprovalRequest(tool, args, call.function.arguments, preview))) {
+            ApprovalDecision.DENY -> {
+              addToolResult(messages, onEvent, call.id, tool.name, "User denied this action.", isError = true, denied = true)
+              continue
+            }
+            ApprovalDecision.APPROVE_ALWAYS -> alwaysApproved.add(tool.name)
+            ApprovalDecision.APPROVE -> Unit
+          }
+        }
+        // "allow" falls through to execute without prompting.
       }
 
       val result =

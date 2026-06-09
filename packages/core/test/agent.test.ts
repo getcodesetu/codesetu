@@ -27,8 +27,10 @@ import {
   READ_TOOL,
   TODO_WRITE_TOOL,
   WRITE_TOOL,
+  createBashCommandPolicy,
   diffLines,
   formatDiagnostics,
+  parseAgentPolicy,
   runAgentLoop,
   sanitizeToolMessages,
   type AgentEvent,
@@ -390,6 +392,61 @@ describe("sanitizeToolMessages", () => {
     const result = sanitizeToolMessages(messages);
     expect(result).toHaveLength(1);
     expect(result[0]?.role).toBe("user");
+  });
+});
+
+describe("agent policy", () => {
+  it("parses commands and maxIterations, tolerating junk", () => {
+    const policy = parseAgentPolicy(
+      JSON.stringify({ maxIterations: 8, autoApproveCommands: ["^git "], denyCommands: ["rm"] }),
+    );
+    expect(policy.maxIterations).toBe(8);
+    expect(policy.autoApproveCommands).toEqual(["^git "]);
+    expect(policy.denyCommands).toEqual(["rm"]);
+    expect(parseAgentPolicy("not json").denyCommands).toEqual([]);
+  });
+
+  it("denies, allows, or prompts a bash command (deny wins)", () => {
+    const decide = createBashCommandPolicy(
+      parseAgentPolicy(
+        JSON.stringify({ autoApproveCommands: ["^git status$"], denyCommands: ["rm\\s+-rf"] }),
+      ),
+    );
+    expect(decide(BASH_TOOL, { command: "git status" })).toBe("allow");
+    expect(decide(BASH_TOOL, { command: "rm -rf /tmp/x" })).toBe("deny");
+    expect(decide(BASH_TOOL, { command: "npm test" })).toBe("prompt");
+    // Non-bash mutating tools are never policy-controlled.
+    expect(decide(WRITE_TOOL, { path: "a.txt", content: "x" })).toBe("prompt");
+  });
+
+  it("loop auto-runs allowed commands and blocks denied ones without prompting", async () => {
+    const host = new FakeHost();
+    host.execResult = { stdout: "ok", stderr: "", exitCode: 0 };
+    const requestApproval = vi.fn().mockResolvedValue("approve" as const);
+    const resolvePolicy = createBashCommandPolicy(
+      parseAgentPolicy(JSON.stringify({ autoApproveCommands: ["^echo "], denyCommands: ["^rm "] })),
+    );
+    const provider = scriptedProvider([
+      toolCallCompletion([{ id: "t1", name: "bash", args: { command: "echo hi" } }]),
+      toolCallCompletion([{ id: "t2", name: "bash", args: { command: "rm file" } }]),
+      textCompletion("Done."),
+    ]);
+
+    const result = await runAgentLoop({
+      provider,
+      messages: baseMessages,
+      tools: [...DEFAULT_AGENT_TOOLS],
+      host,
+      requestApproval,
+      resolvePolicy,
+    });
+
+    expect(requestApproval).not.toHaveBeenCalled();
+    expect(host.execCalls).toEqual(["echo hi"]); // allowed ran; denied never executed
+    const toolResults = result.messages.filter((m) => m.role === "tool");
+    expect(toolResults.some((m) => String(m.content).includes("Blocked by workspace policy"))).toBe(
+      true,
+    );
   });
 });
 

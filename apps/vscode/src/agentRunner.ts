@@ -14,10 +14,16 @@
  * limitations under the License.
  */
 
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
 import {
   DEFAULT_AGENT_TOOLS,
+  createBashCommandPolicy,
+  parseAgentPolicy,
   runAgentLoop,
   type AgentEvent,
+  type AgentPolicy,
   type ApprovalDecision,
   type ApprovalRequest,
   type ChatMessage,
@@ -61,6 +67,7 @@ export interface RunAgentTurnOptions {
  */
 export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string> {
   const host = createNodeAgentHost(options.workspaceRoot);
+  const policy = await loadAgentPolicy(options.workspaceRoot);
 
   const result = await runAgentLoop({
     provider: options.provider,
@@ -70,8 +77,10 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
     ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+    ...(policy.maxIterations === undefined ? {} : { maxIterations: policy.maxIterations }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     requestApproval: (request) => requestToolApproval(request),
+    resolvePolicy: createBashCommandPolicy(policy),
     onEvent: (event) => emitEvent(event, options.onChunk, options.outputChannel),
   });
 
@@ -85,6 +94,19 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   // tool results, final answer) is the new history to persist for next turn.
   options.onPersist?.(result.messages.slice(options.messages.length));
   return result.text;
+}
+
+/** Load the committable project agent policy from `.codesetu/agent.json`. */
+async function loadAgentPolicy(root: string | undefined): Promise<AgentPolicy> {
+  if (root === undefined) {
+    return parseAgentPolicy("{}");
+  }
+  try {
+    const text = await fs.readFile(path.join(root, ".codesetu", "agent.json"), "utf8");
+    return parseAgentPolicy(text);
+  } catch {
+    return parseAgentPolicy("{}"); // no file / unreadable → permissive defaults
+  }
 }
 
 /** Modal approval gate for a mutating tool call. */

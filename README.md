@@ -9,7 +9,7 @@
 
 A **Copilot / Cursor alternative** designed for Indian developers, enterprises, public sector teams, and air-gapped deployments. Bring your own model — CodeSetu works with **Sarvam, Hugging Face (any served chat model, dedicated endpoints, or self-hosted TGI), OpenAI-compatible APIs (Ollama, vLLM, OpenRouter, SGLang)**, and local self-hosted deployments. AI chat, repo-aware context, selected-code actions, inline FIM completions, tool-calling, and an extensible plugin and skill system across VSCode and JetBrains.
 
-**Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · **Plan Mode** (plan-then-implement) · **AI Skills with slash palette** (`/plan`, `/explain`, `/refactor`, `/test`, `/indic`) · **Voice dictation** (Sarvam Saarika, browser SpeechRecognition, OpenAI-compatible Whisper, HuggingFace) · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
+**Highlights**: AI chat in IDE · Repo-aware context · Selected-code actions · Inline (FIM) code completions · **Agent Mode** (reads, edits, and runs commands with your approval) · **Plan Mode** (plan-then-implement) · **AI Skills with slash palette** (`/plan`, `/explain`, `/refactor`, `/test`, `/indic`) · **Voice dictation** (Sarvam Saarika, browser SpeechRecognition, OpenAI-compatible Whisper, HuggingFace) · Provider setup and diagnostics · Workspace skills/checks · Air-gapped friendly · Hindi / Indic-aware · Plugin + skill SDK · 100% open-source (Apache 2.0)
 
 ## Status
 
@@ -22,6 +22,35 @@ This repository is a pnpm + Gradle monorepo organized as:
 - `skills/` — AI skill manifests (`SKILL.md` per skill) loaded by hosts at activation
 - `plugins/` — first-party plugins built on `@codesetu/plugin-sdk`
 - `docs/ARCHITECTURE.md` — full architecture, layout, and deployment notes
+
+## Agent Mode
+
+Toggle **Agent** in the chat composer to let CodeSetu act, not just chat: it
+reads, edits, and runs commands in a tool-calling loop until the task is done,
+then you review the result. Plain chat is unchanged when Agent is off.
+
+**Tools**: `read_file`, `write_file`, `edit_file`, `bash`, plus read-only
+helpers `list_dir`, `glob`, `grep`, `todo_write`, and IDE-native
+`get_diagnostics` (with `find_symbol` / `find_references` in VSCode).
+
+**Approval & safety**: file edits and shell commands require your approval
+(Approve / Approve for session / Deny), and edits show a diff before they run.
+Read-only tools run without prompting. Hit **Stop** to cancel a run.
+
+**Project policy** — drop a committable `.codesetu/agent.json` in the repo to
+share one approval policy across your team:
+
+```json
+{
+  "maxIterations": 16,
+  "autoApproveCommands": ["^git (status|diff|log)\\b", "^npm (test|run lint)$"],
+  "denyCommands": ["rm\\s+-rf", "\\bsudo\\b", "\\bcurl\\b"]
+}
+```
+
+Patterns are regular expressions matched against the shell command.
+`denyCommands` block a command outright (deny wins), `autoApproveCommands` run
+without a prompt, and anything else asks. `maxIterations` caps the agent loop.
 
 ## Prerequisites
 

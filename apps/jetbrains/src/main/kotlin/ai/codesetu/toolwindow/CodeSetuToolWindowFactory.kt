@@ -6,8 +6,12 @@ import ai.codesetu.agent.AgentEvent
 import ai.codesetu.agent.ApprovalDecision
 import ai.codesetu.agent.ApprovalRequest
 import ai.codesetu.agent.IntellijAgentHost
+import ai.codesetu.agent.AgentPolicy
+import ai.codesetu.agent.DEFAULT_MAX_ITERATIONS
 import ai.codesetu.agent.GetDiagnosticsTool
+import ai.codesetu.agent.createBashCommandPolicy
 import ai.codesetu.agent.defaultAgentTools
+import ai.codesetu.agent.parseAgentPolicy
 import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
 import ai.codesetu.context.collectIdeContext
@@ -28,6 +32,7 @@ import ai.codesetu.skills.loadBuiltinSkills
 import ai.codesetu.skills.routeSkills
 import ai.codesetu.speech.AudioPayload
 import ai.codesetu.speech.CodeSetuSpeechClient
+import java.io.File
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.ide.BrowserUtil
@@ -392,8 +397,23 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
    * assistantMessage* webview protocol as the streaming path). Runs on a pooled
    * thread; the approval dialog hops to the EDT via invokeAndWait.
    */
+  private fun loadAgentPolicy(): AgentPolicy {
+    val basePath = project.basePath ?: return parseAgentPolicy("{}")
+    val file = File("$basePath/.codesetu/agent.json")
+    return if (file.isFile) {
+      try {
+        parseAgentPolicy(file.readText())
+      } catch (error: Exception) {
+        parseAgentPolicy("{}")
+      }
+    } else {
+      parseAgentPolicy("{}")
+    }
+  }
+
   private fun runAgentTurn(messages: List<ChatMessage>) {
     val host = IntellijAgentHost(project)
+    val policy = loadAgentPolicy()
     cancelRequested.set(false)
     var started = false
     fun ensureStarted() {
@@ -411,8 +431,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         host = host,
         maxTokens = 4096,
         temperature = 0.2,
+        maxIterations = policy.maxIterations ?: DEFAULT_MAX_ITERATIONS,
         isCancelled = { cancelRequested.get() },
         requestApproval = { request -> requestToolApproval(request) },
+        resolvePolicy = createBashCommandPolicy(policy),
         onEvent = { event ->
           when (event) {
             is AgentEvent.AssistantText -> {
