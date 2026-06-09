@@ -726,6 +726,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="m5 12 7-7 7 7" />
                 </svg>
               </button>
+              <button
+                id="stop"
+                class="send-button"
+                type="button"
+                aria-label="Stop"
+                title="Stop"
+                hidden
+                style="display: none"
+              >
+                <svg class="composer-icon" data-icon="stop" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -792,6 +805,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const form = document.getElementById("chat-form");
       const textarea = document.getElementById("message");
       const send = document.getElementById("send");
+      const stopButton = document.getElementById("stop");
       const transcript = document.getElementById("transcript");
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
@@ -1511,6 +1525,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         sendUserMessage(text);
       });
 
+      stopButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "cancel" });
+      });
+
       approveRunButton.addEventListener("click", () => {
         // Drop plan mode for this turn and the rest of the session, then send
         // the canonical approval phrase so the model implements the plan.
@@ -1584,7 +1602,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
-          send.disabled = isBusy;
+          // Swap Send for Stop while a turn is in flight so the user can cancel.
+          send.hidden = isBusy;
+          send.style.display = isBusy ? "none" : "";
+          stopButton.hidden = !isBusy;
+          stopButton.style.display = isBusy ? "" : "none";
           textarea.disabled = isBusy;
           composerMenuToggle.disabled = isBusy;
           modelChip.disabled = isBusy;

@@ -151,6 +151,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         requestContext?.onChunk,
         routed.selected,
         requestContext?.persistMessages,
+        requestContext?.signal,
       );
     }
 
@@ -343,6 +344,7 @@ async function sendAgentChatRequest(
   onChunk?: (chunk: ChatStreamChunk) => void,
   pinnedSkills: readonly WorkspaceInstruction[] = [],
   persistMessages?: (messages: ChatMessage[]) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -378,6 +380,7 @@ async function sendAgentChatRequest(
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       ...(onChunk === undefined ? {} : { onChunk }),
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
+      ...(signal === undefined ? {} : { signal }),
       outputChannel,
     });
   } catch (error: unknown) {

@@ -852,6 +852,19 @@
                   <path d="m5 12 7-7 7 7" />
                 </svg>
               </button>
+              <button
+                id="stop"
+                class="send-button"
+                type="button"
+                aria-label="Stop"
+                title="Stop"
+                hidden
+                style="display: none"
+              >
+                <svg class="composer-icon" data-icon="stop" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -930,6 +943,7 @@
       const form = document.getElementById("chat-form");
       const textarea = document.getElementById("message");
       const send = document.getElementById("send");
+      const stopButton = document.getElementById("stop");
       const transcript = document.getElementById("transcript");
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
@@ -1799,6 +1813,10 @@
         sendUserMessage(text);
       });
 
+      stopButton.addEventListener("click", () => {
+        post({ type: "cancel" });
+      });
+
       approveRunButton.addEventListener("click", () => {
         planModeToggle.checked = false;
         updatePlanModeUi();
@@ -1869,7 +1887,11 @@
 
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
-          send.disabled = isBusy;
+          // Swap Send for Stop while a turn is in flight so the user can cancel.
+          send.hidden = isBusy;
+          send.style.display = isBusy ? "none" : "";
+          stopButton.hidden = !isBusy;
+          stopButton.style.display = isBusy ? "" : "none";
           textarea.disabled = isBusy;
           composerMenuToggle.disabled = isBusy;
           modelChip.disabled = isBusy;

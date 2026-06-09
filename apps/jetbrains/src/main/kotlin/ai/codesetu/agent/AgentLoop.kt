@@ -20,7 +20,13 @@ const val DEFAULT_MAX_ITERATIONS = 16
 
 enum class ApprovalDecision { APPROVE, APPROVE_ALWAYS, DENY }
 
-data class ApprovalRequest(val tool: AgentTool, val args: JsonObject, val rawArguments: String)
+data class ApprovalRequest(
+  val tool: AgentTool,
+  val args: JsonObject,
+  val rawArguments: String,
+  /** Human-readable preview of the pending change (e.g. a diff), if available. */
+  val preview: String? = null,
+)
 
 /** Observability into a loop run, for surfacing activity in the chat UI. */
 sealed class AgentEvent {
@@ -98,6 +104,7 @@ fun runAgentLoop(
   maxIterations: Int = DEFAULT_MAX_ITERATIONS,
   requestApproval: (ApprovalRequest) -> ApprovalDecision,
   onEvent: (AgentEvent) -> Unit,
+  isCancelled: () -> Boolean = { false },
   json: Json = Json { ignoreUnknownKeys = true },
 ): AgentLoopResult {
   val messages = initialMessages.toMutableList()
@@ -107,6 +114,9 @@ fun runAgentLoop(
   var finalText = ""
 
   repeat(maxIterations) {
+    if (isCancelled()) {
+      return AgentLoopResult(finalText, "aborted", messages.toList())
+    }
     val message = client.chatWithTools(messages, toolSchemas, maxTokens, temperature)
     val assistantText = message.content ?: message.refusal ?: ""
     val toolCalls = message.toolCalls.orEmpty().filter { it.type == "function" }
@@ -127,6 +137,9 @@ fun runAgentLoop(
     }
 
     for (call in toolCalls) {
+      if (isCancelled()) {
+        return AgentLoopResult(finalText, "aborted", messages.toList())
+      }
       val tool = toolsByName[call.function.name]
       if (tool == null) {
         addToolResult(messages, onEvent, call.id, call.function.name, "Unknown tool: ${call.function.name}", isError = true, denied = false)
@@ -137,7 +150,13 @@ fun runAgentLoop(
       onEvent(AgentEvent.ToolCallStarted(tool.name, args))
 
       if (tool.risk == ToolRisk.MUTATING && !alwaysApproved.contains(tool.name)) {
-        when (requestApproval(ApprovalRequest(tool, args, call.function.arguments))) {
+        val preview =
+          try {
+            tool.preview(args, host)
+          } catch (error: Exception) {
+            null // a preview failure must never block the action
+          }
+        when (requestApproval(ApprovalRequest(tool, args, call.function.arguments, preview))) {
           ApprovalDecision.DENY -> {
             addToolResult(messages, onEvent, call.id, tool.name, "User denied this action.", isError = true, denied = true)
             continue

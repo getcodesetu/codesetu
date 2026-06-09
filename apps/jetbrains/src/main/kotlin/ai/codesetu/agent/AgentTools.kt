@@ -25,6 +25,12 @@ interface AgentTool {
   val parameters: JsonObject
   val risk: ToolRisk
   fun execute(args: JsonObject, host: AgentHost): ToolResult
+
+  /**
+   * Optional human-readable preview of the change this call would make (e.g. a
+   * diff), shown in the approval prompt. Returns null if there's nothing useful.
+   */
+  fun preview(args: JsonObject, host: AgentHost): String? = null
 }
 
 const val MAX_TOOL_OUTPUT_CHARS = 30_000
@@ -137,6 +143,20 @@ object WriteFileTool : AgentTool {
       fail("Could not write $path: ${error.message ?: error}")
     }
   }
+
+  override fun preview(args: JsonObject, host: AgentHost): String {
+    val path = args.string("path") ?: "?"
+    val content = args.string("content") ?: ""
+    var current = ""
+    var exists = true
+    try {
+      current = host.readFile(path)
+    } catch (error: Exception) {
+      exists = false
+    }
+    val verb = if (exists) "Overwrite" else "Create"
+    return "$verb $path\n\n${diffLines(current, content)}"
+  }
 }
 
 object EditFileTool : AgentTool {
@@ -210,6 +230,13 @@ object EditFileTool : AgentTool {
     } catch (error: Exception) {
       fail("Could not write $path: ${error.message ?: error}")
     }
+  }
+
+  override fun preview(args: JsonObject, host: AgentHost): String {
+    val path = args.string("path") ?: "?"
+    val oldString = args.string("old_string") ?: ""
+    val newString = args.string("new_string") ?: ""
+    return "Edit $path\n\n${diffLines(oldString, newString)}"
   }
 }
 

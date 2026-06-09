@@ -31,6 +31,8 @@ export interface ApprovalRequest {
   args: Record<string, unknown>;
   /** Raw arguments string from the model — useful when it isn't valid JSON. */
   rawArguments: string;
+  /** Human-readable preview of the pending change (e.g. a diff), if available. */
+  preview?: string;
 }
 
 /** Streamed observability into a loop run, for surfacing activity in the UI. */
@@ -144,10 +146,19 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       onEvent?.({ type: "tool_call", id: call.id, name: tool.name, args: parsed });
 
       if (tool.risk === "mutating" && !alwaysApproved.has(tool.name)) {
+        let preview: string | undefined;
+        if (tool.preview !== undefined) {
+          try {
+            preview = await tool.preview(parsed, { host, ...(signal ? { signal } : {}) });
+          } catch {
+            preview = undefined; // a preview failure must never block the action
+          }
+        }
         const decision = await requestApproval({
           tool,
           args: parsed,
           rawArguments: call.arguments,
+          ...(preview === undefined ? {} : { preview }),
         });
         if (decision === "deny") {
           emitResult(messages, onEvent, call.id, tool.name, "User denied this action.", true, true);

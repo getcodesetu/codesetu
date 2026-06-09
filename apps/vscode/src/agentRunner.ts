@@ -77,6 +77,9 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   if (result.stoppedReason === "iteration_limit") {
     options.outputChannel.appendLine("Agent loop hit the iteration limit.");
   }
+  if (result.stoppedReason === "aborted") {
+    options.onChunk?.({ content: "\n\n_Stopped by you._\n" });
+  }
   // Everything the loop appended beyond the seed (assistant tool-call turns,
   // tool results, final answer) is the new history to persist for next turn.
   options.onPersist?.(result.messages.slice(options.messages.length));
@@ -87,7 +90,7 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
 async function requestToolApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
   const choice = await vscode.window.showWarningMessage(
     `CodeSetu wants to run "${request.tool.name}"`,
-    { modal: true, detail: describeApproval(request) },
+    { modal: true, detail: request.preview ?? describeApproval(request) },
     "Approve",
     "Approve for session",
   );

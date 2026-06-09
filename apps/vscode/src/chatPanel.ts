@@ -55,6 +55,8 @@ export interface ChatResponderContext {
   planMode?: boolean;
   /** When true, drive the tool-calling agent loop instead of a single reply. */
   agentMode?: boolean;
+  /** Aborts when the user hits Stop; the agent loop checks it between steps. */
+  signal?: AbortSignal;
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
@@ -136,6 +138,8 @@ export class ChatPanel {
   private currentPlanMode = false;
   // Likewise mirror Agent Mode so editor-action submissions inherit the pick.
   private currentAgentMode = false;
+  // Aborts the in-flight turn when the user hits Stop.
+  private inFlightController: AbortController | undefined;
   // Host-side mic capture for dictation (the webview can't reach the mic).
   private readonly dictation: DictationController;
 
@@ -231,6 +235,11 @@ export class ChatPanel {
       if (typeof message.agentMode === "boolean") {
         this.currentAgentMode = message.agentMode;
       }
+      return;
+    }
+
+    if (isCancelRequest(message)) {
+      this.inFlightController?.abort();
       return;
     }
 
@@ -374,6 +383,8 @@ export class ChatPanel {
     }
 
     this.inFlight = true;
+    const controller = new AbortController();
+    this.inFlightController = controller;
     void this.panel.webview.postMessage({ type: "busy", value: true });
     void this.panel.webview.postMessage({ type: "userMessage", text });
     this.history.push({ role: "user", content: text });
@@ -392,6 +403,7 @@ export class ChatPanel {
         includeIdeContext: options.includeIdeContext ?? true,
         planMode: options.planMode ?? this.currentPlanMode,
         agentMode: options.agentMode ?? this.currentAgentMode,
+        signal: controller.signal,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         persistMessages: (messages) => {
           persistedMessages = messages;
@@ -441,6 +453,7 @@ export class ChatPanel {
       });
     } finally {
       this.inFlight = false;
+      this.inFlightController = undefined;
       void this.panel.webview.postMessage({ type: "busy", value: false });
     }
   }
@@ -548,6 +561,14 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   const candidate = message as Partial<DictationRequest>;
   return (
     candidate.type === "dictation" && (candidate.action === "start" || candidate.action === "stop")
+  );
+}
+
+function isCancelRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "cancel"
   );
 }
 

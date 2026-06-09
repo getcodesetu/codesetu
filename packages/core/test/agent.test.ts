@@ -27,6 +27,7 @@ import {
   READ_TOOL,
   TODO_WRITE_TOOL,
   WRITE_TOOL,
+  diffLines,
   runAgentLoop,
   sanitizeToolMessages,
   type AgentEvent,
@@ -283,6 +284,45 @@ describe("agent tools", () => {
     expect(result.content).toContain("boom");
     expect(result.content).toContain("exit code: 1");
     expect(host.execCalls).toEqual(["false"]);
+  });
+});
+
+describe("diffLines", () => {
+  it("marks added, removed, and unchanged lines", () => {
+    const diff = diffLines("a\nb\nc", "a\nB\nc");
+    expect(diff).toBe(" a\n-b\n+B\n c");
+  });
+
+  it("renders a new file as all additions", () => {
+    expect(diffLines("", "x\ny")).toBe("+x\n+y");
+  });
+
+  it("caps very large diffs", () => {
+    const big = Array.from({ length: 200 }, (_, i) => `line ${i}`).join("\n");
+    const diff = diffLines("", big, 10);
+    expect(diff).toContain("more diff lines");
+    expect(diff.split("\n").length).toBeLessThanOrEqual(11);
+  });
+});
+
+describe("write/edit preview", () => {
+  it("write_file previews a create as an additive diff", async () => {
+    const host = new FakeHost();
+    const preview = await WRITE_TOOL.preview?.({ path: "new.ts", content: "a\nb" }, { host });
+    expect(preview).toContain("Create new.ts");
+    expect(preview).toContain("+a");
+    expect(preview).toContain("+b");
+  });
+
+  it("edit_file previews the replaced region", async () => {
+    const host = new FakeHost();
+    const preview = await EDIT_TOOL.preview?.(
+      { path: "a.ts", old_string: "old", new_string: "new" },
+      { host },
+    );
+    expect(preview).toContain("Edit a.ts");
+    expect(preview).toContain("-old");
+    expect(preview).toContain("+new");
   });
 });
 

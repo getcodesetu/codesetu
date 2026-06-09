@@ -28,6 +28,7 @@ import ai.codesetu.skills.routeSkills
 import ai.codesetu.speech.AudioPayload
 import ai.codesetu.speech.CodeSetuSpeechClient
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -95,6 +96,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val pending = mutableListOf<String>()
   private var ready = false
   private var inFlight = false
+  // Set when the user hits Stop; the agent loop checks it between steps.
+  private val cancelRequested = AtomicBoolean(false)
 
   val component: JComponent
     get() = browser.component
@@ -148,6 +151,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         obj["planMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatPlanModeOn = it }
         obj["agentMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatAgentModeOn = it }
       }
+      "cancel" -> cancelRequested.set(true)
       "permissionDenied" -> {
         val reason = obj["reason"]?.jsonPrimitive?.contentOrNull ?: "other"
         val detail = obj["message"]?.jsonPrimitive?.contentOrNull
@@ -389,6 +393,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
    */
   private fun runAgentTurn(messages: List<ChatMessage>) {
     val host = IntellijAgentHost(project)
+    cancelRequested.set(false)
     var started = false
     fun ensureStarted() {
       if (!started) {
@@ -405,6 +410,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         host = host,
         maxTokens = 4096,
         temperature = 0.2,
+        isCancelled = { cancelRequested.get() },
         requestApproval = { request -> requestToolApproval(request) },
         onEvent = { event ->
           when (event) {
@@ -450,6 +456,11 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       return
     }
 
+    if (result.stoppedReason == "aborted") {
+      ensureStarted()
+      push(message("assistantMessageDelta") { put("text", "\n\n_Stopped by you._\n") })
+    }
+
     // Persist the full tool transcript this turn produced (assistant tool-call
     // turns + tool results + final answer) so the next turn keeps that context.
     val newMessages = result.messages.drop(messages.size)
@@ -488,12 +499,13 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     return decision
   }
 
-  private fun describeApproval(request: ApprovalRequest): String = when (request.tool.name) {
-    "bash" -> "Command:\n${request.args["command"]?.jsonPrimitive?.contentOrNull ?: request.rawArguments}"
-    "write_file" -> "Write file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
-    "edit_file" -> "Edit file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
-    else -> request.rawArguments
-  }
+  private fun describeApproval(request: ApprovalRequest): String =
+    request.preview ?: when (request.tool.name) {
+      "bash" -> "Command:\n${request.args["command"]?.jsonPrimitive?.contentOrNull ?: request.rawArguments}"
+      "write_file" -> "Write file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
+      "edit_file" -> "Edit file: ${request.args["path"]?.jsonPrimitive?.contentOrNull ?: "?"}"
+      else -> request.rawArguments
+    }
 
   private fun summarizeArgs(toolName: String, args: JsonObject): String =
     if (toolName == "bash") {

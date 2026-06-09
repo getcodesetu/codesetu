@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import { diffLines } from "./diff.js";
 import type { AgentHost } from "./host.js";
 
 /**
@@ -42,6 +43,12 @@ export interface AgentTool {
   parameters: Record<string, unknown>;
   risk: ToolRisk;
   execute(args: Record<string, unknown>, ctx: AgentToolContext): Promise<ToolResult>;
+  /**
+   * Optional human-readable preview of the change this call would make (e.g. a
+   * diff), shown in the approval prompt. Returns undefined if there's nothing
+   * useful to preview.
+   */
+  preview?(args: Record<string, unknown>, ctx: AgentToolContext): Promise<string | undefined>;
 }
 
 /** Cap tool output so a single call can't blow the model's context window. */
@@ -153,6 +160,19 @@ export const WRITE_TOOL: AgentTool = {
     const lineCount = content.length === 0 ? 0 : content.split("\n").length;
     return ok(`Wrote ${path} (${lineCount} lines, ${content.length} characters).`);
   },
+  async preview(args, { host }) {
+    const path = typeof args.path === "string" ? args.path : "?";
+    const content = typeof args.content === "string" ? args.content : "";
+    let current = "";
+    let exists = true;
+    try {
+      current = await host.readFile(path);
+    } catch {
+      exists = false;
+    }
+    const verb = exists ? "Overwrite" : "Create";
+    return `${verb} ${path}\n\n${diffLines(current, content)}`;
+  },
 };
 
 /** Replace an exact substring in a file. */
@@ -215,6 +235,12 @@ export const EDIT_TOOL: AgentTool = {
     }
     const replaced = replaceAll ? occurrences : 1;
     return ok(`Edited ${path} (${replaced} replacement${replaced === 1 ? "" : "s"}).`);
+  },
+  preview(args) {
+    const path = typeof args.path === "string" ? args.path : "?";
+    const oldString = typeof args.old_string === "string" ? args.old_string : "";
+    const newString = typeof args.new_string === "string" ? args.new_string : "";
+    return Promise.resolve(`Edit ${path}\n\n${diffLines(oldString, newString)}`);
   },
 };
 
