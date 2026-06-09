@@ -27,6 +27,11 @@ export interface ExecOptions {
   signal?: AbortSignal;
 }
 
+export interface DirEntry {
+  name: string;
+  type: "file" | "directory";
+}
+
 /**
  * Filesystem and shell primitives an embedding host (VSCode, JetBrains, CLI)
  * provides to agent tools. The host owns sandboxing: it resolves and contains
@@ -44,4 +49,8 @@ export interface AgentHost {
   writeFile(path: string, content: string): Promise<void>;
   /** Run a shell command. The host enforces cwd (workspace root) and timeout. */
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
+  /** List workspace-relative paths matching a glob (e.g. "src/**\/*.ts"). */
+  glob(pattern: string): Promise<readonly string[]>;
+  /** List the entries of a directory (path relative to the root or absolute). */
+  listDir(path: string): Promise<readonly DirEntry[]>;
 }

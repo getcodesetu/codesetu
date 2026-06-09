@@ -21,12 +21,17 @@ import {
   BASH_TOOL,
   DEFAULT_AGENT_TOOLS,
   EDIT_TOOL,
+  GLOB_TOOL,
+  GREP_TOOL,
+  LIST_TOOL,
   READ_TOOL,
+  TODO_WRITE_TOOL,
   WRITE_TOOL,
   runAgentLoop,
   type AgentEvent,
   type AgentHost,
   type ChatMessage,
+  type DirEntry,
   type ExecResult,
   type LlmProvider,
 } from "../src/index.js";
@@ -56,6 +61,42 @@ class FakeHost implements AgentHost {
   public exec(command: string): Promise<ExecResult> {
     this.execCalls.push(command);
     return Promise.resolve(this.execResult);
+  }
+
+  public glob(pattern: string): Promise<readonly string[]> {
+    const keys = [...this.files.keys()];
+    if (pattern === "**/*") {
+      return Promise.resolve(keys);
+    }
+    const regex = new RegExp(
+      "^" +
+        pattern
+          .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*\*\//g, "(.*/)?")
+          .replace(/\*/g, "[^/]*") +
+        "$",
+    );
+    return Promise.resolve(keys.filter((key) => regex.test(key)));
+  }
+
+  public listDir(path: string): Promise<readonly DirEntry[]> {
+    const prefix = path === "." || path === "" ? "" : `${path.replace(/\/$/, "")}/`;
+    const names = new Set<string>();
+    const entries: DirEntry[] = [];
+    for (const key of this.files.keys()) {
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      const rest = key.slice(prefix.length);
+      const slash = rest.indexOf("/");
+      const name = slash === -1 ? rest : rest.slice(0, slash);
+      if (name.length === 0 || names.has(name)) {
+        continue;
+      }
+      names.add(name);
+      entries.push({ name, type: slash === -1 ? "file" : "directory" });
+    }
+    return Promise.resolve(entries);
   }
 }
 
@@ -184,6 +225,53 @@ describe("agent tools", () => {
     );
     expect(result.isError).toBeUndefined();
     expect(host.files.get("a.txt")).toBe("y y y");
+  });
+
+  it("glob lists matching files and is read-only", async () => {
+    const host = new FakeHost();
+    host.files.set("src/a.ts", "");
+    host.files.set("src/b.ts", "");
+    host.files.set("readme.md", "");
+    expect(GLOB_TOOL.risk).toBe("safe");
+    const result = await GLOB_TOOL.execute({ pattern: "src/**/*.ts" }, { host });
+    expect(result.content).toContain("src/a.ts");
+    expect(result.content).toContain("src/b.ts");
+    expect(result.content).not.toContain("readme.md");
+  });
+
+  it("list_dir shows files and subdirectories", async () => {
+    const host = new FakeHost();
+    host.files.set("a.txt", "");
+    host.files.set("src/b.ts", "");
+    const result = await LIST_TOOL.execute({}, { host });
+    expect(result.content).toContain("a.txt");
+    expect(result.content).toContain("src/");
+  });
+
+  it("grep returns matching lines as path:line: text", async () => {
+    const host = new FakeHost();
+    host.files.set("a.ts", "const x = 1;\nconst y = 2;");
+    host.files.set("b.ts", "let z = 3;");
+    expect(GREP_TOOL.risk).toBe("safe");
+    const result = await GREP_TOOL.execute({ pattern: "const" }, { host });
+    expect(result.content).toContain("a.ts:1: const x = 1;");
+    expect(result.content).toContain("a.ts:2: const y = 2;");
+    expect(result.content).not.toContain("b.ts");
+  });
+
+  it("todo_write renders a status checklist", async () => {
+    const host = new FakeHost();
+    const result = await TODO_WRITE_TOOL.execute(
+      {
+        todos: [
+          { content: "scan", status: "completed" },
+          { content: "fix", status: "in_progress" },
+          { content: "test", status: "pending" },
+        ],
+      },
+      { host },
+    );
+    expect(result.content).toBe("[x] scan\n[~] fix\n[ ] test");
   });
 
   it("bash reports a non-zero exit as an error", async () => {

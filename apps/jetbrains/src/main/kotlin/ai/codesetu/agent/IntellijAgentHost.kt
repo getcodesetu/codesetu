@@ -7,7 +7,11 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 
 /**
  * IntelliJ-platform AgentHost. Reads/writes via java.nio (then refreshes the VFS
@@ -59,5 +63,46 @@ class IntellijAgentHost(project: Project) : AgentHost {
       if (output.isTimeout) "${output.stderr}\n[timed out after ${timeoutMs}ms]" else output.stderr
     val exitCode = if (output.isTimeout) null else output.exitCode
     return ExecResult(output.stdout, stderr, exitCode)
+  }
+
+  override fun glob(pattern: String): List<String> {
+    val basePath = File(root ?: System.getProperty("user.dir")).canonicalFile.toPath()
+    val matcher = basePath.fileSystem.getPathMatcher("glob:$pattern")
+    val results = ArrayList<String>()
+    Files.walkFileTree(
+      basePath,
+      object : SimpleFileVisitor<Path>() {
+        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+          if (dir != basePath && IGNORED_DIRS.contains(dir.fileName.toString())) {
+            return FileVisitResult.SKIP_SUBTREE
+          }
+          return FileVisitResult.CONTINUE
+        }
+
+        override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+          val relative = basePath.relativize(file)
+          if (matcher.matches(relative)) {
+            results.add(relative.toString())
+          }
+          return if (results.size >= MAX_GLOB_RESULTS) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
+        }
+
+        override fun visitFileFailed(file: Path, exc: java.io.IOException): FileVisitResult =
+          FileVisitResult.CONTINUE
+      },
+    )
+    return results.sorted()
+  }
+
+  override fun listDir(path: String): List<DirEntry> {
+    val children = resolveWithinRoot(path).listFiles() ?: return emptyList()
+    return children.map { DirEntry(it.name, it.isDirectory) }
+  }
+
+  private companion object {
+    const val MAX_GLOB_RESULTS = 1_000
+    val IGNORED_DIRS = setOf(
+      ".git", "node_modules", "build", "dist", ".gradle", ".idea", "out", "target",
+    )
   }
 }

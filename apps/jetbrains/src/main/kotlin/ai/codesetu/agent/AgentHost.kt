@@ -18,7 +18,15 @@ interface AgentHost {
 
   /** Run a shell command from the project root with a wall-clock timeout. */
   fun exec(command: String, timeoutMs: Long): ExecResult
+
+  /** List workspace-relative paths matching a glob (e.g. "src/**/*.kt"). */
+  fun glob(pattern: String): List<String>
+
+  /** List the entries of a directory (path relative to the root or absolute). */
+  fun listDir(path: String): List<DirEntry>
 }
+
+data class DirEntry(val name: String, val isDirectory: Boolean)
 
 data class ExecResult(
   val stdout: String,

@@ -14,14 +14,21 @@
  * limitations under the License.
  */
 
-export type { AgentHost, ExecOptions, ExecResult } from "./host.js";
+export type { AgentHost, DirEntry, ExecOptions, ExecResult } from "./host.js";
 export {
   BASH_TOOL,
   DEFAULT_AGENT_TOOLS,
   DEFAULT_BASH_TIMEOUT_MS,
   EDIT_TOOL,
+  GLOB_TOOL,
+  GREP_TOOL,
+  LIST_TOOL,
+  MAX_GLOB_RESULTS,
+  MAX_GREP_FILES,
+  MAX_GREP_MATCHES,
   MAX_TOOL_OUTPUT_CHARS,
   READ_TOOL,
+  TODO_WRITE_TOOL,
   WRITE_TOOL,
   type AgentTool,
   type AgentToolContext,

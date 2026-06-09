@@ -48,6 +48,10 @@ export interface AgentTool {
 export const MAX_TOOL_OUTPUT_CHARS = 30_000;
 /** Default wall-clock limit for a single Bash command. */
 export const DEFAULT_BASH_TIMEOUT_MS = 120_000;
+/** Caps for the read-only search tools so they stay bounded on large repos. */
+export const MAX_GLOB_RESULTS = 200;
+export const MAX_GREP_FILES = 1_000;
+export const MAX_GREP_MATCHES = 200;
 
 function truncate(text: string, limit = MAX_TOOL_OUTPUT_CHARS): string {
   if (text.length <= limit) {
@@ -261,12 +265,204 @@ export const BASH_TOOL: AgentTool = {
   },
 };
 
-/** The four primitive tools, in the order they're presented to the model. */
+/** List files matching a glob pattern. */
+export const GLOB_TOOL: AgentTool = {
+  name: "glob",
+  description:
+    'Find files whose path matches a glob pattern (e.g. "src/**/*.ts"). ' +
+    "Returns matching workspace-relative paths.",
+  risk: "safe",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["pattern"],
+    properties: {
+      pattern: { type: "string", description: "Glob pattern relative to the workspace root." },
+    },
+  },
+  async execute(args, { host }) {
+    const pattern = requireString(args, "pattern");
+    let paths: readonly string[];
+    try {
+      paths = await host.glob(pattern);
+    } catch (error) {
+      return fail(`glob failed: ${errorMessage(error)}`);
+    }
+    if (paths.length === 0) {
+      return ok(`No files match ${pattern}.`);
+    }
+    const capped = paths.slice(0, MAX_GLOB_RESULTS);
+    const more =
+      paths.length > capped.length ? `\n... and ${paths.length - capped.length} more` : "";
+    return ok(truncate(capped.join("\n") + more));
+  },
+};
+
+/** List the entries of a directory. */
+export const LIST_TOOL: AgentTool = {
+  name: "list_dir",
+  description: "List the files and subdirectories of a directory (defaults to the workspace root).",
+  risk: "safe",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: [],
+    properties: {
+      path: { type: "string", description: "Directory path (default: workspace root)." },
+    },
+  },
+  async execute(args, { host }) {
+    const path = typeof args.path === "string" && args.path.length > 0 ? args.path : ".";
+    let entries;
+    try {
+      entries = await host.listDir(path);
+    } catch (error) {
+      return fail(`Could not list ${path}: ${errorMessage(error)}`);
+    }
+    if (entries.length === 0) {
+      return ok(`${path} is empty.`);
+    }
+    const rendered = entries
+      .map((entry) => (entry.type === "directory" ? `${entry.name}/` : entry.name))
+      .sort()
+      .join("\n");
+    return ok(truncate(rendered));
+  },
+};
+
+/** Search file contents for a regular expression. */
+export const GREP_TOOL: AgentTool = {
+  name: "grep",
+  description:
+    "Search file contents for a regular expression. Returns matches as " +
+    '"path:line: text". Narrow the search with the glob argument.',
+  risk: "safe",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["pattern"],
+    properties: {
+      pattern: { type: "string", description: "Regular expression to search for." },
+      glob: {
+        type: "string",
+        description: 'Glob limiting which files are searched (default "**/*").',
+      },
+      case_insensitive: { type: "boolean", description: "Match case-insensitively." },
+    },
+  },
+  async execute(args, { host }) {
+    const pattern = requireString(args, "pattern");
+    const globPattern = typeof args.glob === "string" && args.glob.length > 0 ? args.glob : "**/*";
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern, args.case_insensitive === true ? "i" : "");
+    } catch (error) {
+      return fail(`Invalid regular expression: ${errorMessage(error)}`);
+    }
+
+    let files: readonly string[];
+    try {
+      files = await host.glob(globPattern);
+    } catch (error) {
+      return fail(`grep failed: ${errorMessage(error)}`);
+    }
+
+    const results: string[] = [];
+    let scanned = 0;
+    for (const file of files) {
+      if (scanned >= MAX_GREP_FILES || results.length >= MAX_GREP_MATCHES) {
+        break;
+      }
+      scanned += 1;
+      let content: string;
+      try {
+        content = await host.readFile(file);
+      } catch {
+        continue; // unreadable (deleted, permissions) — skip
+      }
+      if (content.includes("\u0000")) {
+        continue; // looks binary
+      }
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        if (line !== undefined && regex.test(line)) {
+          results.push(`${file}:${i + 1}: ${line.trim()}`);
+          if (results.length >= MAX_GREP_MATCHES) {
+            break;
+          }
+        }
+      }
+    }
+
+    if (results.length === 0) {
+      return ok(`No matches for /${pattern}/.`);
+    }
+    const note =
+      results.length >= MAX_GREP_MATCHES ? `\n... (stopped at ${MAX_GREP_MATCHES} matches)` : "";
+    return ok(truncate(results.join("\n") + note));
+  },
+};
+
+/** Record/update the agent's task list for the current job. */
+export const TODO_WRITE_TOOL: AgentTool = {
+  name: "todo_write",
+  description:
+    "Record or update your task list for this job. Pass the full list each " +
+    "time. Use it to plan and track multi-step work so you don't lose the thread.",
+  risk: "safe",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["todos"],
+    properties: {
+      todos: {
+        type: "array",
+        description: "The full task list.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["content", "status"],
+          properties: {
+            content: { type: "string" },
+            status: { type: "string", enum: ["pending", "in_progress", "completed"] },
+          },
+        },
+      },
+    },
+  },
+  execute(args) {
+    const todos = Array.isArray(args.todos) ? args.todos : [];
+    if (todos.length === 0) {
+      return Promise.resolve(ok("Task list cleared."));
+    }
+    const rendered = todos
+      .map((todo) => {
+        const item = todo as { content?: unknown; status?: unknown };
+        const content = typeof item.content === "string" ? item.content : String(item.content);
+        const marker =
+          item.status === "completed" ? "[x]" : item.status === "in_progress" ? "[~]" : "[ ]";
+        return `${marker} ${content}`;
+      })
+      .join("\n");
+    return Promise.resolve(ok(rendered));
+  },
+};
+
+/**
+ * The agent's tools, in the order they're presented to the model: the four
+ * primitives plus the read-only helpers (auto-approved) that lift quality on
+ * smaller models without the model fumbling shell flags.
+ */
 export const DEFAULT_AGENT_TOOLS: readonly AgentTool[] = [
   READ_TOOL,
+  LIST_TOOL,
+  GLOB_TOOL,
+  GREP_TOOL,
   WRITE_TOOL,
   EDIT_TOOL,
   BASH_TOOL,
+  TODO_WRITE_TOOL,
 ];
 
 function countOccurrences(haystack: string, needle: string): number {

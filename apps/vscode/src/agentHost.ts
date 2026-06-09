@@ -18,7 +18,11 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { AgentHost, ExecOptions, ExecResult } from "@codesetu/core";
+import type { AgentHost, DirEntry, ExecOptions, ExecResult } from "@codesetu/core";
+import * as vscode from "vscode";
+
+/** Cap glob results so a single call can't flood the model's context. */
+const MAX_GLOB_FILES = 1_000;
 
 /**
  * Node-backed AgentHost for the VSCode extension host. It owns the sandbox:
@@ -50,6 +54,23 @@ export function createNodeAgentHost(root: string | undefined): AgentHost {
     },
     exec(command: string, options?: ExecOptions): Promise<ExecResult> {
       return runShellCommand(command, base, options);
+    },
+    async glob(pattern: string): Promise<readonly string[]> {
+      // findFiles respects the workspace's files.exclude/search.exclude, so
+      // .git, node_modules, build output, etc. are skipped for free.
+      const uris = await vscode.workspace.findFiles(pattern, undefined, MAX_GLOB_FILES);
+      return uris
+        .map((uri) => path.relative(base, uri.fsPath))
+        .filter((relative) => !relative.startsWith(".."))
+        .sort();
+    },
+    async listDir(dirPath: string): Promise<readonly DirEntry[]> {
+      const resolved = resolveWithinRoot(dirPath);
+      const dirents = await fs.readdir(resolved, { withFileTypes: true });
+      return dirents.map((dirent) => ({
+        name: dirent.name,
+        type: dirent.isDirectory() ? "directory" : "file",
+      }));
     },
   };
 }

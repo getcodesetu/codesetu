@@ -1,11 +1,13 @@
 package ai.codesetu.agent
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -27,9 +29,25 @@ interface AgentTool {
 
 const val MAX_TOOL_OUTPUT_CHARS = 30_000
 const val DEFAULT_BASH_TIMEOUT_MS = 120_000L
+const val MAX_GLOB_RESULTS = 200
+const val MAX_GREP_FILES = 1_000
+const val MAX_GREP_MATCHES = 200
 
-/** The four primitive tools, in the order presented to the model. */
-fun defaultAgentTools(): List<AgentTool> = listOf(ReadFileTool, WriteFileTool, EditFileTool, BashTool)
+/**
+ * The agent's tools, in the order presented to the model: the four primitives
+ * plus the read-only helpers (auto-approved) that lift quality on smaller models.
+ */
+fun defaultAgentTools(): List<AgentTool> =
+  listOf(
+    ReadFileTool,
+    ListDirTool,
+    GlobTool,
+    GrepTool,
+    WriteFileTool,
+    EditFileTool,
+    BashTool,
+    TodoWriteTool,
+  )
 
 object ReadFileTool : AgentTool {
   override val name = "read_file"
@@ -235,6 +253,196 @@ object BashTool : AgentTool {
     val status = "[exit code: ${result.exitCode ?: "killed"}]"
     val content = truncate("$body\n$status")
     return ToolResult(content, isError = result.exitCode != 0)
+  }
+}
+
+object GlobTool : AgentTool {
+  override val name = "glob"
+  override val description =
+    "Find files whose path matches a glob pattern (e.g. \"src/**/*.kt\"). " +
+      "Returns matching workspace-relative paths."
+  override val risk = ToolRisk.SAFE
+  override val parameters = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    putJsonArray("required") { add("pattern") }
+    putJsonObject("properties") {
+      putJsonObject("pattern") {
+        put("type", "string")
+        put("description", "Glob pattern relative to the workspace root.")
+      }
+    }
+  }
+
+  override fun execute(args: JsonObject, host: AgentHost): ToolResult {
+    val pattern = args.string("pattern") ?: return fail("Missing required argument \"pattern\".")
+    val paths =
+      try {
+        host.glob(pattern)
+      } catch (error: Exception) {
+        return fail("glob failed: ${error.message ?: error}")
+      }
+    if (paths.isEmpty()) return ToolResult("No files match $pattern.")
+    val capped = paths.take(MAX_GLOB_RESULTS)
+    val more = if (paths.size > capped.size) "\n... and ${paths.size - capped.size} more" else ""
+    return ToolResult(truncate(capped.joinToString("\n") + more))
+  }
+}
+
+object ListDirTool : AgentTool {
+  override val name = "list_dir"
+  override val description =
+    "List the files and subdirectories of a directory (defaults to the workspace root)."
+  override val risk = ToolRisk.SAFE
+  override val parameters = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    putJsonArray("required") {}
+    putJsonObject("properties") {
+      putJsonObject("path") {
+        put("type", "string")
+        put("description", "Directory path (default: workspace root).")
+      }
+    }
+  }
+
+  override fun execute(args: JsonObject, host: AgentHost): ToolResult {
+    val path = args.string("path")?.takeIf { it.isNotEmpty() } ?: "."
+    val entries =
+      try {
+        host.listDir(path)
+      } catch (error: Exception) {
+        return fail("Could not list $path: ${error.message ?: error}")
+      }
+    if (entries.isEmpty()) return ToolResult("$path is empty.")
+    val rendered =
+      entries.map { if (it.isDirectory) "${it.name}/" else it.name }.sorted().joinToString("\n")
+    return ToolResult(truncate(rendered))
+  }
+}
+
+object GrepTool : AgentTool {
+  override val name = "grep"
+  override val description =
+    "Search file contents for a regular expression. Returns matches as " +
+      "\"path:line: text\". Narrow the search with the glob argument."
+  override val risk = ToolRisk.SAFE
+  override val parameters = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    putJsonArray("required") { add("pattern") }
+    putJsonObject("properties") {
+      putJsonObject("pattern") {
+        put("type", "string")
+        put("description", "Regular expression to search for.")
+      }
+      putJsonObject("glob") {
+        put("type", "string")
+        put("description", "Glob limiting which files are searched (default \"**/*\").")
+      }
+      putJsonObject("case_insensitive") {
+        put("type", "boolean")
+        put("description", "Match case-insensitively.")
+      }
+    }
+  }
+
+  override fun execute(args: JsonObject, host: AgentHost): ToolResult {
+    val pattern = args.string("pattern") ?: return fail("Missing required argument \"pattern\".")
+    val globPattern = args.string("glob")?.takeIf { it.isNotEmpty() } ?: "**/*"
+    val options = if (args.bool("case_insensitive") == true) setOf(RegexOption.IGNORE_CASE) else emptySet()
+    val regex =
+      try {
+        Regex(pattern, options)
+      } catch (error: Exception) {
+        return fail("Invalid regular expression: ${error.message ?: error}")
+      }
+
+    val files =
+      try {
+        host.glob(globPattern)
+      } catch (error: Exception) {
+        return fail("grep failed: ${error.message ?: error}")
+      }
+
+    val results = ArrayList<String>()
+    var scanned = 0
+    for (file in files) {
+      if (scanned >= MAX_GREP_FILES || results.size >= MAX_GREP_MATCHES) break
+      scanned++
+      val content =
+        try {
+          host.readFile(file)
+        } catch (error: Exception) {
+          continue
+        }
+      if (content.contains('\u0000')) continue // looks binary
+      content.split("\n").forEachIndexed { index, line ->
+        if (results.size < MAX_GREP_MATCHES && regex.containsMatchIn(line)) {
+          results.add("$file:${index + 1}: ${line.trim()}")
+        }
+      }
+    }
+
+    if (results.isEmpty()) return ToolResult("No matches for /$pattern/.")
+    val note = if (results.size >= MAX_GREP_MATCHES) "\n... (stopped at $MAX_GREP_MATCHES matches)" else ""
+    return ToolResult(truncate(results.joinToString("\n") + note))
+  }
+}
+
+object TodoWriteTool : AgentTool {
+  override val name = "todo_write"
+  override val description =
+    "Record or update your task list for this job. Pass the full list each " +
+      "time. Use it to plan and track multi-step work so you don't lose the thread."
+  override val risk = ToolRisk.SAFE
+  override val parameters = buildJsonObject {
+    put("type", "object")
+    put("additionalProperties", false)
+    putJsonArray("required") { add("todos") }
+    putJsonObject("properties") {
+      putJsonObject("todos") {
+        put("type", "array")
+        put("description", "The full task list.")
+        putJsonObject("items") {
+          put("type", "object")
+          put("additionalProperties", false)
+          putJsonArray("required") {
+            add("content")
+            add("status")
+          }
+          putJsonObject("properties") {
+            putJsonObject("content") { put("type", "string") }
+            putJsonObject("status") {
+              put("type", "string")
+              putJsonArray("enum") {
+                add("pending")
+                add("in_progress")
+                add("completed")
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  override fun execute(args: JsonObject, host: AgentHost): ToolResult {
+    val todos = args["todos"] as? JsonArray ?: return ToolResult("Task list cleared.")
+    if (todos.isEmpty()) return ToolResult("Task list cleared.")
+    val rendered =
+      todos.joinToString("\n") { element ->
+        val item = element.jsonObject
+        val content = item.string("content") ?: ""
+        val marker =
+          when (item.string("status")) {
+            "completed" -> "[x]"
+            "in_progress" -> "[~]"
+            else -> "[ ]"
+          }
+        "$marker $content"
+      }
+    return ToolResult(rendered)
   }
 }
 
