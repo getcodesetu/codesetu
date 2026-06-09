@@ -36,7 +36,50 @@ sealed class AgentEvent {
   data class IterationLimit(val limit: Int) : AgentEvent()
 }
 
-data class AgentLoopResult(val text: String, val stoppedReason: String)
+data class AgentLoopResult(
+  val text: String,
+  val stoppedReason: String,
+  /** Full transcript including assistant tool-call turns and tool results. */
+  val messages: List<ChatMessage>,
+)
+
+/**
+ * Make a transcript safe to send after history trimming may have split a
+ * tool-call/result pair: drop dangling assistant `tool_calls` (no matching
+ * result) and orphan `tool` messages (no surviving call). Mirrors
+ * sanitizeToolMessages in @codesetu/core.
+ */
+fun sanitizeToolMessages(messages: List<ChatMessage>): List<ChatMessage> {
+  val respondedIds = messages.mapNotNull { if (it.role == "tool") it.toolCallId else null }.toSet()
+  val keptCallIds = HashSet<String>()
+  val result = ArrayList<ChatMessage>()
+  for (message in messages) {
+    val toolCalls = message.toolCalls
+    when {
+      message.role == "assistant" && !toolCalls.isNullOrEmpty() -> {
+        val kept = toolCalls.filter { respondedIds.contains(it.id) }
+        when {
+          kept.size == toolCalls.size -> {
+            result.add(message)
+            kept.forEach { keptCallIds.add(it.id) }
+          }
+          kept.isNotEmpty() -> {
+            result.add(message.copy(toolCalls = kept))
+            kept.forEach { keptCallIds.add(it.id) }
+          }
+          message.content.isNotEmpty() -> result.add(message.copy(toolCalls = null))
+        }
+      }
+      message.role == "tool" -> {
+        if (message.toolCallId != null && keptCallIds.contains(message.toolCallId)) {
+          result.add(message)
+        }
+      }
+      else -> result.add(message)
+    }
+  }
+  return result
+}
 
 /**
  * Drive the provider through a tool-calling loop: ask the model, run any tool
@@ -80,7 +123,7 @@ fun runAgentLoop(
       onEvent(AgentEvent.AssistantText(assistantText))
     }
     if (toolCalls.isEmpty()) {
-      return AgentLoopResult(finalText, "completed")
+      return AgentLoopResult(finalText, "completed", messages.toList())
     }
 
     for (call in toolCalls) {
@@ -115,7 +158,7 @@ fun runAgentLoop(
   }
 
   onEvent(AgentEvent.IterationLimit(maxIterations))
-  return AgentLoopResult(finalText, "iteration_limit")
+  return AgentLoopResult(finalText, "iteration_limit", messages.toList())
 }
 
 private fun addToolResult(

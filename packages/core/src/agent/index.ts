@@ -38,6 +38,7 @@ export {
 export {
   DEFAULT_MAX_ITERATIONS,
   runAgentLoop,
+  sanitizeToolMessages,
   type AgentEvent,
   type AgentLoopOptions,
   type AgentLoopResult,

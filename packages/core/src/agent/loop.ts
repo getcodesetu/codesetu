@@ -226,6 +226,54 @@ function emitResult(
   onEvent?.({ type: "tool_result", id, name, content, isError, ...(denied ? { denied } : {}) });
 }
 
+/**
+ * Make a transcript safe to send to the provider after history trimming may
+ * have split tool-call/result pairs. OpenAI-compatible APIs reject an assistant
+ * `tool_calls` turn whose results are missing, and a `tool` message with no
+ * preceding assistant call. This drops both: dangling `tool_calls` (no matching
+ * result) and orphan tool messages (no surviving call). Use it when building a
+ * provider request from persisted history that may include past agent turns.
+ */
+export function sanitizeToolMessages(messages: ChatMessage[]): ChatMessage[] {
+  const respondedIds = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "tool" && typeof message.tool_call_id === "string") {
+      respondedIds.add(message.tool_call_id);
+    }
+  }
+
+  const keptCallIds = new Set<string>();
+  const result: ChatMessage[] = [];
+  for (const message of messages) {
+    if (
+      message.role === "assistant" &&
+      Array.isArray(message.tool_calls) &&
+      message.tool_calls.length > 0
+    ) {
+      const kept = message.tool_calls.filter((call) => respondedIds.has(call.id));
+      if (kept.length === message.tool_calls.length) {
+        result.push(message);
+        kept.forEach((call) => keptCallIds.add(call.id));
+      } else if (kept.length > 0) {
+        result.push({ ...message, tool_calls: kept });
+        kept.forEach((call) => keptCallIds.add(call.id));
+      } else {
+        const content = typeof message.content === "string" ? message.content : "";
+        if (content.length > 0) {
+          result.push({ role: "assistant", content });
+        }
+      }
+    } else if (message.role === "tool") {
+      if (typeof message.tool_call_id === "string" && keptCallIds.has(message.tool_call_id)) {
+        result.push(message);
+      }
+    } else {
+      result.push(message);
+    }
+  }
+  return result;
+}
+
 function toChatCompletionTool(tool: AgentTool): ChatCompletionTool {
   return {
     type: "function",

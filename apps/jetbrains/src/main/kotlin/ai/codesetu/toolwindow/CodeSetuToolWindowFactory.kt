@@ -8,6 +8,7 @@ import ai.codesetu.agent.ApprovalRequest
 import ai.codesetu.agent.IntellijAgentHost
 import ai.codesetu.agent.defaultAgentTools
 import ai.codesetu.agent.runAgentLoop
+import ai.codesetu.agent.sanitizeToolMessages
 import ai.codesetu.context.collectIdeContext
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
@@ -310,14 +311,18 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     }
     history.add(ChatMessage("user", userMessage))
     val systemPrompt = buildSystemMessage(instructions, routed.selected)
-    val messages = listOf(ChatMessage("system", systemPrompt)) + history
+    // Sanitize in case persisted history from a prior agent turn was trimmed and
+    // split a tool-call/result pair, which the provider would reject.
+    val messages = sanitizeToolMessages(listOf(ChatMessage("system", systemPrompt)) + history)
 
     // Surface exactly what we're about to send for the "Context sent to AI" panel.
     pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
 
     if (agentMode) {
       val agentMessages =
-        listOf(ChatMessage("system", "$systemPrompt\n\n$AGENT_MODE_SYSTEM_NOTE")) + history
+        sanitizeToolMessages(
+          listOf(ChatMessage("system", "$systemPrompt\n\n$AGENT_MODE_SYSTEM_NOTE")) + history,
+        )
       runAgentTurn(agentMessages)
       return
     }
@@ -445,7 +450,12 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       return
     }
 
-    if (result.text.isNotBlank()) {
+    // Persist the full tool transcript this turn produced (assistant tool-call
+    // turns + tool results + final answer) so the next turn keeps that context.
+    val newMessages = result.messages.drop(messages.size)
+    if (newMessages.isNotEmpty()) {
+      history.addAll(newMessages)
+    } else if (result.text.isNotBlank()) {
       history.add(ChatMessage("assistant", result.text))
     }
     if (started) {

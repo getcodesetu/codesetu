@@ -58,6 +58,13 @@ export interface ChatResponderContext {
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
+  /**
+   * Agent mode: the messages the turn produced (assistant tool-call turns, tool
+   * results, final answer) to append to history verbatim, so the next turn keeps
+   * the agent's tool context. When called, the caller persists these instead of
+   * the returned answer string.
+   */
+  persistMessages?: (messages: ChatMessage[]) => void;
 }
 
 export interface SendUserMessageOptions {
@@ -380,11 +387,15 @@ export class ChatPanel {
           void this.panel.webview.postMessage({ type: "assistantMessageStart" });
         }
       };
+      let persistedMessages: ChatMessage[] | undefined;
       const response = await this.responder(this.history, {
         includeIdeContext: options.includeIdeContext ?? true,
         planMode: options.planMode ?? this.currentPlanMode,
         agentMode: options.agentMode ?? this.currentAgentMode,
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
+        persistMessages: (messages) => {
+          persistedMessages = messages;
+        },
         onContextPreview: (preview) => {
           void this.panel.webview.postMessage({ type: "contextPreview", preview });
         },
@@ -404,7 +415,14 @@ export class ChatPanel {
           }
         },
       });
-      this.history.push({ role: "assistant", content: response });
+      // Agent turns persist their full tool transcript (assistant tool-call
+      // turns + tool results + final answer) so the next turn keeps that
+      // context; plain chat persists just the assistant reply.
+      if (persistedMessages !== undefined) {
+        this.history.push(...persistedMessages);
+      } else {
+        this.history.push({ role: "assistant", content: response });
+      }
       void this.panel.webview.postMessage(
         isStreamingAssistantMessage
           ? { type: "assistantMessageDone" }

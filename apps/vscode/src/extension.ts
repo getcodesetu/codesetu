@@ -22,6 +22,7 @@ import {
   createSpeechProvider,
   isPlanModeApproval,
   routeSkills,
+  sanitizeToolMessages,
   type AudioBlob,
   type ChatCompletionRequest,
   type ChatMessage,
@@ -149,6 +150,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ideContext,
         requestContext?.onChunk,
         routed.selected,
+        requestContext?.persistMessages,
       );
     }
 
@@ -284,7 +286,9 @@ async function sendChatRequest(
 
   try {
     const request: ChatCompletionRequest = {
-      messages: [
+      // Sanitize in case persisted history from a prior agent turn was trimmed
+      // and split a tool-call/result pair, which the provider would reject.
+      messages: sanitizeToolMessages([
         {
           role: "system",
           content: buildCodeSetuSystemMessage([...instructions], {
@@ -292,7 +296,7 @@ async function sendChatRequest(
           }),
         },
         ...contextualMessages,
-      ],
+      ]),
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
     };
@@ -338,6 +342,7 @@ async function sendAgentChatRequest(
   ideContext: IdeContextPayload = {},
   onChunk?: (chunk: ChatStreamChunk) => void,
   pinnedSkills: readonly WorkspaceInstruction[] = [],
+  persistMessages?: (messages: ChatMessage[]) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -364,11 +369,15 @@ async function sendAgentChatRequest(
   try {
     return await runAgentTurn({
       provider,
-      messages: [{ role: "system", content: systemContent }, ...contextualMessages],
+      messages: sanitizeToolMessages([
+        { role: "system", content: systemContent },
+        ...contextualMessages,
+      ]),
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       ...(onChunk === undefined ? {} : { onChunk }),
+      ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       outputChannel,
     });
   } catch (error: unknown) {

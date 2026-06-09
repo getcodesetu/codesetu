@@ -138,6 +138,7 @@ export {
   TODO_WRITE_TOOL,
   WRITE_TOOL,
   runAgentLoop,
+  sanitizeToolMessages,
   type AgentEvent,
   type AgentLoopOptions,
   type AgentLoopResult,

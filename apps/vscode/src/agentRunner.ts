@@ -48,6 +48,8 @@ export interface RunAgentTurnOptions {
   maxTokens?: number;
   workspaceRoot: string | undefined;
   onChunk?: (chunk: ChatStreamChunk) => void;
+  /** Receives the turn's new messages (tool turns + final answer) to persist. */
+  onPersist?: (messages: ChatMessage[]) => void;
   outputChannel: vscode.OutputChannel;
   signal?: AbortSignal;
 }
@@ -75,6 +77,9 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   if (result.stoppedReason === "iteration_limit") {
     options.outputChannel.appendLine("Agent loop hit the iteration limit.");
   }
+  // Everything the loop appended beyond the seed (assistant tool-call turns,
+  // tool results, final answer) is the new history to persist for next turn.
+  options.onPersist?.(result.messages.slice(options.messages.length));
   return result.text;
 }
 

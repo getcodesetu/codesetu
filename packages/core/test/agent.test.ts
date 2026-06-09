@@ -28,6 +28,7 @@ import {
   TODO_WRITE_TOOL,
   WRITE_TOOL,
   runAgentLoop,
+  sanitizeToolMessages,
   type AgentEvent,
   type AgentHost,
   type ChatMessage,
@@ -282,6 +283,45 @@ describe("agent tools", () => {
     expect(result.content).toContain("boom");
     expect(result.content).toContain("exit code: 1");
     expect(host.execCalls).toEqual(["false"]);
+  });
+});
+
+describe("sanitizeToolMessages", () => {
+  const assistantCall: ChatMessage = {
+    role: "assistant",
+    content: "",
+    tool_calls: [{ id: "t1", type: "function", function: { name: "read_file", arguments: "{}" } }],
+  };
+  const toolResult: ChatMessage = { role: "tool", tool_call_id: "t1", content: "ok" };
+
+  it("keeps a complete tool-call/result pair", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "hi" },
+      assistantCall,
+      toolResult,
+      { role: "assistant", content: "done" },
+    ];
+    expect(sanitizeToolMessages(messages)).toHaveLength(4);
+  });
+
+  it("drops an orphan tool message whose call was trimmed away", () => {
+    const messages: ChatMessage[] = [
+      toolResult, // its assistant turn was trimmed off the front
+      { role: "user", content: "next" },
+    ];
+    const result = sanitizeToolMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.role).toBe("user");
+  });
+
+  it("drops a dangling assistant tool_calls turn with no result", () => {
+    const messages: ChatMessage[] = [
+      { role: "user", content: "hi" },
+      assistantCall, // result was trimmed off the end
+    ];
+    const result = sanitizeToolMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.role).toBe("user");
   });
 });
 
