@@ -24,7 +24,133 @@ import * as vscode from "vscode";
  * can't reach. These are read-only, so they're auto-approved by the loop.
  */
 export function createVscodeNativeTools(root: string | undefined): AgentTool[] {
-  return [createGetDiagnosticsTool(root)];
+  return [
+    createGetDiagnosticsTool(root),
+    createFindSymbolTool(root),
+    createFindReferencesTool(root),
+  ];
+}
+
+/** Cap navigation results so a popular symbol can't flood the model's context. */
+const MAX_SYMBOL_HITS = 50;
+const MAX_REFERENCES = 100;
+
+function displayPath(uri: vscode.Uri, root: string | undefined): string {
+  return root === undefined ? uri.fsPath : path.relative(root, uri.fsPath);
+}
+
+function createFindSymbolTool(root: string | undefined): AgentTool {
+  return {
+    name: "find_symbol",
+    description:
+      "Find where a symbol (class, function, method, variable…) is declared by " +
+      "name, across the whole workspace, using the language server. Faster and " +
+      "more precise than grep for 'where is X defined'.",
+    risk: "safe",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["query"],
+      properties: {
+        query: { type: "string", description: "Symbol name (or part of it) to search for." },
+      },
+    },
+    async execute(args) {
+      const query = typeof args.query === "string" ? args.query.trim() : "";
+      if (query.length === 0) {
+        return { content: 'Missing required argument "query".', isError: true };
+      }
+      const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+        "vscode.executeWorkspaceSymbolProvider",
+        query,
+      );
+      if (symbols === undefined || symbols.length === 0) {
+        return { content: `No symbols matching "${query}".` };
+      }
+      const shown = symbols.slice(0, MAX_SYMBOL_HITS);
+      const lines = shown.map(
+        (symbol) =>
+          `${symbol.name} [${symbolKindLabel(symbol.kind)}] — ` +
+          `${displayPath(symbol.location.uri, root)}:${symbol.location.range.start.line + 1}`,
+      );
+      const more =
+        symbols.length > shown.length ? `\n... and ${symbols.length - shown.length} more` : "";
+      return { content: lines.join("\n") + more };
+    },
+  };
+}
+
+function createFindReferencesTool(root: string | undefined): AgentTool {
+  return {
+    name: "find_references",
+    description:
+      "Find all references (usages) of a symbol by name using the language " +
+      "server — e.g. who calls a function. Resolves the symbol's definition " +
+      "first, then lists the call sites.",
+    risk: "safe",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["symbol"],
+      properties: {
+        symbol: { type: "string", description: "Name of the symbol to find usages of." },
+      },
+    },
+    async execute(args) {
+      const symbolName = typeof args.symbol === "string" ? args.symbol.trim() : "";
+      if (symbolName.length === 0) {
+        return { content: 'Missing required argument "symbol".', isError: true };
+      }
+      const symbols = await vscode.commands.executeCommand<vscode.SymbolInformation[]>(
+        "vscode.executeWorkspaceSymbolProvider",
+        symbolName,
+      );
+      const match =
+        symbols?.find((symbol) => symbol.name === symbolName) ?? (symbols ? symbols[0] : undefined);
+      if (match === undefined) {
+        return { content: `Could not locate a symbol named "${symbolName}".` };
+      }
+      const references = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        match.location.uri,
+        match.location.range.start,
+      );
+      const resolvedAt = `${displayPath(match.location.uri, root)}:${match.location.range.start.line + 1}`;
+      if (references === undefined || references.length === 0) {
+        return { content: `No references to ${match.name} (resolved at ${resolvedAt}).` };
+      }
+      const shown = references.slice(0, MAX_REFERENCES);
+      const lines = shown.map(
+        (reference) => `${displayPath(reference.uri, root)}:${reference.range.start.line + 1}`,
+      );
+      const more =
+        references.length > shown.length
+          ? `\n... and ${references.length - shown.length} more`
+          : "";
+      return {
+        content: `References to ${match.name} (resolved at ${resolvedAt}):\n${lines.join("\n")}${more}`,
+      };
+    },
+  };
+}
+
+function symbolKindLabel(kind: vscode.SymbolKind): string {
+  const labels: Partial<Record<vscode.SymbolKind, string>> = {
+    [vscode.SymbolKind.Class]: "class",
+    [vscode.SymbolKind.Interface]: "interface",
+    [vscode.SymbolKind.Method]: "method",
+    [vscode.SymbolKind.Function]: "function",
+    [vscode.SymbolKind.Constructor]: "constructor",
+    [vscode.SymbolKind.Field]: "field",
+    [vscode.SymbolKind.Property]: "property",
+    [vscode.SymbolKind.Variable]: "variable",
+    [vscode.SymbolKind.Constant]: "constant",
+    [vscode.SymbolKind.Enum]: "enum",
+    [vscode.SymbolKind.Struct]: "struct",
+    [vscode.SymbolKind.Module]: "module",
+    [vscode.SymbolKind.Namespace]: "namespace",
+  };
+  return labels[kind] ?? "symbol";
 }
 
 function createGetDiagnosticsTool(root: string | undefined): AgentTool {
