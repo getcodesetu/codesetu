@@ -23,6 +23,8 @@ import {
   isPlanModeApproval,
   routeSkills,
   sanitizeToolMessages,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type AudioBlob,
   type ChatCompletionRequest,
   type ChatMessage,
@@ -140,6 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
     );
 
+    outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
     if (requestContext?.agentMode === true) {
       return sendAgentChatRequest(
         providerMessages,
@@ -152,6 +155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         routed.selected,
         requestContext?.persistMessages,
         requestContext?.signal,
+        requestContext?.requestApproval,
       );
     }
 
@@ -345,6 +349,7 @@ async function sendAgentChatRequest(
   pinnedSkills: readonly WorkspaceInstruction[] = [],
   persistMessages?: (messages: ChatMessage[]) => void,
   signal?: AbortSignal,
+  requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -381,6 +386,7 @@ async function sendAgentChatRequest(
       ...(onChunk === undefined ? {} : { onChunk }),
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       ...(signal === undefined ? {} : { signal }),
+      ...(requestApproval === undefined ? {} : { requestApproval }),
       outputChannel,
     });
   } catch (error: unknown) {

@@ -103,13 +103,23 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
       return { messages, text: finalText, stoppedReason: "aborted" };
     }
 
-    const completion = await provider.chat({
-      messages,
-      tools: toolSchemas,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
-      ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
-    });
+    let completion;
+    try {
+      completion = await provider.chat({
+        messages,
+        tools: toolSchemas,
+        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+        ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+        ...(signal === undefined ? {} : { signal }),
+      });
+    } catch (error) {
+      // Hitting Stop aborts the in-flight request — treat that as a clean stop.
+      if (signal?.aborted) {
+        return { messages, text: finalText, stoppedReason: "aborted" };
+      }
+      throw error;
+    }
 
     const message = completion.choices[0]?.message;
     if (message === undefined) {
@@ -117,17 +127,36 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     }
 
     const assistantText = typeof message.content === "string" ? message.content : "";
-    const toolCalls = extractToolCalls(message.tool_calls);
+    let toolCalls = extractToolCalls(message.tool_calls);
+    let structuredToolCalls: ChatCompletionMessageToolCall[] | undefined =
+      message.tool_calls ?? undefined;
+
+    // Fallback: many local models (via Ollama / llama.cpp) emit a tool call as
+    // JSON in the message content instead of the structured tool_calls field.
+    // Recover it so agent mode works with those models too.
+    let usedContentFallback = false;
+    if (toolCalls.length === 0 && assistantText.trim().length > 0) {
+      const recovered = parseToolCallsFromContent(assistantText, new Set(toolsByName.keys()));
+      if (recovered.length > 0) {
+        toolCalls = recovered;
+        usedContentFallback = true;
+        structuredToolCalls = recovered.map((call) => ({
+          id: call.id,
+          type: "function" as const,
+          function: { name: call.name, arguments: call.arguments },
+        }));
+      }
+    }
 
     messages.push({
       role: "assistant",
-      content: assistantText,
-      ...(message.tool_calls && message.tool_calls.length > 0
-        ? { tool_calls: message.tool_calls }
+      content: usedContentFallback ? "" : assistantText,
+      ...(structuredToolCalls && structuredToolCalls.length > 0
+        ? { tool_calls: structuredToolCalls }
         : {}),
     });
 
-    if (assistantText.length > 0) {
+    if (!usedContentFallback && assistantText.length > 0) {
       finalText = assistantText;
       onEvent?.({ type: "assistant_text", text: assistantText });
     }
@@ -223,9 +252,12 @@ interface ParsedToolCall {
 }
 
 function extractToolCalls(
-  toolCalls: ChatCompletionMessageToolCall[] | undefined,
+  toolCalls: ChatCompletionMessageToolCall[] | undefined | null,
 ): ParsedToolCall[] {
-  if (toolCalls === undefined) {
+  // Many OpenAI-compatible providers send `tool_calls: null` on a no-tool turn
+  // (OpenAI omits it). Guard for anything that isn't an array so we never try to
+  // iterate null/undefined.
+  if (!Array.isArray(toolCalls)) {
     return [];
   }
   const parsed: ParsedToolCall[] = [];
@@ -239,6 +271,77 @@ function extractToolCalls(
     }
   }
   return parsed;
+}
+
+/**
+ * Recover tool calls a model emitted as text in the message content instead of
+ * the structured `tool_calls` field — common with local models served via
+ * Ollama / llama.cpp. Handles `<tool_call>{…}</tool_call>` blocks, fenced JSON,
+ * and a bare JSON object. Only objects whose `name` matches a known tool and
+ * that carry an `arguments`/`parameters` field are accepted, to avoid mistaking
+ * a normal JSON answer for a tool call.
+ */
+export function parseToolCallsFromContent(
+  content: string,
+  knownToolNames: Set<string>,
+): ParsedToolCall[] {
+  const results: ParsedToolCall[] = [];
+
+  const tryAdd = (jsonText: string): void => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch {
+      return;
+    }
+    if (typeof parsed !== "object" || parsed === null) {
+      return;
+    }
+    const object = parsed as Record<string, unknown>;
+    const name = typeof object.name === "string" ? object.name : undefined;
+    if (name === undefined || !knownToolNames.has(name)) {
+      return;
+    }
+    if (!("arguments" in object) && !("parameters" in object)) {
+      return;
+    }
+    const rawArgs = object.arguments ?? object.parameters ?? {};
+    const argumentsText = typeof rawArgs === "string" ? rawArgs : JSON.stringify(rawArgs);
+    results.push({ id: `fallback_${results.length}`, name, arguments: argumentsText });
+  };
+
+  // 1. <tool_call>…</tool_call> blocks (Qwen / Hermes style).
+  const tagPattern = /<tool_call>\s*([\s\S]*?)<\/tool_call>/g;
+  let tagMatch: RegExpExecArray | null;
+  let sawTag = false;
+  while ((tagMatch = tagPattern.exec(content)) !== null) {
+    sawTag = true;
+    if (tagMatch[1] !== undefined) {
+      tryAdd(tagMatch[1].trim());
+    }
+  }
+  if (sawTag) {
+    return results;
+  }
+
+  // 2. Fenced ```json … ``` (or plain ```) code blocks.
+  const fencePattern = /```(?:json)?\s*([\s\S]*?)```/g;
+  let fenceMatch: RegExpExecArray | null;
+  while ((fenceMatch = fencePattern.exec(content)) !== null) {
+    if (fenceMatch[1] !== undefined) {
+      tryAdd(fenceMatch[1].trim());
+    }
+  }
+  if (results.length > 0) {
+    return results;
+  }
+
+  // 3. The whole content is a single JSON object.
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{")) {
+    tryAdd(trimmed);
+  }
+  return results;
 }
 
 function parseArguments(raw: string): Record<string, unknown> {

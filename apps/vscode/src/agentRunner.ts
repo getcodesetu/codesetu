@@ -42,10 +42,17 @@ import { createVscodeNativeTools } from "./agentNativeTools";
  * models CodeSetu targets.
  */
 export const AGENT_MODE_SYSTEM_NOTE =
-  "Agent mode is on. You can read and modify the workspace and run shell commands " +
-  "using the provided tools (read_file, write_file, edit_file, bash). Prefer making " +
-  "the change directly and verifying it (e.g. run tests) over only describing it. " +
-  "File edits and commands require the user's approval before they run.";
+  "Agent mode is on. You can read and modify the workspace and run shell commands using the " +
+  "provided tools (read_file, write_file, edit_file, bash, and the read-only search tools). " +
+  "When the user asks you to create, change, scaffold, or run something, DO IT by calling the " +
+  "tools. Do NOT give setup tutorials, do NOT tell the user to use an external website, IDE, or " +
+  "generator (e.g. Spring Initializr), do NOT print files or commands for the user to copy, and " +
+  "never claim you did something you did not actually do via a tool. To create a project or " +
+  "folder, call write_file once per file (it creates any missing parent directories). Create the " +
+  "files a project needs BEFORE building or running it — do not run build/run commands (mvn, " +
+  "npm, gradle, etc.) until those files exist. Take one action at a time and use the real tool " +
+  "results to decide the next step. File edits and shell commands require the user's approval " +
+  "before they run.";
 
 export interface RunAgentTurnOptions {
   provider: LlmProvider;
@@ -57,6 +64,8 @@ export interface RunAgentTurnOptions {
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Receives the turn's new messages (tool turns + final answer) to persist. */
   onPersist?: (messages: ChatMessage[]) => void;
+  /** Inline approval handler; falls back to a native modal when omitted. */
+  requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
   outputChannel: vscode.OutputChannel;
   signal?: AbortSignal;
 }
@@ -68,22 +77,42 @@ export interface RunAgentTurnOptions {
 export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string> {
   const host = createNodeAgentHost(options.workspaceRoot);
   const policy = await loadAgentPolicy(options.workspaceRoot);
+  const tools = [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)];
+  let toolCallCount = 0;
+
+  options.outputChannel.appendLine(
+    `[agent] tool loop started — ${tools.length} tools, root=${options.workspaceRoot ?? "(none)"}`,
+  );
 
   const result = await runAgentLoop({
     provider: options.provider,
     messages: options.messages,
-    tools: [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)],
+    tools,
     host,
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
     ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
     ...(policy.maxIterations === undefined ? {} : { maxIterations: policy.maxIterations }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
-    requestApproval: (request) => requestToolApproval(request),
+    requestApproval: options.requestApproval ?? ((request) => requestToolApproval(request)),
     resolvePolicy: createBashCommandPolicy(policy),
-    onEvent: (event) => emitEvent(event, options.onChunk, options.outputChannel),
+    onEvent: (event) => {
+      if (event.type === "tool_call") {
+        toolCallCount += 1;
+      }
+      emitEvent(event, options.onChunk, options.outputChannel);
+    },
   });
 
+  options.outputChannel.appendLine(
+    `[agent] finished — stoppedReason=${result.stoppedReason}, toolCalls=${toolCallCount}`,
+  );
+  if (toolCallCount === 0) {
+    options.outputChannel.appendLine(
+      "[agent] the model returned an answer without calling any tool. " +
+        "It needs a model that reliably uses function/tool calling.",
+    );
+  }
   if (result.stoppedReason === "iteration_limit") {
     options.outputChannel.appendLine("Agent loop hit the iteration limit.");
   }

@@ -135,6 +135,7 @@ export {
   diffLines,
   formatDiagnostics,
   parseAgentPolicy,
+  parseToolCallsFromContent,
   GREP_TOOL,
   LIST_TOOL,
   MAX_GLOB_RESULTS,

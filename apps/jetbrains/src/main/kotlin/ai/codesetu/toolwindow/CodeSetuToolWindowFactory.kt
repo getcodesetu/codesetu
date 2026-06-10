@@ -34,6 +34,9 @@ import ai.codesetu.speech.AudioPayload
 import ai.codesetu.speech.CodeSetuSpeechClient
 import java.io.File
 import java.util.Base64
+import java.util.UUID
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
@@ -104,6 +107,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private var inFlight = false
   // Set when the user hits Stop; the agent loop checks it between steps.
   private val cancelRequested = AtomicBoolean(false)
+  // In-flight inline tool approvals, keyed by request id, awaiting a webview click.
+  private val pendingApprovals = ConcurrentHashMap<String, CompletableFuture<ApprovalDecision>>()
 
   val component: JComponent
     get() = browser.component
@@ -157,7 +162,20 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         obj["planMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatPlanModeOn = it }
         obj["agentMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatAgentModeOn = it }
       }
-      "cancel" -> cancelRequested.set(true)
+      "cancel" -> {
+        cancelRequested.set(true)
+        resolvePendingApprovals(ApprovalDecision.DENY)
+      }
+      "toolApprovalResponse" -> {
+        val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return
+        val decision =
+          when (obj["decision"]?.jsonPrimitive?.contentOrNull) {
+            "approve" -> ApprovalDecision.APPROVE
+            "approve_always" -> ApprovalDecision.APPROVE_ALWAYS
+            else -> ApprovalDecision.DENY
+          }
+        pendingApprovals.remove(id)?.complete(decision)
+      }
       "permissionDenied" -> {
         val reason = obj["reason"]?.jsonPrimitive?.contentOrNull ?: "other"
         val detail = obj["message"]?.jsonPrimitive?.contentOrNull
@@ -500,26 +518,35 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     finish()
   }
 
-  /** Modal approval gate for a mutating tool call (must run on the EDT). */
+  /**
+   * Inline approval gate: render a card in the chat and block the (background)
+   * agent thread until the user clicks a button in the webview. Replaces the
+   * native modal dialog. Runs off the EDT — `future.get()` parks the loop.
+   */
   private fun requestToolApproval(request: ApprovalRequest): ApprovalDecision {
-    var decision = ApprovalDecision.DENY
-    ApplicationManager.getApplication().invokeAndWait {
-      val options = arrayOf("Approve", "Approve for session", "Deny")
-      val choice = Messages.showDialog(
-        project,
-        describeApproval(request),
-        "CodeSetu wants to run \"${request.tool.name}\"",
-        options,
-        0,
-        Messages.getWarningIcon(),
-      )
-      decision = when (options.getOrNull(choice)) {
-        "Approve" -> ApprovalDecision.APPROVE
-        "Approve for session" -> ApprovalDecision.APPROVE_ALWAYS
-        else -> ApprovalDecision.DENY
-      }
+    val id = UUID.randomUUID().toString()
+    val future = CompletableFuture<ApprovalDecision>()
+    pendingApprovals[id] = future
+    push(
+      message("toolApproval") {
+        put("id", id)
+        put("tool", request.tool.name)
+        put("detail", describeApproval(request))
+      },
+    )
+    return try {
+      future.get()
+    } catch (error: Exception) {
+      ApprovalDecision.DENY
+    } finally {
+      pendingApprovals.remove(id)
     }
-    return decision
+  }
+
+  /** Settle any awaiting approvals (e.g. on Stop or panel close) so the loop unblocks. */
+  private fun resolvePendingApprovals(decision: ApprovalDecision) {
+    pendingApprovals.values.forEach { it.complete(decision) }
+    pendingApprovals.clear()
   }
 
   private fun describeApproval(request: ApprovalRequest): String =
@@ -723,6 +750,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   }
 
   override fun dispose() {
+    resolvePendingApprovals(ApprovalDecision.DENY)
     Disposer.dispose(jsQuery)
     Disposer.dispose(browser)
   }

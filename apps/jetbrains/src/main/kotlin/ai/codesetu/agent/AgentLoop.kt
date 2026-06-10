@@ -3,18 +3,28 @@ package ai.codesetu.agent
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.Tool
 import ai.codesetu.model.ToolCall
+import ai.codesetu.model.ToolCallFunction
 import ai.codesetu.model.ToolFunction
 import ai.codesetu.provider.CodeSetuProviderClient
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /** A short addendum to the system prompt that turns chat into an agent. */
 const val AGENT_MODE_SYSTEM_NOTE =
-  "Agent mode is on. You can read and modify the workspace and run shell commands " +
-    "using the provided tools (read_file, write_file, edit_file, bash). Prefer making " +
-    "the change directly and verifying it (e.g. run tests) over only describing it. " +
-    "File edits and commands require the user's approval before they run."
+  "Agent mode is on. You can read and modify the workspace and run shell commands using the " +
+    "provided tools (read_file, write_file, edit_file, bash, and the read-only search tools). " +
+    "When the user asks you to create, change, scaffold, or run something, DO IT by calling the " +
+    "tools. Do NOT give setup tutorials, do NOT tell the user to use an external website, IDE, or " +
+    "generator (e.g. Spring Initializr), do NOT print files or commands for the user to copy, and " +
+    "never claim you did something you did not actually do via a tool. To create a project or " +
+    "folder, call write_file once per file (it creates any missing parent directories). Create the " +
+    "files a project needs BEFORE building or running it — do not run build/run commands (mvn, " +
+    "npm, gradle, etc.) until those files exist. Take one action at a time and use the real tool " +
+    "results to decide the next step. File edits and shell commands require the user's approval " +
+    "before they run."
 
 const val DEFAULT_MAX_ITERATIONS = 16
 
@@ -88,6 +98,57 @@ fun sanitizeToolMessages(messages: List<ChatMessage>): List<ChatMessage> {
 }
 
 /**
+ * Recover tool calls a model emitted as text in the message content instead of
+ * the structured tool_calls field — common with local models via Ollama /
+ * llama.cpp. Handles <tool_call>{…}</tool_call> blocks, fenced JSON, and a bare
+ * JSON object. Only objects whose name matches a known tool and that carry an
+ * arguments/parameters field are accepted. Mirrors parseToolCallsFromContent in
+ * @codesetu/core.
+ */
+fun parseToolCallsFromContent(
+  content: String,
+  knownToolNames: Set<String>,
+  json: Json,
+): List<ToolCall> {
+  val results = ArrayList<ToolCall>()
+
+  fun tryAdd(jsonText: String) {
+    val obj =
+      try {
+        json.parseToJsonElement(jsonText).jsonObject
+      } catch (error: Exception) {
+        return
+      }
+    val name = (obj["name"] as? JsonPrimitive)?.contentOrNull ?: return
+    if (!knownToolNames.contains(name)) return
+    if (!obj.containsKey("arguments") && !obj.containsKey("parameters")) return
+    val argsElement = obj["arguments"] ?: obj["parameters"]
+    val argsText =
+      when (argsElement) {
+        is JsonPrimitive -> argsElement.contentOrNull ?: "{}"
+        null -> "{}"
+        else -> argsElement.toString()
+      }
+    results.add(
+      ToolCall(id = "fallback_${results.size}", type = "function", function = ToolCallFunction(name, argsText)),
+    )
+  }
+
+  val tagMatches = Regex("<tool_call>\\s*([\\s\\S]*?)</tool_call>").findAll(content).toList()
+  if (tagMatches.isNotEmpty()) {
+    tagMatches.forEach { tryAdd(it.groupValues[1].trim()) }
+    return results
+  }
+
+  Regex("```(?:json)?\\s*([\\s\\S]*?)```").findAll(content).forEach { tryAdd(it.groupValues[1].trim()) }
+  if (results.isNotEmpty()) return results
+
+  val trimmed = content.trim()
+  if (trimmed.startsWith("{")) tryAdd(trimmed)
+  return results
+}
+
+/**
  * Drive the provider through a tool-calling loop: ask the model, run any tool
  * calls (gating mutating ones behind [requestApproval]), feed results back, and
  * repeat until the model answers without a tool call or the iteration cap trips.
@@ -120,16 +181,27 @@ fun runAgentLoop(
     }
     val message = client.chatWithTools(messages, toolSchemas, maxTokens, temperature)
     val assistantText = message.content ?: message.refusal ?: ""
-    val toolCalls = message.toolCalls.orEmpty().filter { it.type == "function" }
+    var toolCalls = message.toolCalls.orEmpty().filter { it.type == "function" }
+
+    // Fallback: many local models (via Ollama / llama.cpp) emit a tool call as
+    // JSON in the message content instead of the structured tool_calls field.
+    var usedContentFallback = false
+    if (toolCalls.isEmpty() && assistantText.isNotBlank()) {
+      val recovered = parseToolCallsFromContent(assistantText, toolsByName.keys, json)
+      if (recovered.isNotEmpty()) {
+        toolCalls = recovered
+        usedContentFallback = true
+      }
+    }
 
     messages.add(
       ChatMessage(
         role = "assistant",
-        content = assistantText,
+        content = if (usedContentFallback) "" else assistantText,
         toolCalls = toolCalls.ifEmpty { null },
       ),
     )
-    if (assistantText.isNotEmpty()) {
+    if (!usedContentFallback && assistantText.isNotEmpty()) {
       finalText = assistantText
       onEvent(AgentEvent.AssistantText(assistantText))
     }

@@ -114,6 +114,63 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
       }
 
+      .approval-card {
+        background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+        border: 1px solid var(--vscode-focusBorder, #555);
+        white-space: normal;
+      }
+      .approval-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .approval-detail {
+        margin: 0 0 10px;
+        max-height: 240px;
+        overflow: auto;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 12px;
+        white-space: pre;
+      }
+      .approval-detail .diff-add {
+        color: var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+      }
+      .approval-detail .diff-del {
+        color: var(--vscode-gitDecoration-deletedResourceForeground, #f44336);
+      }
+      .approval-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .approval-btn {
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .approval-btn.primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+      }
+      .approval-btn.danger {
+        background: transparent;
+        color: var(--vscode-errorForeground, #f44);
+        border-color: currentColor;
+      }
+      .approval-btn:not(.primary):not(.danger) {
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, inherit);
+        border-color: var(--vscode-button-border, var(--vscode-widget-border, #666));
+      }
+      .approval-status {
+        font-size: 12px;
+        opacity: 0.85;
+      }
+
       .assistant {
         background: var(--vscode-editor-inactiveSelectionBackground);
         border: 1px solid rgba(127, 127, 127, 0.08);
@@ -1265,6 +1322,57 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         return message;
       }
 
+      // Inline tool-approval card: replaces the native modal so the user
+      // approves/denies a mutating tool call right in the chat.
+      function appendApprovalCard(id, tool, detail) {
+        const card = document.createElement("article");
+        card.className = "message approval-card";
+
+        const title = document.createElement("div");
+        title.className = "approval-title";
+        title.textContent = "Allow " + tool + "?";
+        card.appendChild(title);
+
+        const pre = document.createElement("pre");
+        pre.className = "approval-detail";
+        for (const line of String(detail).split("\\n")) {
+          const span = document.createElement("span");
+          if (line.startsWith("+")) span.className = "diff-add";
+          else if (line.startsWith("-")) span.className = "diff-del";
+          span.textContent = line + "\\n";
+          pre.appendChild(span);
+        }
+        card.appendChild(pre);
+
+        const actions = document.createElement("div");
+        actions.className = "approval-actions";
+        const respond = (decision, label) => {
+          vscode.postMessage({ type: "toolApprovalResponse", id, decision });
+          actions.remove();
+          const status = document.createElement("div");
+          status.className = "approval-status";
+          status.textContent = label;
+          card.appendChild(status);
+        };
+        const makeButton = (label, decision, statusLabel, cls) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "approval-btn " + cls;
+          button.textContent = label;
+          button.addEventListener("click", () => respond(decision, statusLabel));
+          return button;
+        };
+        actions.appendChild(makeButton("Approve", "approve", "✓ Approved", "primary"));
+        actions.appendChild(
+          makeButton("Approve for session", "approve_always", "✓ Approved for session", ""),
+        );
+        actions.appendChild(makeButton("Deny", "deny", "🚫 Denied", "danger"));
+        card.appendChild(actions);
+
+        transcript.appendChild(card);
+        card.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
       // Split answer text from reasoning the model emitted inline as
       // <think>…</think>. Handles multiple blocks and an unclosed trailing tag
       // (everything after it is thinking until </think> arrives). Runs on the
@@ -1594,6 +1702,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "error") {
           appendMessage("error", message.text);
+        }
+
+        if (message.type === "toolApproval") {
+          appendApprovalCard(message.id, message.tool, message.detail || "");
         }
 
         if (message.type === "modelLabel") {

@@ -31,6 +31,7 @@ import {
   diffLines,
   formatDiagnostics,
   parseAgentPolicy,
+  parseToolCallsFromContent,
   runAgentLoop,
   sanitizeToolMessages,
   type AgentEvent,
@@ -450,6 +451,57 @@ describe("agent policy", () => {
   });
 });
 
+describe("parseToolCallsFromContent", () => {
+  const known = new Set(["bash", "write_file"]);
+
+  it("recovers a bare JSON tool call from content", () => {
+    const calls = parseToolCallsFromContent(
+      '{"name": "bash", "arguments": {"command": "ls"}}',
+      known,
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.name).toBe("bash");
+    expect(JSON.parse(calls[0]!.arguments)).toEqual({ command: "ls" });
+  });
+
+  it("recovers <tool_call> blocks", () => {
+    const calls = parseToolCallsFromContent(
+      'sure:\n<tool_call>{"name":"write_file","arguments":{"path":"a","content":"x"}}</tool_call>',
+      known,
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.name).toBe("write_file");
+  });
+
+  it("ignores prose and unknown tool names", () => {
+    expect(parseToolCallsFromContent("Here is how to do it...", known)).toEqual([]);
+    expect(parseToolCallsFromContent('{"name":"unknown","arguments":{}}', known)).toEqual([]);
+    // name without arguments/parameters is not treated as a call
+    expect(parseToolCallsFromContent('{"name":"bash"}', known)).toEqual([]);
+  });
+});
+
+describe("runAgentLoop content-fallback", () => {
+  it("executes a tool the model emitted as content JSON (no structured tool_calls)", async () => {
+    const host = new FakeHost();
+    const callAsContent = textCompletion(
+      '{"name": "write_file", "arguments": {"path": "x.txt", "content": "hi"}}',
+    );
+    const provider = scriptedProvider([callAsContent, textCompletion("Done.")]);
+
+    const result = await runAgentLoop({
+      provider,
+      messages: baseMessages,
+      tools: [...DEFAULT_AGENT_TOOLS],
+      host,
+      requestApproval: approveAll,
+    });
+
+    expect(host.files.get("x.txt")).toBe("hi");
+    expect(result.text).toBe("Done.");
+  });
+});
+
 describe("runAgentLoop", () => {
   it("runs a tool call then returns the final answer", async () => {
     const host = new FakeHost();
@@ -548,6 +600,25 @@ describe("runAgentLoop", () => {
 
     expect(result.stoppedReason).toBe("iteration_limit");
     expect(events.at(-1)).toEqual({ type: "iteration_limit", limit: 3 });
+  });
+
+  it("treats a null tool_calls field as no tool calls (provider quirk)", async () => {
+    const host = new FakeHost();
+    // Some OpenAI-compatible providers send `tool_calls: null` instead of omitting it.
+    const completion = textCompletion("All set.");
+    (completion.choices[0]!.message as { tool_calls?: unknown }).tool_calls = null;
+    const provider = scriptedProvider([completion]);
+
+    const result = await runAgentLoop({
+      provider,
+      messages: baseMessages,
+      tools: [...DEFAULT_AGENT_TOOLS],
+      host,
+      requestApproval: approveAll,
+    });
+
+    expect(result.stoppedReason).toBe("completed");
+    expect(result.text).toBe("All set.");
   });
 
   it("feeds an error back to the model for an unknown tool", async () => {

@@ -18,6 +18,8 @@ import crypto from "node:crypto";
 
 import {
   BUILTIN_SKILLS_FALLBACK,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type AudioBlob,
   type BuiltinSkill,
   type ChatMessage,
@@ -57,6 +59,8 @@ export interface ChatResponderContext {
   agentMode?: boolean;
   /** Aborts when the user hits Stop; the agent loop checks it between steps. */
   signal?: AbortSignal;
+  /** Approve a mutating tool call inline in the chat (replaces the native modal). */
+  requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
@@ -140,6 +144,8 @@ export class ChatPanel {
   private currentAgentMode = false;
   // Aborts the in-flight turn when the user hits Stop.
   private inFlightController: AbortController | undefined;
+  // Pending inline tool approvals, keyed by request id, awaiting a webview click.
+  private readonly pendingApprovals = new Map<string, (decision: ApprovalDecision) => void>();
   // Host-side mic capture for dictation (the webview can't reach the mic).
   private readonly dictation: DictationController;
 
@@ -161,6 +167,7 @@ export class ChatPanel {
       void this.handleMessage(message);
     });
     this.panel.onDidDispose(() => {
+      this.resolvePendingApprovals("deny");
       this.dictation.dispose();
       ChatPanel.currentPanel = undefined;
     });
@@ -240,6 +247,16 @@ export class ChatPanel {
 
     if (isCancelRequest(message)) {
       this.inFlightController?.abort();
+      this.resolvePendingApprovals("deny");
+      return;
+    }
+
+    if (isToolApprovalResponse(message)) {
+      const resolve = this.pendingApprovals.get(message.id);
+      if (resolve !== undefined) {
+        this.pendingApprovals.delete(message.id);
+        resolve(message.decision);
+      }
       return;
     }
 
@@ -368,6 +385,28 @@ export class ChatPanel {
     });
   }
 
+  /** Ask the user to approve a mutating tool call via an inline card in the chat. */
+  private requestToolApproval(request: ApprovalRequest): Promise<ApprovalDecision> {
+    const id = crypto.randomUUID();
+    return new Promise<ApprovalDecision>((resolve) => {
+      this.pendingApprovals.set(id, resolve);
+      void this.panel.webview.postMessage({
+        type: "toolApproval",
+        id,
+        tool: request.tool.name,
+        detail: approvalDetail(request),
+      });
+    });
+  }
+
+  /** Settle any awaiting approvals (e.g. on Stop or panel close) so the loop unblocks. */
+  private resolvePendingApprovals(decision: ApprovalDecision): void {
+    for (const resolve of this.pendingApprovals.values()) {
+      resolve(decision);
+    }
+    this.pendingApprovals.clear();
+  }
+
   private async submitMessage(
     rawText: string,
     options: SendUserMessageOptions = {},
@@ -404,6 +443,7 @@ export class ChatPanel {
         planMode: options.planMode ?? this.currentPlanMode,
         agentMode: options.agentMode ?? this.currentAgentMode,
         signal: controller.signal,
+        requestApproval: (request) => this.requestToolApproval(request),
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         persistMessages: (messages) => {
           persistedMessages = messages;
@@ -449,7 +489,7 @@ export class ChatPanel {
       this.outputChannel.appendLine(`Chat request failed: ${formatErrorMessage(error)}`);
       void this.panel.webview.postMessage({
         type: "error",
-        text: "CodeSetu could not complete that request. Check your provider settings and API key.",
+        text: `CodeSetu could not complete that request: ${formatErrorMessage(error)}`,
       });
     } finally {
       this.inFlight = false;
@@ -570,6 +610,38 @@ function isCancelRequest(message: unknown): boolean {
     message !== null &&
     (message as { type?: unknown }).type === "cancel"
   );
+}
+
+interface ToolApprovalResponse {
+  type: "toolApprovalResponse";
+  id: string;
+  decision: ApprovalDecision;
+}
+
+function isToolApprovalResponse(message: unknown): message is ToolApprovalResponse {
+  if (typeof message !== "object" || message === null) {
+    return false;
+  }
+  const candidate = message as Partial<ToolApprovalResponse>;
+  return (
+    candidate.type === "toolApprovalResponse" &&
+    typeof candidate.id === "string" &&
+    (candidate.decision === "approve" ||
+      candidate.decision === "approve_always" ||
+      candidate.decision === "deny")
+  );
+}
+
+/** Build the detail shown in the inline approval card. */
+function approvalDetail(request: ApprovalRequest): string {
+  if (request.preview !== undefined && request.preview.length > 0) {
+    return request.preview;
+  }
+  const command = typeof request.args.command === "string" ? request.args.command : undefined;
+  if (request.tool.name === "bash" && command !== undefined) {
+    return `Run: ${command}`;
+  }
+  return request.rawArguments;
 }
 
 function isPermissionDeniedRequest(message: unknown): message is PermissionDeniedRequest {

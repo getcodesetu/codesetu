@@ -51,6 +51,7 @@ export {
 } from "./tools.js";
 export {
   DEFAULT_MAX_ITERATIONS,
+  parseToolCallsFromContent,
   runAgentLoop,
   sanitizeToolMessages,
   type AgentEvent,

@@ -36,11 +36,21 @@ export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER = "openai-compatible";
 export const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:8000/v1";
 export const DEFAULT_OPENAI_COMPATIBLE_MODEL = "local-code-model";
 
+export interface RequestOptions {
+  signal?: AbortSignal;
+}
+
 export interface OpenAICompatibleClient {
   chat: {
     completions: {
-      create(params: ChatCompletionCreateParamsNonStreaming): Promise<ChatCompletion>;
-      create(params: ChatCompletionCreateParamsStreaming): Promise<ChatCompletionChunkStream>;
+      create(
+        params: ChatCompletionCreateParamsNonStreaming,
+        options?: RequestOptions,
+      ): Promise<ChatCompletion>;
+      create(
+        params: ChatCompletionCreateParamsStreaming,
+        options?: RequestOptions,
+      ): Promise<ChatCompletionChunkStream>;
     };
   };
   completions: {
@@ -99,7 +109,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
   public chat(request: ChatCompletionRequest): Promise<ChatCompletion> {
     const params: ChatCompletionCreateParamsNonStreaming = this.buildChatParams(request);
 
-    return this.client.chat.completions.create(params);
+    return this.client.chat.completions.create(params, requestOptions(request));
   }
 
   public async *streamChat(request: ChatCompletionRequest): ChatCompletionStream {
@@ -107,7 +117,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
       ...this.buildChatParams(request),
       stream: true,
     };
-    const stream = await this.client.chat.completions.create(params);
+    const stream = await this.client.chat.completions.create(params, requestOptions(request));
 
     for await (const chunk of stream) {
       const piece = readChunk(chunk);
@@ -191,6 +201,10 @@ function readChunk(chunk: ChatCompletionChunk): ChatStreamChunk {
   }
 
   return piece;
+}
+
+function requestOptions(request: ChatCompletionRequest): RequestOptions | undefined {
+  return request.signal === undefined ? undefined : { signal: request.signal };
 }
 
 function firstConfigValue(...values: Array<string | undefined>): string | undefined {

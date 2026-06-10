@@ -54,6 +54,8 @@ export interface ChatCompletionRequest {
   maxTokens?: number;
   tools?: ChatCompletionTool[];
   toolChoice?: ChatCompletionCreateParamsNonStreaming["tool_choice"];
+  /** Abort the in-flight HTTP request (e.g. when the user hits Stop). */
+  signal?: AbortSignal;
 }
 
 export interface FimCompletionRequest {
