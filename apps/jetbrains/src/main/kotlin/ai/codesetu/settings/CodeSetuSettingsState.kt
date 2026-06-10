@@ -29,6 +29,8 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     // survives panel reloads and IDE restarts. Also lets editor actions
     // (Explain selection etc.) inherit the user's current pick.
     var chatPlanModeOn: Boolean = false,
+    // Mirror of the Agent Mode toggle in the chat composer (tool-calling loop).
+    var chatAgentModeOn: Boolean = false,
   )
 
   private var state = State()

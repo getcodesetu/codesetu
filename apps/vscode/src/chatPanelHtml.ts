@@ -114,6 +114,63 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border));
       }
 
+      .approval-card {
+        background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+        border: 1px solid var(--vscode-focusBorder, #555);
+        white-space: normal;
+      }
+      .approval-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .approval-detail {
+        margin: 0 0 10px;
+        max-height: 240px;
+        overflow: auto;
+        padding: 8px 10px;
+        border-radius: 6px;
+        background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.1));
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 12px;
+        white-space: pre;
+      }
+      .approval-detail .diff-add {
+        color: var(--vscode-gitDecoration-addedResourceForeground, #4caf50);
+      }
+      .approval-detail .diff-del {
+        color: var(--vscode-gitDecoration-deletedResourceForeground, #f44336);
+      }
+      .approval-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .approval-btn {
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .approval-btn.primary {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+      }
+      .approval-btn.danger {
+        background: transparent;
+        color: var(--vscode-errorForeground, #f44);
+        border-color: currentColor;
+      }
+      .approval-btn:not(.primary):not(.danger) {
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, inherit);
+        border-color: var(--vscode-button-border, var(--vscode-widget-border, #666));
+      }
+      .approval-status {
+        font-size: 12px;
+        opacity: 0.85;
+      }
+
       .assistant {
         background: var(--vscode-editor-inactiveSelectionBackground);
         border: 1px solid rgba(127, 127, 127, 0.08);
@@ -679,6 +736,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 <span class="dot" aria-hidden="true"></span>
                 Plan
               </span>
+              <span
+                id="agent-mode-pill"
+                class="mode-pill"
+                data-active="false"
+                title="Agent Mode is active — the assistant can edit files and run commands (with your approval)"
+              >
+                <span class="dot" aria-hidden="true"></span>
+                Agent
+              </span>
             </div>
             <div class="toolbar-group secondary">
               <!--
@@ -717,6 +783,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="m5 12 7-7 7 7" />
                 </svg>
               </button>
+              <button
+                id="stop"
+                class="send-button"
+                type="button"
+                aria-label="Stop"
+                title="Stop"
+                hidden
+                style="display: none"
+              >
+                <svg class="composer-icon" data-icon="stop" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="7" y="7" width="10" height="10" rx="1.5" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -753,6 +832,22 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <label class="menu-row">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="agent" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3v3" />
+                  <rect x="5" y="6" width="14" height="12" rx="2" />
+                  <path d="M9 11h.01M15 11h.01M9 15h6" />
+                </svg>
+              </span>
+              Agent Mode
+            </span>
+            <span class="switch">
+              <input id="agent-mode" type="checkbox" />
+              <span class="switch-track"></span>
+            </span>
+          </label>
         </div>
         <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
         <div id="approve-row" class="approve-row" data-show="false">
@@ -767,12 +862,15 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       const form = document.getElementById("chat-form");
       const textarea = document.getElementById("message");
       const send = document.getElementById("send");
+      const stopButton = document.getElementById("stop");
       const transcript = document.getElementById("transcript");
       const composerMenuToggle = document.getElementById("composer-menu-toggle");
       const composerMenu = document.getElementById("composer-menu");
       const includeContext = document.getElementById("include-context");
       const planModeToggle = document.getElementById("plan-mode");
       const planModePill = document.getElementById("plan-mode-pill");
+      const agentModeToggle = document.getElementById("agent-mode");
+      const agentModePill = document.getElementById("agent-mode-pill");
       const approveRow = document.getElementById("approve-row");
       const approveRunButton = document.getElementById("approve-run");
       const modelChip = document.getElementById("model-chip");
@@ -789,6 +887,9 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       if (savedState.planMode === true) {
         planModeToggle.checked = true;
       }
+      if (savedState.agentMode === true) {
+        agentModeToggle.checked = true;
+      }
       if (savedState.includeContext === false) {
         includeContext.checked = false;
       }
@@ -796,31 +897,54 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       function persistState() {
         vscode.setState({
           planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
           includeContext: includeContext.checked,
         });
       }
 
-      function updatePlanModeUi() {
+      function updateModeUi() {
         planModePill.setAttribute("data-active", String(planModeToggle.checked));
+        agentModePill.setAttribute("data-active", String(agentModeToggle.checked));
         const showApprove = planModeToggle.checked && lastTurnWasPlan;
         approveRow.setAttribute("data-show", String(showApprove));
       }
+      // Back-compat alias: existing call sites still invoke updatePlanModeUi().
+      const updatePlanModeUi = updateModeUi;
 
-      updatePlanModeUi();
+      updateModeUi();
 
-      function postPlanModeUiState() {
-        vscode.postMessage({ type: "uiState", planMode: planModeToggle.checked });
+      function postModeUiState() {
+        vscode.postMessage({
+          type: "uiState",
+          planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
+        });
       }
+      // Back-compat alias for existing call sites.
+      const postPlanModeUiState = postModeUiState;
 
       planModeToggle.addEventListener("change", () => {
+        // Plan ("don't edit, just plan") and Agent ("edit and run") are opposites;
+        // turning one on turns the other off.
+        if (planModeToggle.checked) {
+          agentModeToggle.checked = false;
+        }
         persistState();
-        updatePlanModeUi();
-        postPlanModeUiState();
+        updateModeUi();
+        postModeUiState();
+      });
+      agentModeToggle.addEventListener("change", () => {
+        if (agentModeToggle.checked) {
+          planModeToggle.checked = false;
+        }
+        persistState();
+        updateModeUi();
+        postModeUiState();
       });
       includeContext.addEventListener("change", persistState);
-      // Tell the host the initial Plan Mode state so editor-action submissions
+      // Tell the host the initial mode state so editor-action submissions
       // (which don't go through the composer) inherit it.
-      postPlanModeUiState();
+      postModeUiState();
 
       // Slash command palette ---------------------------------------------------
       const slashCommands = ${slashCommandsJson};
@@ -1198,6 +1322,57 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         return message;
       }
 
+      // Inline tool-approval card: replaces the native modal so the user
+      // approves/denies a mutating tool call right in the chat.
+      function appendApprovalCard(id, tool, detail) {
+        const card = document.createElement("article");
+        card.className = "message approval-card";
+
+        const title = document.createElement("div");
+        title.className = "approval-title";
+        title.textContent = "Allow " + tool + "?";
+        card.appendChild(title);
+
+        const pre = document.createElement("pre");
+        pre.className = "approval-detail";
+        for (const line of String(detail).split("\\n")) {
+          const span = document.createElement("span");
+          if (line.startsWith("+")) span.className = "diff-add";
+          else if (line.startsWith("-")) span.className = "diff-del";
+          span.textContent = line + "\\n";
+          pre.appendChild(span);
+        }
+        card.appendChild(pre);
+
+        const actions = document.createElement("div");
+        actions.className = "approval-actions";
+        const respond = (decision, label) => {
+          vscode.postMessage({ type: "toolApprovalResponse", id, decision });
+          actions.remove();
+          const status = document.createElement("div");
+          status.className = "approval-status";
+          status.textContent = label;
+          card.appendChild(status);
+        };
+        const makeButton = (label, decision, statusLabel, cls) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "approval-btn " + cls;
+          button.textContent = label;
+          button.addEventListener("click", () => respond(decision, statusLabel));
+          return button;
+        };
+        actions.appendChild(makeButton("Approve", "approve", "✓ Approved", "primary"));
+        actions.appendChild(
+          makeButton("Approve for session", "approve_always", "✓ Approved for session", ""),
+        );
+        actions.appendChild(makeButton("Deny", "deny", "🚫 Denied", "danger"));
+        card.appendChild(actions);
+
+        transcript.appendChild(card);
+        card.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+
       // Split answer text from reasoning the model emitted inline as
       // <think>…</think>. Handles multiple blocks and an unclosed trailing tag
       // (everything after it is thinking until </think> arrives). Runs on the
@@ -1443,6 +1618,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           text,
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
+          agentMode: agentModeToggle.checked,
         });
       }
 
@@ -1455,6 +1631,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         }
 
         sendUserMessage(text);
+      });
+
+      stopButton.addEventListener("click", () => {
+        vscode.postMessage({ type: "cancel" });
       });
 
       approveRunButton.addEventListener("click", () => {
@@ -1524,13 +1704,21 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           appendMessage("error", message.text);
         }
 
+        if (message.type === "toolApproval") {
+          appendApprovalCard(message.id, message.tool, message.detail || "");
+        }
+
         if (message.type === "modelLabel") {
           modelLabel.textContent = message.text;
         }
 
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
-          send.disabled = isBusy;
+          // Swap Send for Stop while a turn is in flight so the user can cancel.
+          send.hidden = isBusy;
+          send.style.display = isBusy ? "none" : "";
+          stopButton.hidden = !isBusy;
+          stopButton.style.display = isBusy ? "" : "none";
           textarea.disabled = isBusy;
           composerMenuToggle.disabled = isBusy;
           modelChip.disabled = isBusy;

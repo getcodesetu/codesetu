@@ -22,6 +22,9 @@ import {
   createSpeechProvider,
   isPlanModeApproval,
   routeSkills,
+  sanitizeToolMessages,
+  type ApprovalDecision,
+  type ApprovalRequest,
   type AudioBlob,
   type ChatCompletionRequest,
   type ChatMessage,
@@ -33,6 +36,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import { AGENT_MODE_SYSTEM_NOTE, runAgentTurn } from "./agentRunner";
 import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
@@ -137,6 +141,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     requestContext?.onContextPreview?.(
       buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
     );
+
+    outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
+    if (requestContext?.agentMode === true) {
+      return sendAgentChatRequest(
+        providerMessages,
+        buildProviderOptions(),
+        statusBarItem,
+        outputChannel,
+        instructions,
+        ideContext,
+        requestContext?.onChunk,
+        routed.selected,
+        requestContext?.persistMessages,
+        requestContext?.signal,
+        requestContext?.requestApproval,
+      );
+    }
 
     return sendChatRequest(
       providerMessages,
@@ -270,7 +291,9 @@ async function sendChatRequest(
 
   try {
     const request: ChatCompletionRequest = {
-      messages: [
+      // Sanitize in case persisted history from a prior agent turn was trimmed
+      // and split a tool-call/result pair, which the provider would reject.
+      messages: sanitizeToolMessages([
         {
           role: "system",
           content: buildCodeSetuSystemMessage([...instructions], {
@@ -278,7 +301,7 @@ async function sendChatRequest(
           }),
         },
         ...contextualMessages,
-      ],
+      ]),
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
     };
@@ -303,6 +326,71 @@ async function sendChatRequest(
     });
   } catch (error: unknown) {
     outputChannel.appendLine(`Chat completion failed: ${formatErrorMessage(error)}`);
+    throw error;
+  } finally {
+    statusBarItem.text = "CodeSetu: Ready";
+  }
+}
+
+/**
+ * Agent-mode counterpart to sendChatRequest: assembles the same system prompt +
+ * IDE context, appends the agent note, and drives the tool-calling loop instead
+ * of a single completion. Tool activity and the final answer stream back through
+ * `onChunk`, so the chat renders the agent's work as it happens.
+ */
+async function sendAgentChatRequest(
+  messages: ChatMessage[],
+  providerOptions: ProviderFactoryOptions,
+  statusBarItem: vscode.StatusBarItem,
+  outputChannel: vscode.OutputChannel,
+  instructions: readonly WorkspaceInstruction[] = [],
+  ideContext: IdeContextPayload = {},
+  onChunk?: (chunk: ChatStreamChunk) => void,
+  pinnedSkills: readonly WorkspaceInstruction[] = [],
+  persistMessages?: (messages: ChatMessage[]) => void,
+  signal?: AbortSignal,
+  requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
+): Promise<string> {
+  const configuration = readCodeSetuConfiguration();
+  outputChannel.appendLine(
+    formatChatProviderLine(summarizeCodeSetuConfiguration(providerOptions.apiKey)),
+  );
+  const provider = createProvider(providerOptions);
+  statusBarItem.text = "CodeSetu: Working";
+
+  const contextualMessages = hasIdeContext(ideContext)
+    ? [
+        {
+          role: "user" as const,
+          content: `Current IDE context:\n\n${buildContextMarkdown(ideContext)}`,
+        },
+        ...messages,
+      ]
+    : messages;
+
+  const systemContent = [
+    buildCodeSetuSystemMessage([...instructions], { pinnedSkills: [...pinnedSkills] }),
+    AGENT_MODE_SYSTEM_NOTE,
+  ].join("\n\n");
+
+  try {
+    return await runAgentTurn({
+      provider,
+      messages: sanitizeToolMessages([
+        { role: "system", content: systemContent },
+        ...contextualMessages,
+      ]),
+      maxTokens: configuration.chatMaxTokens,
+      temperature: configuration.chatTemperature,
+      workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      ...(onChunk === undefined ? {} : { onChunk }),
+      ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
+      ...(signal === undefined ? {} : { signal }),
+      ...(requestApproval === undefined ? {} : { requestApproval }),
+      outputChannel,
+    });
+  } catch (error: unknown) {
+    outputChannel.appendLine(`Agent turn failed: ${formatErrorMessage(error)}`);
     throw error;
   } finally {
     statusBarItem.text = "CodeSetu: Ready";

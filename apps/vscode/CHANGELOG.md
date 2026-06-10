@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- **Agent Mode** — a composer toggle that turns chat into an agent: it reads, edits, and runs commands to complete a task, then you review the result. Tools include read/write/edit files, run shell commands, search (grep / glob / list), task tracking, IDE diagnostics (`get_diagnostics`), and symbol navigation (`find_symbol`, `find_references`).
+- **Inline approvals** — file edits and shell commands are approved right in the chat, with a diff preview for edits; read-only tools run automatically. Approve, Approve for session, or Deny. Hit **Stop** to cancel a run mid-generation.
+- **Project policy** — drop a committable `.codesetu/agent.json` to set `autoApproveCommands`, `denyCommands` (regex; deny wins), and `maxIterations` for your team.
+- Works with local / self-hosted models that emit tool calls as text (Ollama, llama.cpp), not just OpenAI-style structured calls. Agent Mode is off by default and needs a tool-calling-capable model.
+
 ## 0.3.1
 
 - "Context sent to AI" preview: a collapsible panel showing exactly what's sent to the model — the routed skill, your selected code, and the full payload.

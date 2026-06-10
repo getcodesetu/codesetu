@@ -11,6 +11,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **Agent Mode** (VSCode + JetBrains): an opt-in composer toggle that turns chat
+  into a tool-calling agent which reads, edits, and runs commands to complete a
+  task. Tools: `read_file`, `write_file`, `edit_file`, `bash`, read-only
+  `list_dir` / `glob` / `grep` / `todo_write`, and IDE-native `get_diagnostics`
+  (plus `find_symbol` / `find_references` in VSCode). File edits and shell
+  commands require approval (with a diff preview for edits); read-only tools are
+  auto-approved; a **Stop** button cancels a run; tool context persists across
+  turns. A committable `.codesetu/agent.json` sets project policy —
+  `autoApproveCommands`, `denyCommands` (regex, deny wins), and `maxIterations`.
 - **Plan Mode** in the chat (VSCode + JetBrains): composer toggle that asks the
   assistant for a numbered plan with clarifying questions instead of code
   edits, plus an "Approve & Run" button that sends the canonical approval
