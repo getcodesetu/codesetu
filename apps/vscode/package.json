@@ -107,6 +107,11 @@
         "command": "codesetu.setupSpeechProvider",
         "title": "CodeSetu: Setup Speech Provider",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.editSelection",
+        "title": "Edit with CodeSetu",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
@@ -135,6 +140,11 @@
           "command": "codesetu.addDocsToSelection",
           "when": "editorHasSelection",
           "group": "1_modification@34"
+        },
+        {
+          "command": "codesetu.editSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@35"
         }
       ]
     },

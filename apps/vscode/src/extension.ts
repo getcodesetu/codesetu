@@ -43,6 +43,7 @@ import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
+import { registerEditCommand } from "./editCommand";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
 import { readPinnedFiles } from "./pinnedFiles";
 import { selectCodeSetuModel } from "./modelPicker";
@@ -208,6 +209,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     speechBridge: buildSpeechBridge,
   });
 
+  const editCommand = registerEditCommand({
+    createProvider: () => createProvider(buildProviderOptions()),
+    getConfiguration: readCodeSetuConfiguration,
+    outputChannel,
+  });
+
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
     getTreeItem: (item: vscode.TreeItem) => item,
     getChildren: () => [],
@@ -223,6 +230,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     diagnoseProviderCommand,
     selectModelCommand,
     ...editorActions,
+    ...editCommand,
     homeView,
   );
 }
