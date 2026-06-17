@@ -112,6 +112,11 @@
         "command": "codesetu.editSelection",
         "title": "Edit with CodeSetu",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.revertLastAgentEdits",
+        "title": "CodeSetu: Revert Last Agent Edits",
+        "category": "CodeSetu"
       }
     ],
     "menus": {

@@ -36,6 +36,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import type { WorkspaceCheckpoint } from "./agentCheckpoint";
 import { AGENT_MODE_SYSTEM_NOTE, runAgentTurn } from "./agentRunner";
 import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
@@ -90,6 +91,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...readCodeSetuConfiguration().providerOptions,
     apiKey,
   });
+
+  // The most recent agent turn's file checkpoint, for one-click revert.
+  let lastAgentCheckpoint: WorkspaceCheckpoint | undefined;
 
   const inlineCompletionProvider = vscode.languages.registerInlineCompletionItemProvider(
     { scheme: "file" },
@@ -166,6 +170,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         requestContext?.persistMessages,
         requestContext?.signal,
         requestContext?.requestApproval,
+        (checkpoint) => {
+          lastAgentCheckpoint = checkpoint;
+        },
       );
     }
 
@@ -201,6 +208,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await selectCodeSetuModel();
     ChatPanel.refreshModelLabel();
   });
+  const revertAgentEditsCommand = vscode.commands.registerCommand(
+    "codesetu.revertLastAgentEdits",
+    async () => {
+      if (lastAgentCheckpoint === undefined || lastAgentCheckpoint.isEmpty()) {
+        void vscode.window.showInformationMessage("CodeSetu: no agent edits to revert.");
+        return;
+      }
+      const files = lastAgentCheckpoint.changedFiles();
+      const confirm = await vscode.window.showWarningMessage(
+        `Revert the last CodeSetu agent turn? This restores ${files.length} file${files.length === 1 ? "" : "s"} to their pre-turn state.`,
+        { modal: true, detail: files.join("\n") },
+        "Revert",
+      );
+      if (confirm !== "Revert") {
+        return;
+      }
+      const result = await lastAgentCheckpoint.revert();
+      lastAgentCheckpoint = undefined;
+      outputChannel.appendLine(
+        `[agent] reverted — restored=${result.restored}, deleted=${result.deleted}, failed=${result.failed}`,
+      );
+      const summary =
+        `CodeSetu reverted ${result.restored} file${result.restored === 1 ? "" : "s"}` +
+        (result.deleted > 0
+          ? `, deleted ${result.deleted} new file${result.deleted === 1 ? "" : "s"}`
+          : "") +
+        (result.failed > 0 ? `, ${result.failed} failed` : "") +
+        ".";
+      void vscode.window.showInformationMessage(summary);
+    },
+  );
 
   const editorActions = registerCodeSetuEditorActions({
     context,
@@ -229,6 +267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     setupSpeechProviderCommand,
     diagnoseProviderCommand,
     selectModelCommand,
+    revertAgentEditsCommand,
     ...editorActions,
     ...editCommand,
     homeView,
@@ -367,6 +406,7 @@ async function sendAgentChatRequest(
   persistMessages?: (messages: ChatMessage[]) => void,
   signal?: AbortSignal,
   requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
+  onCheckpoint?: (checkpoint: WorkspaceCheckpoint) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -404,6 +444,7 @@ async function sendAgentChatRequest(
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       ...(signal === undefined ? {} : { signal }),
       ...(requestApproval === undefined ? {} : { requestApproval }),
+      ...(onCheckpoint === undefined ? {} : { onCheckpoint }),
       outputChannel,
     });
   } catch (error: unknown) {

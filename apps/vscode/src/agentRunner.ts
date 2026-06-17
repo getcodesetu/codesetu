@@ -32,6 +32,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import { createCheckpointingHost, type WorkspaceCheckpoint } from "./agentCheckpoint";
 import { createNodeAgentHost } from "./agentHost";
 import { createVscodeNativeTools } from "./agentNativeTools";
 
@@ -66,6 +67,8 @@ export interface RunAgentTurnOptions {
   onPersist?: (messages: ChatMessage[]) => void;
   /** Inline approval handler; falls back to a native modal when omitted. */
   requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>;
+  /** Receives the turn's file checkpoint when it edited at least one file. */
+  onCheckpoint?: (checkpoint: WorkspaceCheckpoint) => void;
   outputChannel: vscode.OutputChannel;
   signal?: AbortSignal;
 }
@@ -75,7 +78,10 @@ export interface RunAgentTurnOptions {
  * narration, tool activity, and final answer to the chat as streamed content.
  */
 export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string> {
-  const host = createNodeAgentHost(options.workspaceRoot);
+  const { host, checkpoint } = createCheckpointingHost(
+    createNodeAgentHost(options.workspaceRoot),
+    options.workspaceRoot,
+  );
   const policy = await loadAgentPolicy(options.workspaceRoot);
   const tools = [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)];
   let toolCallCount = 0;
@@ -118,6 +124,14 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   }
   if (result.stoppedReason === "aborted") {
     options.onChunk?.({ content: "\n\n_Stopped by you._\n" });
+  }
+  // Offer one-click undo for the turn's file edits (write_file / edit_file).
+  if (!checkpoint.isEmpty()) {
+    const count = checkpoint.changedFiles().length;
+    options.onCheckpoint?.(checkpoint);
+    options.onChunk?.({
+      content: `\n\n_Edited ${count} file${count === 1 ? "" : "s"}. Run **CodeSetu: Revert Last Agent Edits** to undo this turn._\n`,
+    });
   }
   // Everything the loop appended beyond the seed (assistant tool-call turns,
   // tool results, final answer) is the new history to persist for next turn.
