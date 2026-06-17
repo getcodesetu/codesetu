@@ -88,6 +88,21 @@ export function buildContextMarkdown(
     );
   }
 
+  if (context.pinnedFiles !== undefined && context.pinnedFiles.length > 0) {
+    const pinned = context.pinnedFiles.map((file) =>
+      [
+        `Pinned file: ${file.path}`,
+        codeFence(file.languageId ?? "plaintext", trimMiddle(file.text, maxActiveFileChars)),
+      ].join("\n"),
+    );
+
+    sections.push(
+      ["Files the user pinned to this conversation (treat as primary context)", ...pinned].join(
+        "\n\n",
+      ),
+    );
+  }
+
   if (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0) {
     const snippets = context.relatedSnippets.map((snippet) =>
       [

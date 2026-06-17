@@ -31,6 +31,7 @@ import * as vscode from "vscode";
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
 import { getActiveOrLastEditor } from "./ideContext";
+import { searchWorkspaceFiles } from "./pinnedFiles";
 import { DictationController, NoRecorderError } from "./dictation";
 import { readSpeechConfiguration } from "./speechConfiguration";
 
@@ -58,6 +59,8 @@ export interface ChatResponderContext {
   planMode?: boolean;
   /** When true, drive the tool-calling agent loop instead of a single reply. */
   agentMode?: boolean;
+  /** Workspace-relative paths the user @-pinned in the composer for this turn. */
+  pinnedFiles?: string[];
   /** Aborts when the user hits Stop; the agent loop checks it between steps. */
   signal?: AbortSignal;
   /** Approve a mutating tool call inline in the chat (replaces the native modal). */
@@ -79,6 +82,7 @@ export interface SendUserMessageOptions {
   includeIdeContext?: boolean;
   planMode?: boolean;
   agentMode?: boolean;
+  pinnedFiles?: string[];
 }
 
 export type ChatResponder = (
@@ -97,6 +101,13 @@ interface SendMessageRequest {
   includeIdeContext?: boolean;
   planMode?: boolean;
   agentMode?: boolean;
+  pinnedFiles?: string[];
+}
+
+interface SearchFilesRequest {
+  type: "searchFiles";
+  requestId: string;
+  query: string;
 }
 
 interface TranscribeRequest {
@@ -281,6 +292,12 @@ export class ChatPanel {
       return;
     }
 
+    if (isSearchFilesRequest(message)) {
+      const files = await searchWorkspaceFiles(vscode, message.query);
+      this.postWebview({ type: "fileResults", requestId: message.requestId, items: files });
+      return;
+    }
+
     if (isInsertCodeRequest(message)) {
       await this.insertCodeIntoEditor(message.code);
       return;
@@ -299,6 +316,7 @@ export class ChatPanel {
       includeIdeContext: message.includeIdeContext,
       planMode: message.planMode,
       agentMode: message.agentMode,
+      ...(message.pinnedFiles === undefined ? {} : { pinnedFiles: message.pinnedFiles }),
     });
   }
 
@@ -492,6 +510,7 @@ export class ChatPanel {
         agentMode: options.agentMode ?? this.currentAgentMode,
         signal: controller.signal,
         requestApproval: (request) => this.requestToolApproval(request),
+        ...(options.pinnedFiles === undefined ? {} : { pinnedFiles: options.pinnedFiles }),
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         persistMessages: (messages) => {
           persistedMessages = messages;
@@ -652,6 +671,16 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   );
 }
 
+function isSearchFilesRequest(message: unknown): message is SearchFilesRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<SearchFilesRequest>;
+  return (
+    candidate.type === "searchFiles" &&
+    typeof candidate.requestId === "string" &&
+    typeof candidate.query === "string"
+  );
+}
+
 function isInsertCodeRequest(message: unknown): message is InsertCodeRequest {
   if (typeof message !== "object" || message === null) return false;
   const candidate = message as Partial<InsertCodeRequest>;
@@ -798,7 +827,10 @@ function isSendMessageRequest(message: unknown): message is SendMessageRequest {
     (candidate.includeIdeContext === undefined ||
       typeof candidate.includeIdeContext === "boolean") &&
     (candidate.planMode === undefined || typeof candidate.planMode === "boolean") &&
-    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean")
+    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean") &&
+    (candidate.pinnedFiles === undefined ||
+      (Array.isArray(candidate.pinnedFiles) &&
+        candidate.pinnedFiles.every((entry) => typeof entry === "string")))
   );
 }
 

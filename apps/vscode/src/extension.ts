@@ -44,6 +44,7 @@ import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
+import { readPinnedFiles } from "./pinnedFiles";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
@@ -131,9 +132,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ? withLastUserMessage(messages, routed.cleanedUserText)
         : messages;
 
-    const ideContext =
+    const ideContext: IdeContextPayload =
       requestContext?.ideContext ??
       ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {});
+    // @-pinned files are an explicit user choice, so they're attached even when
+    // automatic IDE context is turned off for this turn.
+    if (requestContext?.pinnedFiles !== undefined && requestContext.pinnedFiles.length > 0) {
+      const pinned = await readPinnedFiles(vscode, requestContext.pinnedFiles);
+      if (pinned.length > 0) {
+        ideContext.pinnedFiles = pinned;
+      }
+    }
     const instructions = await loadInstructions();
 
     // Surface exactly what we're about to send — selected code, routed skills,
@@ -431,7 +440,8 @@ function hasIdeContext(context: IdeContextPayload): boolean {
     context.selectedText !== undefined ||
     context.cursorPrefix !== undefined ||
     context.cursorSuffix !== undefined ||
-    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0)
+    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0) ||
+    (context.pinnedFiles !== undefined && context.pinnedFiles.length > 0)
   );
 }
 
