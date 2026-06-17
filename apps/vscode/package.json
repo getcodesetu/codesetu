@@ -239,6 +239,13 @@
           },
           "description": "Stop sequences for inline completions."
         },
+        "codesetu.inlineCompletions.debounceMs": {
+          "type": "number",
+          "default": 200,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay in milliseconds before requesting an inline completion, so a burst of keystrokes fires only one request."
+        },
         "codesetu.chat.maxTokens": {
           "type": "number",
           "default": 4096,

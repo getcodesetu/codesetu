@@ -17,6 +17,7 @@
 import type { LlmProvider } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import { delayUnlessCancelled } from "./completionDebounce";
 import type { CodeSetuConfiguration } from "./configuration";
 import { buildFimContext } from "./fimContext";
 
@@ -26,7 +27,18 @@ export interface CodeSetuInlineCompletionProviderOptions {
   outputChannel: vscode.OutputChannel;
 }
 
+interface CompletionCacheEntry {
+  prompt: string;
+  suffix: string;
+  text: string;
+}
+
 export class CodeSetuInlineCompletionProvider implements vscode.InlineCompletionItemProvider {
+  // Single-entry cache so VS Code re-triggering at the same spot (it asks again
+  // after the user types through the ghost text, on focus, etc.) reuses the last
+  // result instead of firing another model request.
+  private lastCompletion: CompletionCacheEntry | undefined;
+
   public constructor(private readonly options: CodeSetuInlineCompletionProviderOptions) {}
 
   public async provideInlineCompletionItems(
@@ -58,6 +70,23 @@ export class CodeSetuInlineCompletionProvider implements vscode.InlineCompletion
       return [];
     }
 
+    // Serve an identical re-request from cache without a network round-trip.
+    const cached = this.lastCompletion;
+    if (
+      cached !== undefined &&
+      cached.prompt === fimContext.prompt &&
+      cached.suffix === fimContext.suffix
+    ) {
+      return [new vscode.InlineCompletionItem(cached.text, new vscode.Range(position, position))];
+    }
+
+    // Debounce: hold briefly so a burst of keystrokes only fires one request.
+    // VS Code cancels the token when a newer request supersedes this one, so we
+    // bail out the moment that happens rather than spending a model call.
+    if (!(await delayUnlessCancelled(configuration.fimDebounceMs, token))) {
+      return undefined;
+    }
+
     try {
       const completion = await this.options.createProvider().completeFim({
         prompt: fimContext.prompt,
@@ -76,6 +105,8 @@ export class CodeSetuInlineCompletionProvider implements vscode.InlineCompletion
       if (text.length === 0) {
         return [];
       }
+
+      this.lastCompletion = { prompt: fimContext.prompt, suffix: fimContext.suffix, text };
 
       return [new vscode.InlineCompletionItem(text, new vscode.Range(position, position))];
     } catch (error: unknown) {
