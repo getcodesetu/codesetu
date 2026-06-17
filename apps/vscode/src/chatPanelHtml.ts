@@ -399,6 +399,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         outline: none;
       }
 
+      .usage-chip {
+        align-self: center;
+        padding: 1px 7px;
+        border-radius: 9px;
+        font-size: 0.74em;
+        color: var(--vscode-descriptionForeground);
+        background: var(--vscode-badge-background, rgba(127, 127, 127, 0.16));
+        white-space: nowrap;
+      }
+
       .model-chip {
         display: inline-flex;
         align-items: center;
@@ -878,6 +888,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="M12 18v3" />
                 </svg>
               </button>
+              <span id="usage-chip" class="usage-chip" hidden title="Estimated tokens in the context sent to the model (approximate)"></span>
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
@@ -2071,6 +2082,14 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "modelLabel") {
           modelLabel.textContent = message.text;
+        }
+
+        if (message.type === "usage") {
+          const tokens = Number(message.tokens) || 0;
+          const usageChip = document.getElementById("usage-chip");
+          const label = tokens < 1000 ? String(tokens) : (tokens / 1000).toFixed(1) + "k";
+          usageChip.textContent = "~" + label + " ctx";
+          usageChip.hidden = false;
         }
 
         if (message.type === "fileResults") {

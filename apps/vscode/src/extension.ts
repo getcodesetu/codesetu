@@ -47,6 +47,7 @@ import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./con
 import { registerEditCommand } from "./editCommand";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
 import { readPinnedFiles } from "./pinnedFiles";
+import { estimateTokensForParts } from "./tokenEstimate";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
@@ -157,6 +158,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     requestContext?.onContextPreview?.(
       buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
     );
+
+    // Estimate how much context this turn carries (system prompt + IDE context +
+    // the rolling history) for the composer's usage gauge.
+    requestContext?.onUsage?.({
+      tokens: estimateTokensForParts([
+        buildCodeSetuSystemMessage([...instructions], { pinnedSkills: [...routed.selected] }),
+        hasIdeContext(ideContext) ? buildContextMarkdown(ideContext) : "",
+        ...providerMessages.map((message) =>
+          typeof message.content === "string" ? message.content : "",
+        ),
+      ]),
+    });
 
     outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
     if (requestContext?.agentMode === true) {

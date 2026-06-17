@@ -71,6 +71,8 @@ export interface ChatResponderContext {
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
+  /** Reports the estimated tokens in the assembled context for the UI gauge. */
+  onUsage?: (usage: { tokens: number }) => void;
   /**
    * Agent mode: the messages the turn produced (assistant tool-call turns, tool
    * results, final answer) to append to history verbatim, so the next turn keeps
@@ -584,6 +586,9 @@ export class ChatPanel {
         },
         onContextPreview: (preview) => {
           void this.panel.webview.postMessage({ type: "contextPreview", preview });
+        },
+        onUsage: (usage) => {
+          void this.panel.webview.postMessage({ type: "usage", tokens: usage.tokens });
         },
         onChunk: (chunk) => {
           ensureStarted();
