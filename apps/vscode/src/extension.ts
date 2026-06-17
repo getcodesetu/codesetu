@@ -113,6 +113,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // truth); falls back to the constants if the bundle is missing/unparseable.
   const builtinSkills = await loadBuiltinSkills(context, outputChannel);
   ChatPanel.configureBuiltinSkills(builtinSkills);
+  // Persist the chat transcript per-workspace so it survives a reload.
+  ChatPanel.configureStorage(context.workspaceState);
 
   const responder: ChatResponder = async (messages, requestContext) => {
     const configuration = readCodeSetuConfiguration();
@@ -194,6 +196,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
   });
+  const newChatCommand = vscode.commands.registerCommand("codesetu.newChat", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
+    ChatPanel.newConversation();
+  });
   const setupProviderCommand = vscode.commands.registerCommand("codesetu.setupProvider", () =>
     setupCodeSetuProvider(context.secrets),
   );
@@ -263,6 +269,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    newChatCommand,
     setupProviderCommand,
     setupSpeechProviderCommand,
     diagnoseProviderCommand,

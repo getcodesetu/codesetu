@@ -507,6 +507,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         text-align: left;
       }
 
+      .menu-action {
+        border: 0;
+        background: transparent;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+      }
+
+      .menu-action:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
       .menu-leading {
         display: inline-flex;
         align-items: center;
@@ -944,6 +955,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <button id="new-chat" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="new-chat" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </span>
+              New chat
+            </span>
+          </button>
         </div>
         <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
         <div id="mention-menu" class="menu mention-menu" hidden role="listbox" aria-label="Workspace files"></div>
@@ -1914,6 +1936,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         vscode.postMessage({ type: "selectModel" });
       });
 
+      document.getElementById("new-chat").addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "newChat" });
+      });
+
       document.addEventListener("click", (event) => {
         const target = event.target;
 
@@ -1978,6 +2005,13 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "contextPreview") {
           renderContextPreview(message.preview);
+        }
+
+        if (message.type === "clearTranscript") {
+          transcript.textContent = "";
+          activeAssistant = undefined;
+          lastTurnWasPlan = false;
+          updateModeUi();
         }
 
         if (message.type === "assistantMessage") {
@@ -2058,6 +2092,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           modelChip.disabled = isBusy;
         }
       });
+
+      // Tell the host the webview is mounted so it can replay a persisted
+      // conversation into the transcript (restore on reload).
+      vscode.postMessage({ type: "ready" });
     </script>
   </body>
 </html>`;

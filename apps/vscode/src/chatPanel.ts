@@ -39,6 +39,9 @@ import { readSpeechConfiguration } from "./speechConfiguration";
 // overflow the context window. The most recent turns are always kept.
 const MAX_HISTORY_CHARS = 100_000;
 
+// Workspace-state key holding the persisted conversation across reloads.
+const HISTORY_STORAGE_KEY = "codesetu.chat.history";
+
 /** Preview of what the responder is about to send to the model, for the
  *  collapsible "Context sent to AI" panel. */
 export interface ContextPreview {
@@ -156,8 +159,24 @@ export class ChatPanel {
     ChatPanel.builtinSkills = skills;
   }
 
+  // Workspace-scoped store for the chat transcript so it survives a reload.
+  private static storage: vscode.Memento | undefined;
+
+  /** Provide the Memento used to persist/restore the conversation (call once). */
+  public static configureStorage(storage: vscode.Memento): void {
+    ChatPanel.storage = storage;
+  }
+
+  /** Clear the active panel's conversation (backs the New Chat command). */
+  public static newConversation(): void {
+    ChatPanel.currentPanel?.clearConversation();
+  }
+
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
+  // Snapshot of the persisted conversation to replay once the webview mounts.
+  private readonly restoredHistory: readonly ChatMessage[];
+  private hasReplayed = false;
   private inFlight = false;
   // Webview-owned UI state mirrored to the host so editor actions (which don't
   // go through the composer) can inherit the user's current Plan Mode pick.
@@ -178,6 +197,11 @@ export class ChatPanel {
     private readonly speechBridge: SpeechBridge | undefined,
   ) {
     this.panel = panel;
+    // Seed the conversation from the persisted transcript so a reload resumes
+    // where the user left off; the snapshot is replayed once the webview mounts.
+    const restored = ChatPanel.storage?.get<ChatMessage[]>(HISTORY_STORAGE_KEY) ?? [];
+    this.restoredHistory = restored;
+    this.history.push(...restored);
     this.dictation = new DictationController(speechBridge, {
       onState: (state) => this.postWebview({ type: "dictationState", state }),
       onResult: (text) => this.postWebview({ type: "dictationResult", text }),
@@ -289,6 +313,16 @@ export class ChatPanel {
 
     if (isDictationRequest(message)) {
       await this.handleDictation(message);
+      return;
+    }
+
+    if (isReadyRequest(message)) {
+      this.replayRestoredHistory();
+      return;
+    }
+
+    if (isNewChatRequest(message)) {
+      this.clearConversation();
       return;
     }
 
@@ -473,6 +507,39 @@ export class ChatPanel {
     this.pendingApprovals.clear();
   }
 
+  /** Replay the persisted conversation into a freshly mounted webview (once). */
+  private replayRestoredHistory(): void {
+    if (this.hasReplayed) {
+      return;
+    }
+    this.hasReplayed = true;
+    for (const message of this.restoredHistory) {
+      if (typeof message.content !== "string" || message.content.length === 0) {
+        continue; // skip tool-call / tool-result turns — not user-visible bubbles
+      }
+      if (message.role === "user") {
+        this.postWebview({ type: "userMessage", text: message.content });
+      } else if (message.role === "assistant") {
+        this.postWebview({ type: "assistantMessage", text: message.content });
+      }
+    }
+  }
+
+  /** Persist the current transcript so it survives a reload. */
+  private persistHistory(): void {
+    void ChatPanel.storage?.update(HISTORY_STORAGE_KEY, this.history);
+  }
+
+  /** Clear the conversation in both the host and the webview. */
+  private clearConversation(): void {
+    if (this.inFlight) {
+      this.inFlightController?.abort();
+    }
+    this.history.length = 0;
+    this.persistHistory();
+    this.postWebview({ type: "clearTranscript" });
+  }
+
   private async submitMessage(
     rawText: string,
     options: SendUserMessageOptions = {},
@@ -561,6 +628,7 @@ export class ChatPanel {
     } finally {
       this.inFlight = false;
       this.inFlightController = undefined;
+      this.persistHistory();
       void this.panel.webview.postMessage({ type: "busy", value: false });
     }
   }
@@ -668,6 +736,22 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   const candidate = message as Partial<DictationRequest>;
   return (
     candidate.type === "dictation" && (candidate.action === "start" || candidate.action === "stop")
+  );
+}
+
+function isReadyRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "ready"
+  );
+}
+
+function isNewChatRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "newChat"
   );
 }
 

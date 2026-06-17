@@ -117,6 +117,11 @@
         "command": "codesetu.revertLastAgentEdits",
         "title": "CodeSetu: Revert Last Agent Edits",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.newChat",
+        "title": "CodeSetu: New Chat",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
