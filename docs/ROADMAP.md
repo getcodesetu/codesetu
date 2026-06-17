@@ -7,82 +7,42 @@ This is intentionally lightweight — it records intent and sequencing, not
 commitments. The [CHANGELOG](../CHANGELOG.md) remains the source of truth for
 what has actually shipped.
 
-Last reviewed: 2026-06-16
+Last reviewed: 2026-06-17
 
 ---
 
-## Now — current sprint (week of 2026-06-16)
+## Shipped (week of 2026-06-16, VSCode)
 
-### Inline autocomplete (ghost-text Tab completions)
+The Now / Next / Soon tracks below all landed on
+`feature/roadmap-now-next-soon`, one commit each, with unit tests and a green
+build/lint/test. JetBrains parity is the open follow-up for each.
 
-The highest-frequency interaction in any coding assistant, and the most
-conspicuous gap relative to Copilot / Cursor / Continue. Marked "Planned" since
-v0.1 and not yet landed.
+- **Inline completion polish** — debounce
+  (`codesetu.inlineCompletions.debounceMs`), cancel-on-supersede, one-entry
+  cache. (The core `InlineCompletionItemProvider` + FIM transport already
+  existed; this hardened it.)
+- **Code-block Copy / Insert** — buttons on every assistant code block; Insert
+  targets the last-active editor.
+- **@-mention file pinning** — pin workspace files as primary context; chips
+  persist across turns/reloads; rendered as a dedicated context section in
+  `@codesetu/core`.
+- **Edit with CodeSetu** (`codesetu.editSelection`) — instruction → native
+  diff preview → apply on accept.
+- **Agent Mode checkpoints** (`codesetu.revertLastAgentEdits`) — per-turn file
+  snapshots with one-click revert (structured edits only; `bash` side effects
+  out of scope).
+- **Conversation persistence** — transcript saved per workspace and restored
+  on reload; **New chat** action.
+- **Context-usage gauge** — "~N ctx" chip estimating tokens per turn.
 
-Why now: hundreds of triggers per developer per day vs. a handful of
-chat/agent calls; the FIM transport is already scoped (OpenAI `/v1/completions`
-with `prompt` + `suffix`, Sarvam-30B is FIM-capable); no embeddings or indexing
-infra required, so it fits a one-week box.
+### Open follow-ups from this batch
 
-MVP scope:
-
-- VSCode `InlineCompletionItemProvider`: debounce (~150–300ms),
-  cancel-on-keystroke, prompt from text-before-cursor + suffix-after-cursor,
-  capped context window.
-- Single- and multi-line ghost text, accept on Tab.
-- Settings: enable/disable, model override, debounce, max tokens (reuse
-  existing provider config in `@codesetu/core`).
-- Shared FIM helper in `packages/core` so JetBrains parity
-  (`CompletionContributor`) is a fast-follow.
-
-Ship VSCode first; JetBrains as a fast-follow once the core helper is proven.
-
----
-
-## Next — same-sprint cheap wins
-
-These are small, high-friction-removal items that can slot alongside the
-autocomplete work.
-
-### Apply-to-file / insert-at-cursor in chat
-
-When the model returns a code block in plain chat, there's no one-click "apply
-to open file" or "insert at cursor." Reuses the existing diff-preview UI.
-Effort: ~1–2 days.
-
-### Explicit context pinning (`@file`, `@folder`)
-
-Let users pin files/folders into chat context instead of relying on
-active-editor heuristics. Ships value now and the mention UI is reusable for
-`@workspace` later. Effort: small.
-
-### `/edit` with inline diff apply
-
-A lighter middle ground between one-shot chat and full Agent Mode: select code
-→ describe change → per-hunk diff → accept/reject. Reuses the diff preview that
-`edit_file` already has. Marked "Planned" in the CHANGELOG. Effort: a few days.
-
----
-
-## Soon — next sprint
-
-### Agent Mode checkpoints / one-click revert
-
-Agent Mode can edit many files and run `bash`, but there's no safety net to
-undo a whole run. Snapshot-before-run + a "Restore" button builds the trust
-needed to let the agent loose. Deepens the flagship rather than closing a new
-gap, so it ranks behind autocomplete.
-
-### Conversation persistence / history
-
-Restore chat sessions on reopen and expose a session list. Removes a quiet
-trust/UX tax. Effort: medium.
-
-### Token / cost / context-usage indicator
-
-Show tokens sent, context-window fill, and truncation warnings — especially
-valuable for the self-hosted / Sarvam audience watching their own inference
-budget. Effort: small, high perceived polish.
+- JetBrains parity for all seven (shared logic already lives in
+  `@codesetu/core` where applicable).
+- `@folder` pinning (only `@file` shipped).
+- Multi-session history list (single rolling transcript shipped; no session
+  switcher yet).
+- Per-hunk accept/reject in `/edit` (whole-edit apply shipped).
 
 ---
 
@@ -90,7 +50,7 @@ budget. Effort: small, high perceived polish.
 
 ### Codebase indexing — `@workspace` semantic retrieval
 
-The biggest *capability* gap and the real moat for an on-prem / Indic-focused
+The biggest _capability_ gap and the real moat for an on-prem / Indic-focused
 assistant. Today Agent Mode navigates by grep/glob, which burns iterations and
 misses semantically-related code. Embeddings + a local vector store would make
 both chat and the agent dramatically smarter on large repos.

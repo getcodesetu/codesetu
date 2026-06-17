@@ -11,6 +11,29 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **Inline completion polish** (VSCode): inline FIM completions are now
+  debounced (`codesetu.inlineCompletions.debounceMs`, default 200ms), abandon
+  superseded requests on cancellation, and reuse a one-entry cache so
+  re-triggering at the same spot avoids a redundant model call.
+- **Code-block actions in chat** (VSCode): every fenced code block in an
+  assistant reply gets **Copy** and **Insert** buttons — Insert drops the code
+  into the editor the user was last in (replacing the selection if any).
+- **@-mention file pinning** (VSCode): type `@` in the composer to pin
+  workspace files as primary context. Pins show as removable chips, persist
+  across turns/reloads, and are sent as a dedicated "pinned files" section
+  (distinct from auto-collected snippets).
+- **Edit with CodeSetu** (VSCode): new `codesetu.editSelection` command
+  (selection context menu + palette) — describe a change, preview it as a
+  native diff, and apply via a WorkspaceEdit only on accept.
+- **Agent Mode checkpoints** (VSCode): each agent turn snapshots the files it
+  writes; **CodeSetu: Revert Last Agent Edits** restores them in one click
+  (rewriting modified files, deleting newly created ones). `bash` side effects
+  are out of scope.
+- **Conversation persistence** (VSCode): the chat transcript is saved per
+  workspace and restored on reload; a **New chat** action (composer menu +
+  `codesetu.newChat`) clears it.
+- **Context-usage gauge** (VSCode): a "~N ctx" chip by the model picker shows
+  the estimated tokens in the assembled context for each turn.
 - **Agent Mode** (VSCode + JetBrains): an opt-in composer toggle that turns chat
   into a tool-calling agent which reads, edits, and runs commands to complete a
   task. Tools: `read_file`, `write_file`, `edit_file`, `bash`, read-only
