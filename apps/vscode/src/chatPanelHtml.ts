@@ -195,6 +195,31 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         background: none;
       }
 
+      .code-block {
+        position: relative;
+      }
+
+      .code-toolbar {
+        display: flex;
+        gap: 4px;
+        justify-content: flex-end;
+        margin: 4px 0 -2px;
+      }
+
+      .code-toolbar button {
+        font-size: 0.78em;
+        padding: 2px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, #666));
+      }
+
+      .code-toolbar button:hover {
+        background: var(--vscode-button-secondaryHoverBackground, rgba(127, 127, 127, 0.15));
+      }
+
       .assistant code {
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 0.95em;
@@ -1309,11 +1334,56 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         return html;
       }
 
+      // Give each fenced code block a Copy / Insert toolbar. Called only once a
+      // turn is final (not mid-stream), so the buttons appear on complete code.
+      // The code text is read from the rendered <code> (textContent, so it's the
+      // original un-escaped source) and sent to the host to act on.
+      function enhanceCodeBlocks(container) {
+        const blocks = container.querySelectorAll("pre");
+        for (const pre of blocks) {
+          if (pre.parentElement && pre.parentElement.classList.contains("code-block")) {
+            continue;
+          }
+          const codeEl = pre.querySelector("code");
+          const code = codeEl ? codeEl.textContent : pre.textContent;
+          if (!code || code.trim().length === 0) {
+            continue;
+          }
+          const wrap = document.createElement("div");
+          wrap.className = "code-block";
+          pre.parentNode.insertBefore(wrap, pre);
+          const toolbar = document.createElement("div");
+          toolbar.className = "code-toolbar";
+          toolbar.appendChild(makeCodeButton("Copy", () => {
+            vscode.postMessage({ type: "copyCode", code: code });
+          }));
+          toolbar.appendChild(makeCodeButton("Insert", () => {
+            vscode.postMessage({ type: "insertCode", code: code });
+          }));
+          wrap.appendChild(toolbar);
+          wrap.appendChild(pre);
+        }
+      }
+
+      function makeCodeButton(label, onClick) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          onClick();
+          const original = button.textContent;
+          button.textContent = label === "Copy" ? "Copied" : "Inserted";
+          setTimeout(() => { button.textContent = original; }, 1200);
+        });
+        return button;
+      }
+
       function appendMessage(kind, text) {
         const message = document.createElement("article");
         message.className = "message " + kind;
         if (kind === "assistant") {
           message.innerHTML = renderMarkdown(text);
+          enhanceCodeBlocks(message);
         } else {
           message.textContent = text;
         }
@@ -1483,6 +1553,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           a.thinkLabel.textContent = "Thought for " + secs + "s";
           a.thinking.open = false;
         }
+        enhanceCodeBlocks(a.answer);
         activeAssistant = undefined;
       }
 

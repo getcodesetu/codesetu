@@ -30,6 +30,7 @@ import * as vscode from "vscode";
 
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
+import { getActiveOrLastEditor } from "./ideContext";
 import { DictationController, NoRecorderError } from "./dictation";
 import { readSpeechConfiguration } from "./speechConfiguration";
 
@@ -120,6 +121,16 @@ interface PermissionDeniedRequest {
 interface DictationRequest {
   type: "dictation";
   action: "start" | "stop";
+}
+
+interface InsertCodeRequest {
+  type: "insertCode";
+  code: string;
+}
+
+interface CopyCodeRequest {
+  type: "copyCode";
+  code: string;
 }
 
 export class ChatPanel {
@@ -270,6 +281,16 @@ export class ChatPanel {
       return;
     }
 
+    if (isInsertCodeRequest(message)) {
+      await this.insertCodeIntoEditor(message.code);
+      return;
+    }
+
+    if (isCopyCodeRequest(message)) {
+      await vscode.env.clipboard.writeText(message.code);
+      return;
+    }
+
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
@@ -335,6 +356,33 @@ export class ChatPanel {
       this.outputChannel.appendLine(`Dictation start failed: ${formatErrorMessage(error)}`);
       this.postWebview({ type: "dictationError", message: formatErrorMessage(error) });
       this.postWebview({ type: "dictationState", state: "idle" });
+    }
+  }
+
+  /**
+   * Insert a chat code block into the editor the user was last in (the webview
+   * holds focus, so window.activeTextEditor is undefined — we use the tracked
+   * last editor). Replaces the current selection if there is one; otherwise
+   * inserts at the cursor. Focuses the editor so the change is visible.
+   */
+  private async insertCodeIntoEditor(code: string): Promise<void> {
+    const editor = getActiveOrLastEditor(vscode);
+    if (editor === undefined) {
+      void vscode.window.showWarningMessage(
+        "CodeSetu: open a file and place your cursor where the code should go, then try again.",
+      );
+      return;
+    }
+    const target = editor.selection;
+    const shown = await vscode.window.showTextDocument(editor.document, {
+      viewColumn: editor.viewColumn ?? vscode.ViewColumn.One,
+      preserveFocus: false,
+    });
+    const applied = await shown.edit((builder) => {
+      builder.replace(target, code);
+    });
+    if (!applied) {
+      void vscode.window.showWarningMessage("CodeSetu could not insert the code into the editor.");
     }
   }
 
@@ -602,6 +650,18 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   return (
     candidate.type === "dictation" && (candidate.action === "start" || candidate.action === "stop")
   );
+}
+
+function isInsertCodeRequest(message: unknown): message is InsertCodeRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<InsertCodeRequest>;
+  return candidate.type === "insertCode" && typeof candidate.code === "string";
+}
+
+function isCopyCodeRequest(message: unknown): message is CopyCodeRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<CopyCodeRequest>;
+  return candidate.type === "copyCode" && typeof candidate.code === "string";
 }
 
 function isCancelRequest(message: unknown): boolean {
