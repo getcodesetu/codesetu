@@ -5,6 +5,8 @@ import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatMessage
+import ai.codesetu.model.FimCompletionRequest
+import ai.codesetu.model.FimCompletionResponse
 import ai.codesetu.model.ProviderKind
 import ai.codesetu.model.Tool
 import ai.codesetu.settings.CodeSetuSettingsState
@@ -81,6 +83,45 @@ class CodeSetuProviderClient(
     return json.decodeFromString<ChatCompletionResponse>(response.body())
       .choices.firstOrNull()?.message
       ?: ChatCompletionMessage()
+  }
+
+  /**
+   * Fill-in-the-middle completion for inline (ghost-text) suggestions. Posts to
+   * the OpenAI `/completions` endpoint with `prompt` + `suffix`; returns the raw
+   * completion text (empty string on no suggestion).
+   */
+  fun completeFim(
+    prompt: String,
+    suffix: String,
+    maxTokens: Int = 96,
+    temperature: Double = 0.1,
+    stop: List<String>? = null,
+  ): String {
+    val state = CodeSetuSettingsState.getInstance().state
+    val body = json.encodeToString(
+      FimCompletionRequest(
+        model = resolveCodeSetuModel(state.model),
+        prompt = prompt,
+        suffix = suffix,
+        maxTokens = maxTokens,
+        temperature = temperature,
+        stop = stop?.takeIf { it.isNotEmpty() },
+      ),
+    )
+    val request = HttpRequest.newBuilder()
+      .uri(URI.create(state.baseUrl.trimEnd('/') + "/completions"))
+      .header("Authorization", "Bearer ${CodeSetuSettingsState.getInstance().getApiKey()}")
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build()
+    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+    if (response.statusCode() !in 200..299) {
+      error("Provider request failed with HTTP ${response.statusCode()}: ${response.body()}")
+    }
+
+    return json.decodeFromString<FimCompletionResponse>(response.body())
+      .choices.firstOrNull()?.text.orEmpty()
   }
 
   fun streamChat(

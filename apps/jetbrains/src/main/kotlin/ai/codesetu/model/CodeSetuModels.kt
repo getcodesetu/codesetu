@@ -70,6 +70,31 @@ data class ChatCompletionRequest(
   @SerialName("tool_choice") val toolChoice: String? = null,
 )
 
+/**
+ * Fill-in-the-middle completion request (OpenAI `/completions` shape): the model
+ * fills the gap between `prompt` (text before the cursor) and `suffix` (after).
+ */
+@Serializable
+data class FimCompletionRequest(
+  val model: String,
+  val prompt: String,
+  val suffix: String,
+  @SerialName("max_tokens") val maxTokens: Int = 96,
+  val temperature: Double = 0.1,
+  val stop: List<String>? = null,
+  val stream: Boolean = false,
+)
+
+@Serializable
+data class FimCompletionResponse(
+  val choices: List<FimChoice> = emptyList(),
+)
+
+@Serializable
+data class FimChoice(
+  val text: String = "",
+)
+
 /** A tool advertised to the model (OpenAI function-calling shape). */
 @Serializable
 data class Tool(

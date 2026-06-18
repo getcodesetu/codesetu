@@ -153,5 +153,8 @@
     -->
     <jbCefAppRequiredArgumentsProvider
       implementation="ai.codesetu.toolwindow.CodeSetuJBCefArgsProvider"/>
+    <!-- Ghost-text fill-in-the-middle completions as you type. -->
+    <inline.completion.provider
+      implementation="ai.codesetu.completion.CodeSetuInlineCompletionProvider"/>
   </extensions>
 </idea-plugin>
