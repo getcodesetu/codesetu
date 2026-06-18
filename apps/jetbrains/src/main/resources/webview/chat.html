@@ -485,6 +485,63 @@
         white-space: nowrap;
       }
 
+      .pin-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 6px;
+      }
+
+      .pin-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        padding: 2px 4px 2px 7px;
+        border-radius: 6px;
+        background: var(--vscode-badge-background, rgba(127, 127, 127, 0.22));
+        color: var(--vscode-badge-foreground, inherit);
+        max-width: 220px;
+      }
+
+      .pin-chip .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pin-chip button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 2px;
+      }
+
+      .mention-row {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .mention-row[aria-selected="true"],
+      .mention-row:hover {
+        background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
+      }
+
+      .mention-row .dir {
+        opacity: 0.6;
+      }
+
       .model-chip:focus-visible {
         outline: 1px solid var(--vscode-focusBorder);
         outline-offset: 2px;
@@ -885,7 +942,12 @@
       </section>
       <form id="chat-form" class="composer-wrap">
         <div class="composer-shell">
-          <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu"></textarea>
+          <div id="pin-chips" class="pin-chips" hidden aria-label="Pinned files"></div>
+          <textarea
+            id="message"
+            aria-label="Message"
+            placeholder="Ask CodeSetu (type @ to add a file)"
+          ></textarea>
           <div class="composer-toolbar">
             <div class="toolbar-group">
               <button
@@ -1057,6 +1119,13 @@
           role="listbox"
           aria-label="Slash commands"
         ></div>
+        <div
+          id="mention-menu"
+          class="menu slash-menu"
+          hidden
+          role="listbox"
+          aria-label="Workspace files"
+        ></div>
         <div id="approve-row" class="approve-row" data-show="false">
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
           <span class="approve-hint"
@@ -1224,7 +1293,12 @@
       }
 
       textarea.addEventListener("input", maybeOpenSlashMenu);
+      textarea.addEventListener("input", maybeOpenMentionMenu);
       textarea.addEventListener("keydown", (event) => {
+        // The @-mention picker takes keyboard priority when it is open.
+        if (!mentionMenu.hidden && handleMentionKeydown(event)) {
+          return;
+        }
         if (slashMenu.hidden) {
           // Palette closed: Enter sends, Shift+Enter inserts a newline.
           if (event.key === "Enter" && !event.shiftKey) {
@@ -1256,6 +1330,173 @@
           slashSelectedIndex = index;
           applySlashSelection();
           textarea.focus();
+        }
+      });
+
+      // @-mention file pinning ---------------------------------------------------
+      // Typing "@" + a query opens a workspace-file picker (results from the
+      // host). Selecting a file pins it as primary context; pins ride along on
+      // every send until removed. Pins are per-session (not persisted).
+      const mentionMenu = document.getElementById("mention-menu");
+      const pinChips = document.getElementById("pin-chips");
+      let mentionItems = [];
+      let mentionSelectedIndex = 0;
+      let mentionRange = null;
+      let mentionRequestSeq = 0;
+      let pinnedFiles = [];
+
+      function currentMention() {
+        const caret = textarea.selectionStart;
+        const upto = textarea.value.slice(0, caret);
+        const match = /(^|\s)@([^\s@]*)$/.exec(upto);
+        if (!match) return null;
+        const token = match[2];
+        return { token: token, start: caret - token.length - 1, end: caret };
+      }
+
+      function maybeOpenMentionMenu() {
+        const mention = currentMention();
+        if (!mention) {
+          closeMentionMenu();
+          return;
+        }
+        closeSlashMenu();
+        setMenuOpen(false);
+        mentionRange = mention;
+        mentionRequestSeq += 1;
+        post({ type: "searchFiles", requestId: String(mentionRequestSeq), query: mention.token });
+      }
+
+      function renderMentionMenu(items) {
+        mentionItems = items || [];
+        if (mentionItems.length === 0) {
+          closeMentionMenu();
+          return;
+        }
+        mentionSelectedIndex = 0;
+        mentionMenu.innerHTML = mentionItems
+          .map((path, index) => {
+            const slash = path.lastIndexOf("/");
+            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
+            const name = slash === -1 ? path : path.slice(slash + 1);
+            return (
+              '<button type="button" class="mention-row" role="option" data-index="' +
+              index +
+              '" aria-selected="' +
+              (index === 0 ? "true" : "false") +
+              '"><span class="dir">' +
+              escapeAttr(dir) +
+              "</span>" +
+              escapeAttr(name) +
+              "</button>"
+            );
+          })
+          .join("");
+        mentionMenu.hidden = false;
+      }
+
+      function closeMentionMenu() {
+        mentionMenu.hidden = true;
+        mentionItems = [];
+        mentionRange = null;
+      }
+
+      function updateMentionSelection(direction) {
+        if (mentionItems.length === 0) return;
+        mentionSelectedIndex =
+          (mentionSelectedIndex + direction + mentionItems.length) % mentionItems.length;
+        const rows = mentionMenu.querySelectorAll(".mention-row");
+        rows.forEach((row, idx) => {
+          row.setAttribute("aria-selected", idx === mentionSelectedIndex ? "true" : "false");
+          if (idx === mentionSelectedIndex) row.scrollIntoView({ block: "nearest" });
+        });
+      }
+
+      function applyMentionSelection() {
+        const path = mentionItems[mentionSelectedIndex];
+        if (!path) return false;
+        addPin(path);
+        if (mentionRange) {
+          const v = textarea.value;
+          textarea.value = v.slice(0, mentionRange.start) + v.slice(mentionRange.end);
+          textarea.setSelectionRange(mentionRange.start, mentionRange.start);
+        }
+        closeMentionMenu();
+        textarea.focus();
+        return true;
+      }
+
+      function addPin(path) {
+        if (pinnedFiles.indexOf(path) === -1) {
+          pinnedFiles.push(path);
+          renderChips();
+        }
+      }
+
+      function removePin(path) {
+        pinnedFiles = pinnedFiles.filter((p) => p !== path);
+        renderChips();
+      }
+
+      function renderChips() {
+        pinChips.textContent = "";
+        if (pinnedFiles.length === 0) {
+          pinChips.hidden = true;
+          return;
+        }
+        pinChips.hidden = false;
+        for (const path of pinnedFiles) {
+          const chip = document.createElement("span");
+          chip.className = "pin-chip";
+          const label = document.createElement("span");
+          label.className = "label";
+          const slash = path.lastIndexOf("/");
+          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          label.title = path;
+          chip.appendChild(label);
+          const close = document.createElement("button");
+          close.type = "button";
+          close.setAttribute("aria-label", "Unpin " + path);
+          close.textContent = "×";
+          close.addEventListener("click", () => removePin(path));
+          chip.appendChild(close);
+          pinChips.appendChild(chip);
+        }
+      }
+
+      function handleMentionKeydown(event) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateMentionSelection(1);
+          return true;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateMentionSelection(-1);
+          return true;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          if (applyMentionSelection()) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeMentionMenu();
+          return true;
+        }
+        return false;
+      }
+
+      mentionMenu.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest(".mention-row") : null;
+        if (!target) return;
+        const index = Number(target.getAttribute("data-index"));
+        if (Number.isFinite(index)) {
+          mentionSelectedIndex = index;
+          applyMentionSelection();
         }
       });
 
@@ -2056,6 +2297,7 @@
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
           agentMode: agentModeToggle.checked,
+          pinnedFiles: pinnedFiles.slice(),
         });
       }
 
@@ -2146,6 +2388,13 @@
           const label = tokens < 1000 ? String(tokens) : (tokens / 1000).toFixed(1) + "k";
           usageChip.textContent = "~" + label + " ctx";
           usageChip.hidden = false;
+        }
+
+        if (message.type === "fileResults") {
+          // Ignore stale responses: only the latest @-query may render.
+          if (message.requestId === String(mentionRequestSeq) && mentionRange) {
+            renderMentionMenu(message.items || []);
+          }
         }
 
         if (message.type === "welcome") {

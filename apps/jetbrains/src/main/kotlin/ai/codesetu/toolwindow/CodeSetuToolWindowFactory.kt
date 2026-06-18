@@ -19,6 +19,8 @@ import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
 import ai.codesetu.context.collectIdeContext
 import ai.codesetu.context.estimateTokensForParts
+import ai.codesetu.context.readPinnedFiles
+import ai.codesetu.context.searchWorkspaceFiles
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
@@ -72,6 +74,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -173,7 +176,21 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val settings = CodeSetuSettingsState.getInstance().state
         val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatPlanModeOn
         val agentMode = obj["agentMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatAgentModeOn
-        runChat(text, include, null, planMode, agentMode)
+        val pinned = obj["pinnedFiles"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        runChat(text, include, null, planMode, agentMode, pinned)
+      }
+      "searchFiles" -> {
+        val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
+        val query = obj["query"]?.jsonPrimitive?.contentOrNull ?: ""
+        ApplicationManager.getApplication().executeOnPooledThread {
+          val files = searchWorkspaceFiles(project.basePath, query)
+          push(
+            message("fileResults") {
+              put("requestId", requestId)
+              putJsonArray("items") { files.forEach { add(it) } }
+            },
+          )
+        }
       }
       "uiState" -> {
         val state = CodeSetuSettingsState.getInstance().state
@@ -313,6 +330,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     captured: IdeContextPayload?,
     planMode: Boolean = false,
     agentMode: Boolean = false,
+    pinnedFiles: List<String> = emptyList(),
   ) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
@@ -328,17 +346,28 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
 
       ApplicationManager.getApplication().executeOnPooledThread {
-        runRequest(trimmed, ideContext, planMode, agentMode)
+        runRequest(trimmed, ideContext, planMode, agentMode, pinnedFiles)
       }
     }
   }
 
   private fun runRequest(
     userText: String,
-    ideContext: IdeContextPayload,
+    baseIdeContext: IdeContextPayload,
     planMode: Boolean,
     agentMode: Boolean = false,
+    pinnedFiles: List<String> = emptyList(),
   ) {
+    // @-pinned files are an explicit user choice — read them (off the EDT) and
+    // attach as related snippets so they ride along as primary context.
+    val ideContext =
+      if (pinnedFiles.isEmpty()) {
+        baseIdeContext
+      } else {
+        baseIdeContext.copy(
+          relatedSnippets = baseIdeContext.relatedSnippets + readPinnedFiles(project.basePath, pinnedFiles),
+        )
+      }
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
