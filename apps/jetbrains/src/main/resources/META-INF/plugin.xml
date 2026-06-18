@@ -134,6 +134,11 @@
         class="ai.codesetu.actions.AddDocsToSelectionAction"
         text="Add Docs to Selection"
         description="Add useful documentation for the selected code"/>
+      <action
+        id="ai.codesetu.RevertLastAgentEditsAction"
+        class="ai.codesetu.actions.RevertLastAgentEditsAction"
+        text="Revert Last Agent Edits"
+        description="Restore the files changed by the most recent CodeSetu agent turn"/>
     </group>
   </actions>
 

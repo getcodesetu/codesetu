@@ -11,6 +11,9 @@ import ai.codesetu.agent.DEFAULT_MAX_ITERATIONS
 import ai.codesetu.agent.GetDiagnosticsTool
 import ai.codesetu.agent.createBashCommandPolicy
 import ai.codesetu.agent.defaultAgentTools
+import ai.codesetu.agent.RevertResult
+import ai.codesetu.agent.WorkspaceCheckpoint
+import ai.codesetu.agent.checkpointingHost
 import ai.codesetu.agent.parseAgentPolicy
 import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
@@ -51,6 +54,7 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
@@ -109,6 +113,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   // Snapshot of the persisted transcript, replayed once the webview mounts.
   private val restoredHistory: List<ChatMessage> = loadPersistedHistory()
   private var replayedHistory = false
+  // File snapshots from the most recent agent turn, for "Revert Last Agent Edits".
+  private var lastAgentCheckpoint: WorkspaceCheckpoint? = null
 
   // EDT-only state: outgoing messages buffered until the page signals "ready".
   private val pending = mutableListOf<String>()
@@ -451,7 +457,9 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   }
 
   private fun runAgentTurn(messages: List<ChatMessage>) {
-    val host = IntellijAgentHost(project)
+    // Snapshot every file the agent writes this turn so it can be reverted in
+    // one click (structured edits only; bash side effects aren't tracked).
+    val (host, checkpoint) = checkpointingHost(IntellijAgentHost(project))
     val policy = loadAgentPolicy()
     cancelRequested.set(false)
     var started = false
@@ -517,6 +525,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       finish()
       return
     }
+
+    // Keep this turn's snapshots around so the user can revert the agent's file
+    // edits in one click (replaces any prior turn's checkpoint).
+    lastAgentCheckpoint = checkpoint.takeIf { !it.isEmpty() }
 
     if (result.stoppedReason == "aborted") {
       ensureStarted()
@@ -746,6 +758,47 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         "user" -> push(message("userMessage") { put("text", entry.content) })
         "assistant" -> push(message("assistantMessage") { put("text", entry.content) })
       }
+    }
+  }
+
+  /**
+   * Revert the file edits made by the most recent agent turn, restoring each
+   * touched file to its pre-turn state (and deleting files the agent created).
+   */
+  fun revertLastAgentEdits() {
+    ApplicationManager.getApplication().invokeLater {
+      val checkpoint = lastAgentCheckpoint
+      if (checkpoint == null || checkpoint.isEmpty()) {
+        Messages.showInfoMessage(project, "No CodeSetu agent edits to revert.", "CodeSetu")
+        return@invokeLater
+      }
+      val files = checkpoint.changedFiles()
+      val confirm = Messages.showYesNoDialog(
+        project,
+        "Revert the last CodeSetu agent turn? This restores ${files.size} " +
+          "file${if (files.size == 1) "" else "s"} to their pre-turn state.",
+        "Revert Agent Edits",
+        Messages.getWarningIcon(),
+      )
+      if (confirm != Messages.YES) return@invokeLater
+
+      val result = ApplicationManager.getApplication().runWriteAction<RevertResult> {
+        checkpoint.revert()
+      }
+      lastAgentCheckpoint = null
+      // Re-sync the VFS / open editors with the restored on-disk state.
+      project.basePath?.let {
+        LocalFileSystem.getInstance().refreshAndFindFileByPath(it)?.refresh(false, true)
+      }
+      val extra = buildString {
+        if (result.deleted > 0) append(", deleted ${result.deleted}")
+        if (result.failed > 0) append(", ${result.failed} failed")
+      }
+      Messages.showInfoMessage(
+        project,
+        "Reverted ${result.restored} file${if (result.restored == 1) "" else "s"}$extra.",
+        "CodeSetu",
+      )
     }
   }
 

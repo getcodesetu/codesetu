@@ -15,6 +15,11 @@ class CodeSetuChatService(private val project: Project) {
     pendingMessages.clear()
   }
 
+  /** Revert the file edits from the most recent agent turn (no-op if no panel). */
+  fun revertLastAgentEdits() {
+    panel?.revertLastAgentEdits()
+  }
+
   fun sendMessage(text: String, ideContext: IdeContextPayload? = null) {
     val currentPanel = panel
 
