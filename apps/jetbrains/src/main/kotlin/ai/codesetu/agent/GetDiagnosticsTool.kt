@@ -1,8 +1,9 @@
 package ai.codesetu.agent
 
-import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
+import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.editor.impl.DocumentMarkupModel
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
@@ -81,15 +82,20 @@ class GetDiagnosticsTool(private val project: Project) : AgentTool {
         for (file in files) {
           if (out.size >= MAX_DIAGNOSTICS) break
           val document = FileDocumentManager.getInstance().getDocument(file) ?: continue
-          val highlights = DaemonCodeAnalyzerImpl.getHighlights(document, minSeverity, project)
+          // Read the daemon's highlights from the document markup model (public
+          // API) rather than the @Internal DaemonCodeAnalyzerImpl. Syntax-only
+          // highlighters return null from fromRangeHighlighter and are skipped.
+          val markupModel = DocumentMarkupModel.forDocument(document, project, true)
           val relative =
             if (basePath != null && file.path.startsWith("$basePath/")) {
               file.path.removePrefix("$basePath/")
             } else {
               file.path
             }
-          for (info in highlights) {
+          for (highlighter in markupModel.allHighlighters) {
             if (out.size >= MAX_DIAGNOSTICS) break
+            val info = HighlightInfo.fromRangeHighlighter(highlighter) ?: continue
+            if (info.severity < minSeverity) continue
             val description = info.description ?: continue
             val severity =
               when {

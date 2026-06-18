@@ -41,6 +41,13 @@ export interface IdeContextPayload {
   cursorPrefix?: string;
   cursorSuffix?: string;
   relatedSnippets?: WorkspaceSnippet[];
+  /**
+   * Files the user explicitly pinned into the conversation (via @-mentions in
+   * the chat composer). Unlike relatedSnippets — which are auto-collected and
+   * heuristic — these are deliberate, so they're rendered as their own section
+   * and the model is told they were chosen on purpose.
+   */
+  pinnedFiles?: WorkspaceSnippet[];
 }
 
 export interface WorkspaceInstructionSource {

@@ -146,6 +146,40 @@
         background: none;
       }
 
+      .code-block {
+        position: relative;
+      }
+
+      .code-actions {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+      }
+
+      .code-block:hover .code-actions,
+      .code-actions:focus-within {
+        opacity: 1;
+      }
+
+      .code-action-btn {
+        font-size: 11px;
+        line-height: 1;
+        padding: 4px 7px;
+        border-radius: 5px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        background: var(--vscode-button-secondaryBackground, rgba(127, 127, 127, 0.18));
+        color: var(--vscode-button-secondaryForeground, inherit);
+        cursor: pointer;
+      }
+
+      .code-action-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground, rgba(127, 127, 127, 0.3));
+      }
+
       .assistant code {
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 0.95em;
@@ -440,6 +474,74 @@
         background: var(--vscode-toolbar-hoverBackground);
       }
 
+      .usage-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 6px;
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        opacity: 0.8;
+        white-space: nowrap;
+      }
+
+      .pin-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 6px;
+      }
+
+      .pin-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        padding: 2px 4px 2px 7px;
+        border-radius: 6px;
+        background: var(--vscode-badge-background, rgba(127, 127, 127, 0.22));
+        color: var(--vscode-badge-foreground, inherit);
+        max-width: 220px;
+      }
+
+      .pin-chip .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pin-chip button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 2px;
+      }
+
+      .mention-row {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        padding: 6px 8px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .mention-row[aria-selected="true"],
+      .mention-row:hover {
+        background: var(--vscode-toolbar-hoverBackground, rgba(127, 127, 127, 0.18));
+      }
+
+      .mention-row .dir {
+        opacity: 0.6;
+      }
+
       .model-chip:focus-visible {
         outline: 1px solid var(--vscode-focusBorder);
         outline-offset: 2px;
@@ -527,6 +629,14 @@
         padding: 7px 10px;
         border-radius: 8px;
         text-align: left;
+      }
+
+      .menu-action {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
       }
 
       .menu-leading {
@@ -832,7 +942,12 @@
       </section>
       <form id="chat-form" class="composer-wrap">
         <div class="composer-shell">
-          <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu"></textarea>
+          <div id="pin-chips" class="pin-chips" hidden aria-label="Pinned files"></div>
+          <textarea
+            id="message"
+            aria-label="Message"
+            placeholder="Ask CodeSetu (type @ to add a file)"
+          ></textarea>
           <div class="composer-toolbar">
             <div class="toolbar-group">
               <button
@@ -903,6 +1018,12 @@
                   <path d="m6 9 6 6 6-6" />
                 </svg>
               </button>
+              <span
+                id="usage-chip"
+                class="usage-chip"
+                hidden
+                title="Estimated tokens in the context sent to the model (approximate)"
+              ></span>
               <button id="send" class="send-button" type="submit" aria-label="Send message">
                 <svg class="composer-icon" data-icon="send" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M12 19V5" />
@@ -979,6 +1100,22 @@
               <span class="switch-track"></span>
             </span>
           </label>
+          <button id="new-chat" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg
+                  class="composer-icon"
+                  data-icon="new-chat"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </span>
+              New chat
+            </span>
+          </button>
         </div>
         <div
           id="slash-menu"
@@ -986,6 +1123,13 @@
           hidden
           role="listbox"
           aria-label="Slash commands"
+        ></div>
+        <div
+          id="mention-menu"
+          class="menu slash-menu"
+          hidden
+          role="listbox"
+          aria-label="Workspace files"
         ></div>
         <div id="approve-row" class="approve-row" data-show="false">
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
@@ -1154,7 +1298,12 @@
       }
 
       textarea.addEventListener("input", maybeOpenSlashMenu);
+      textarea.addEventListener("input", maybeOpenMentionMenu);
       textarea.addEventListener("keydown", (event) => {
+        // The @-mention picker takes keyboard priority when it is open.
+        if (!mentionMenu.hidden && handleMentionKeydown(event)) {
+          return;
+        }
         if (slashMenu.hidden) {
           // Palette closed: Enter sends, Shift+Enter inserts a newline.
           if (event.key === "Enter" && !event.shiftKey) {
@@ -1186,6 +1335,174 @@
           slashSelectedIndex = index;
           applySlashSelection();
           textarea.focus();
+        }
+      });
+
+      // @-mention file pinning ---------------------------------------------------
+      // Typing "@" + a query opens a workspace-file picker (results from the
+      // host). Selecting a file pins it as primary context; pins ride along on
+      // every send until removed. Pins are per-session (not persisted).
+      const mentionMenu = document.getElementById("mention-menu");
+      const pinChips = document.getElementById("pin-chips");
+      let mentionItems = [];
+      let mentionSelectedIndex = 0;
+      let mentionRange = null;
+      let mentionRequestSeq = 0;
+      let pinnedFiles = [];
+
+      function currentMention() {
+        const caret = textarea.selectionStart;
+        const upto = textarea.value.slice(0, caret);
+        const match = /(^|\s)@([^\s@]*)$/.exec(upto);
+        if (!match) return null;
+        const token = match[2];
+        return { token: token, start: caret - token.length - 1, end: caret };
+      }
+
+      function maybeOpenMentionMenu() {
+        const mention = currentMention();
+        if (!mention) {
+          closeMentionMenu();
+          return;
+        }
+        closeSlashMenu();
+        setMenuOpen(false);
+        mentionRange = mention;
+        mentionRequestSeq += 1;
+        post({ type: "searchFiles", requestId: String(mentionRequestSeq), query: mention.token });
+      }
+
+      function renderMentionMenu(items) {
+        mentionItems = items || [];
+        if (mentionItems.length === 0) {
+          closeMentionMenu();
+          return;
+        }
+        mentionSelectedIndex = 0;
+        mentionMenu.innerHTML = mentionItems
+          .map((path, index) => {
+            const slash = path.lastIndexOf("/");
+            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
+            const name = slash === -1 ? path : path.slice(slash + 1);
+            return (
+              '<button type="button" class="mention-row" role="option" data-index="' +
+              index +
+              '" aria-selected="' +
+              (index === 0 ? "true" : "false") +
+              '"><span class="dir">' +
+              escapeAttr(dir) +
+              "</span>" +
+              escapeAttr(name) +
+              "</button>"
+            );
+          })
+          .join("");
+        mentionMenu.hidden = false;
+      }
+
+      function closeMentionMenu() {
+        mentionMenu.hidden = true;
+        mentionItems = [];
+        mentionRange = null;
+      }
+
+      function updateMentionSelection(direction) {
+        if (mentionItems.length === 0) return;
+        mentionSelectedIndex =
+          (mentionSelectedIndex + direction + mentionItems.length) % mentionItems.length;
+        const rows = mentionMenu.querySelectorAll(".mention-row");
+        rows.forEach((row, idx) => {
+          row.setAttribute("aria-selected", idx === mentionSelectedIndex ? "true" : "false");
+          if (idx === mentionSelectedIndex) row.scrollIntoView({ block: "nearest" });
+        });
+      }
+
+      function applyMentionSelection() {
+        const path = mentionItems[mentionSelectedIndex];
+        if (!path) return false;
+        addPin(path);
+        if (mentionRange) {
+          const v = textarea.value;
+          textarea.value = v.slice(0, mentionRange.start) + v.slice(mentionRange.end);
+          textarea.setSelectionRange(mentionRange.start, mentionRange.start);
+        }
+        closeMentionMenu();
+        textarea.focus();
+        return true;
+      }
+
+      function addPin(path) {
+        if (pinnedFiles.indexOf(path) === -1) {
+          pinnedFiles.push(path);
+          renderChips();
+        }
+      }
+
+      function removePin(path) {
+        pinnedFiles = pinnedFiles.filter((p) => p !== path);
+        renderChips();
+      }
+
+      function renderChips() {
+        pinChips.textContent = "";
+        if (pinnedFiles.length === 0) {
+          pinChips.hidden = true;
+          return;
+        }
+        pinChips.hidden = false;
+        for (const path of pinnedFiles) {
+          const chip = document.createElement("span");
+          chip.className = "pin-chip";
+          const label = document.createElement("span");
+          label.className = "label";
+          const slash = path.lastIndexOf("/");
+          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          label.title = path;
+          chip.appendChild(label);
+          const close = document.createElement("button");
+          close.type = "button";
+          close.setAttribute("aria-label", "Unpin " + path);
+          close.textContent = "×";
+          close.addEventListener("click", () => removePin(path));
+          chip.appendChild(close);
+          pinChips.appendChild(chip);
+        }
+      }
+
+      function handleMentionKeydown(event) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateMentionSelection(1);
+          return true;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateMentionSelection(-1);
+          return true;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          if (applyMentionSelection()) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeMentionMenu();
+          return true;
+        }
+        return false;
+      }
+
+      mentionMenu.addEventListener("click", (event) => {
+        const target =
+          event.target instanceof Element ? event.target.closest(".mention-row") : null;
+        if (!target) return;
+        const index = Number(target.getAttribute("data-index"));
+        if (Number.isFinite(index)) {
+          mentionSelectedIndex = index;
+          applyMentionSelection();
         }
       });
 
@@ -1593,6 +1910,7 @@
         message.className = "message " + kind;
         if (kind === "assistant") {
           message.innerHTML = renderMarkdown(text);
+          enhanceCodeBlocks(message);
         } else {
           message.textContent = text;
         }
@@ -1601,6 +1919,74 @@
         welcome.hidden = true;
         message.scrollIntoView({ block: "end", behavior: "smooth" });
         return message;
+      }
+
+      // Add a hover Copy / Insert toolbar to every fenced code block in a
+      // rendered assistant message. Copy writes to the clipboard; Insert asks
+      // the host to drop the snippet into the active editor at the caret.
+      function enhanceCodeBlocks(container) {
+        const blocks = container.querySelectorAll("pre");
+        for (const pre of blocks) {
+          if (pre.dataset.enhanced === "1") continue;
+          pre.dataset.enhanced = "1";
+          const code = pre.querySelector("code");
+          const text = code ? code.textContent : pre.textContent;
+
+          const wrap = document.createElement("div");
+          wrap.className = "code-block";
+          pre.parentNode.insertBefore(wrap, pre);
+          wrap.appendChild(pre);
+
+          const actions = document.createElement("div");
+          actions.className = "code-actions";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.type = "button";
+          copyBtn.className = "code-action-btn";
+          copyBtn.textContent = "Copy";
+          copyBtn.addEventListener("click", () => {
+            copyToClipboard(text);
+            copyBtn.textContent = "Copied";
+            setTimeout(() => {
+              copyBtn.textContent = "Copy";
+            }, 1200);
+          });
+
+          const insertBtn = document.createElement("button");
+          insertBtn.type = "button";
+          insertBtn.className = "code-action-btn";
+          insertBtn.textContent = "Insert";
+          insertBtn.addEventListener("click", () => {
+            post({ type: "insertCode", code: text });
+          });
+
+          actions.appendChild(copyBtn);
+          actions.appendChild(insertBtn);
+          wrap.appendChild(actions);
+        }
+      }
+
+      function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+        } else {
+          fallbackCopy(text);
+        }
+      }
+
+      function fallbackCopy(text) {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        try {
+          document.execCommand("copy");
+        } catch (error) {
+          // Clipboard unavailable in this webview; nothing else we can do.
+        }
+        document.body.removeChild(area);
       }
 
       // Inline tool-approval card: replaces the native dialog so the user
@@ -1768,6 +2154,8 @@
           a.thinkLabel.textContent = "Thought for " + secs + "s";
           a.thinking.open = false;
         }
+        // The streamed answer is now complete — add Copy / Insert toolbars.
+        enhanceCodeBlocks(a.answer);
         activeAssistant = undefined;
       }
 
@@ -1880,6 +2268,11 @@
         post({ type: "selectModel" });
       });
 
+      document.getElementById("new-chat").addEventListener("click", () => {
+        setMenuOpen(false);
+        post({ type: "newChat" });
+      });
+
       welcomeConfigure.addEventListener("click", () => {
         post({ type: "configureProvider" });
       });
@@ -1910,6 +2303,7 @@
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
           agentMode: agentModeToggle.checked,
+          pinnedFiles: pinnedFiles.slice(),
         });
       }
 
@@ -1994,8 +2388,31 @@
           modelLabel.textContent = message.text;
         }
 
+        if (message.type === "usage") {
+          const tokens = Number(message.tokens) || 0;
+          const usageChip = document.getElementById("usage-chip");
+          const label = tokens < 1000 ? String(tokens) : (tokens / 1000).toFixed(1) + "k";
+          usageChip.textContent = "~" + label + " ctx";
+          usageChip.hidden = false;
+        }
+
+        if (message.type === "fileResults") {
+          // Ignore stale responses: only the latest @-query may render.
+          if (message.requestId === String(mentionRequestSeq) && mentionRange) {
+            renderMentionMenu(message.items || []);
+          }
+        }
+
         if (message.type === "welcome") {
           welcome.hidden = !message.show;
+        }
+
+        if (message.type === "clearTranscript") {
+          transcript.replaceChildren();
+          activeAssistant = undefined;
+          const usageChip = document.getElementById("usage-chip");
+          usageChip.hidden = true;
+          welcome.hidden = false;
         }
 
         if (message.type === "busy") {

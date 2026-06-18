@@ -195,6 +195,31 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         background: none;
       }
 
+      .code-block {
+        position: relative;
+      }
+
+      .code-toolbar {
+        display: flex;
+        gap: 4px;
+        justify-content: flex-end;
+        margin: 4px 0 -2px;
+      }
+
+      .code-toolbar button {
+        font-size: 0.78em;
+        padding: 2px 8px;
+        border-radius: 5px;
+        cursor: pointer;
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-button-border, var(--vscode-widget-border, #666));
+      }
+
+      .code-toolbar button:hover {
+        background: var(--vscode-button-secondaryHoverBackground, rgba(127, 127, 127, 0.15));
+      }
+
       .assistant code {
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 0.95em;
@@ -374,6 +399,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         outline: none;
       }
 
+      .usage-chip {
+        align-self: center;
+        padding: 1px 7px;
+        border-radius: 9px;
+        font-size: 0.74em;
+        color: var(--vscode-descriptionForeground);
+        background: var(--vscode-badge-background, rgba(127, 127, 127, 0.16));
+        white-space: nowrap;
+      }
+
       .model-chip {
         display: inline-flex;
         align-items: center;
@@ -480,6 +515,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         padding: 7px 10px;
         border-radius: 8px;
         text-align: left;
+      }
+
+      .menu-action {
+        border: 0;
+        background: transparent;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+      }
+
+      .menu-action:hover {
+        background: var(--vscode-toolbar-hoverBackground);
       }
 
       .menu-leading {
@@ -603,6 +649,76 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         max-width: 420px;
       }
 
+      .mention-menu {
+        left: 0;
+        right: auto;
+        bottom: 54px;
+        max-width: 460px;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+
+      .mention-row {
+        display: block;
+        width: 100%;
+        padding: 6px 10px;
+        border: 0;
+        border-radius: 8px;
+        text-align: left;
+        background: transparent;
+        color: var(--vscode-foreground);
+        cursor: pointer;
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: 0.85em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mention-row[aria-selected="true"],
+      .mention-row:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+
+      .mention-row .dir {
+        color: var(--vscode-descriptionForeground);
+      }
+
+      .pin-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 8px 10px 0;
+      }
+
+      .pin-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 240px;
+        padding: 2px 6px 2px 8px;
+        border-radius: 6px;
+        font-size: 0.78em;
+        background: var(--vscode-badge-background, rgba(127, 127, 127, 0.18));
+        color: var(--vscode-badge-foreground, var(--vscode-foreground));
+      }
+
+      .pin-chip .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pin-chip button {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        padding: 0 2px;
+        font-size: 1.1em;
+        line-height: 1;
+      }
+
       .slash-row {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
@@ -712,7 +828,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       <section id="transcript" aria-live="polite"></section>
       <form id="chat-form" class="composer-wrap">
         <div class="composer-shell">
-          <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu"></textarea>
+          <div id="pin-chips" class="pin-chips" hidden aria-label="Pinned files"></div>
+          <textarea id="message" aria-label="Message" placeholder="Ask CodeSetu (type @ to add a file)"></textarea>
           <div class="composer-toolbar">
             <div class="toolbar-group">
               <button
@@ -771,6 +888,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                   <path d="M12 18v3" />
                 </svg>
               </button>
+              <span id="usage-chip" class="usage-chip" hidden title="Estimated tokens in the context sent to the model (approximate)"></span>
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
@@ -848,8 +966,32 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               <span class="switch-track"></span>
             </span>
           </label>
+          <button id="new-chat" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="new-chat" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </span>
+              New chat
+            </span>
+          </button>
+          <button id="chat-history" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="history" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                  <path d="M3 4v4h4" />
+                  <path d="M12 8v4l3 2" />
+                </svg>
+              </span>
+              Chat history…
+            </span>
+          </button>
         </div>
         <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
+        <div id="mention-menu" class="menu mention-menu" hidden role="listbox" aria-label="Workspace files"></div>
         <div id="approve-row" class="approve-row" data-show="false">
           <button id="approve-run" class="approve-button" type="button">Approve &amp; Run</button>
           <span class="approve-hint">Sends "${escapeHtml("APPROVED — proceed with implementation")}" and exits Plan Mode.</span>
@@ -899,6 +1041,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           planMode: planModeToggle.checked,
           agentMode: agentModeToggle.checked,
           includeContext: includeContext.checked,
+          pinnedFiles: pinnedFiles,
         });
       }
 
@@ -1036,8 +1179,14 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         renderSlashMenu(text);
       }
 
-      textarea.addEventListener("input", maybeOpenSlashMenu);
+      textarea.addEventListener("input", () => {
+        maybeOpenSlashMenu();
+        maybeOpenMentionMenu();
+      });
       textarea.addEventListener("keydown", (event) => {
+        if (!mentionMenu.hidden && handleMentionKeydown(event)) {
+          return;
+        }
         if (slashMenu.hidden) {
           // Palette closed: Enter sends, Shift+Enter inserts a newline.
           if (event.key === "Enter" && !event.shiftKey) {
@@ -1071,6 +1220,181 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           textarea.focus();
         }
       });
+
+      // @-mention file pinning ---------------------------------------------------
+      // Typing "@" + a query opens a workspace-file picker (results fetched from
+      // the host). Selecting a file pins it as primary context for the turn; the
+      // pins persist across turns until removed, and ride along on every send.
+      const mentionMenu = document.getElementById("mention-menu");
+      const pinChips = document.getElementById("pin-chips");
+      let mentionItems = [];
+      let mentionSelectedIndex = 0;
+      let mentionRange = null;
+      let mentionRequestSeq = 0;
+      let pinnedFiles = Array.isArray(savedState.pinnedFiles) ? savedState.pinnedFiles.slice() : [];
+
+      function currentMention() {
+        const caret = textarea.selectionStart;
+        const upto = textarea.value.slice(0, caret);
+        const match = /(^|\\s)@([^\\s@]*)$/.exec(upto);
+        if (!match) return null;
+        const token = match[2];
+        return { token: token, start: caret - token.length - 1, end: caret };
+      }
+
+      function maybeOpenMentionMenu() {
+        const mention = currentMention();
+        if (!mention) {
+          closeMentionMenu();
+          return;
+        }
+        closeSlashMenu();
+        setMenuOpen(false);
+        mentionRange = mention;
+        mentionRequestSeq += 1;
+        vscode.postMessage({
+          type: "searchFiles",
+          requestId: String(mentionRequestSeq),
+          query: mention.token,
+        });
+      }
+
+      function renderMentionMenu(items) {
+        mentionItems = items;
+        if (!items || items.length === 0) {
+          closeMentionMenu();
+          return;
+        }
+        mentionSelectedIndex = 0;
+        mentionMenu.innerHTML = items
+          .map((path, index) => {
+            const slash = path.lastIndexOf("/");
+            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
+            const name = slash === -1 ? path : path.slice(slash + 1);
+            return (
+              '<button type="button" class="mention-row" role="option" data-index="' +
+              index +
+              '" aria-selected="' +
+              (index === 0 ? "true" : "false") +
+              '"><span class="dir">' +
+              escapeAttr(dir) +
+              "</span>" +
+              escapeAttr(name) +
+              "</button>"
+            );
+          })
+          .join("");
+        mentionMenu.hidden = false;
+      }
+
+      function closeMentionMenu() {
+        mentionMenu.hidden = true;
+        mentionItems = [];
+        mentionRange = null;
+      }
+
+      function updateMentionSelection(direction) {
+        if (mentionItems.length === 0) return;
+        mentionSelectedIndex =
+          (mentionSelectedIndex + direction + mentionItems.length) % mentionItems.length;
+        const rows = mentionMenu.querySelectorAll(".mention-row");
+        rows.forEach((row, idx) => {
+          row.setAttribute("aria-selected", idx === mentionSelectedIndex ? "true" : "false");
+          if (idx === mentionSelectedIndex) row.scrollIntoView({ block: "nearest" });
+        });
+      }
+
+      function applyMentionSelection() {
+        const path = mentionItems[mentionSelectedIndex];
+        if (!path) return false;
+        addPin(path);
+        if (mentionRange) {
+          const v = textarea.value;
+          textarea.value = v.slice(0, mentionRange.start) + v.slice(mentionRange.end);
+          textarea.setSelectionRange(mentionRange.start, mentionRange.start);
+        }
+        closeMentionMenu();
+        textarea.focus();
+        return true;
+      }
+
+      function addPin(path) {
+        if (pinnedFiles.indexOf(path) === -1) {
+          pinnedFiles.push(path);
+          persistState();
+          renderChips();
+        }
+      }
+
+      function removePin(path) {
+        pinnedFiles = pinnedFiles.filter((p) => p !== path);
+        persistState();
+        renderChips();
+      }
+
+      function renderChips() {
+        pinChips.textContent = "";
+        if (pinnedFiles.length === 0) {
+          pinChips.hidden = true;
+          return;
+        }
+        pinChips.hidden = false;
+        for (const path of pinnedFiles) {
+          const chip = document.createElement("span");
+          chip.className = "pin-chip";
+          const label = document.createElement("span");
+          label.className = "label";
+          const slash = path.lastIndexOf("/");
+          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          label.title = path;
+          chip.appendChild(label);
+          const close = document.createElement("button");
+          close.type = "button";
+          close.setAttribute("aria-label", "Unpin " + path);
+          close.textContent = "\\u00d7";
+          close.addEventListener("click", () => removePin(path));
+          chip.appendChild(close);
+          pinChips.appendChild(chip);
+        }
+      }
+
+      function handleMentionKeydown(event) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          updateMentionSelection(1);
+          return true;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          updateMentionSelection(-1);
+          return true;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          if (applyMentionSelection()) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeMentionMenu();
+          return true;
+        }
+        return false;
+      }
+
+      mentionMenu.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target.closest(".mention-row") : null;
+        if (!target) return;
+        const index = Number(target.getAttribute("data-index"));
+        if (Number.isFinite(index)) {
+          mentionSelectedIndex = index;
+          applyMentionSelection();
+        }
+      });
+
+      renderChips();
 
       // Voice (STT only) ---------------------------------------------------------
       // Capture runs in the extension HOST, not here: VS Code webviews can't
@@ -1309,11 +1633,56 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         return html;
       }
 
+      // Give each fenced code block a Copy / Insert toolbar. Called only once a
+      // turn is final (not mid-stream), so the buttons appear on complete code.
+      // The code text is read from the rendered <code> (textContent, so it's the
+      // original un-escaped source) and sent to the host to act on.
+      function enhanceCodeBlocks(container) {
+        const blocks = container.querySelectorAll("pre");
+        for (const pre of blocks) {
+          if (pre.parentElement && pre.parentElement.classList.contains("code-block")) {
+            continue;
+          }
+          const codeEl = pre.querySelector("code");
+          const code = codeEl ? codeEl.textContent : pre.textContent;
+          if (!code || code.trim().length === 0) {
+            continue;
+          }
+          const wrap = document.createElement("div");
+          wrap.className = "code-block";
+          pre.parentNode.insertBefore(wrap, pre);
+          const toolbar = document.createElement("div");
+          toolbar.className = "code-toolbar";
+          toolbar.appendChild(makeCodeButton("Copy", () => {
+            vscode.postMessage({ type: "copyCode", code: code });
+          }));
+          toolbar.appendChild(makeCodeButton("Insert", () => {
+            vscode.postMessage({ type: "insertCode", code: code });
+          }));
+          wrap.appendChild(toolbar);
+          wrap.appendChild(pre);
+        }
+      }
+
+      function makeCodeButton(label, onClick) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          onClick();
+          const original = button.textContent;
+          button.textContent = label === "Copy" ? "Copied" : "Inserted";
+          setTimeout(() => { button.textContent = original; }, 1200);
+        });
+        return button;
+      }
+
       function appendMessage(kind, text) {
         const message = document.createElement("article");
         message.className = "message " + kind;
         if (kind === "assistant") {
           message.innerHTML = renderMarkdown(text);
+          enhanceCodeBlocks(message);
         } else {
           message.textContent = text;
         }
@@ -1483,6 +1852,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           a.thinkLabel.textContent = "Thought for " + secs + "s";
           a.thinking.open = false;
         }
+        enhanceCodeBlocks(a.answer);
         activeAssistant = undefined;
       }
 
@@ -1589,6 +1959,16 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         vscode.postMessage({ type: "selectModel" });
       });
 
+      document.getElementById("new-chat").addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "newChat" });
+      });
+
+      document.getElementById("chat-history").addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "openHistory" });
+      });
+
       document.addEventListener("click", (event) => {
         const target = event.target;
 
@@ -1598,6 +1978,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (!target.closest(".menu") && !target.closest(".icon-button")) {
           setMenuOpen(false);
+          if (target !== textarea) closeMentionMenu();
         }
       });
 
@@ -1619,6 +2000,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           includeIdeContext: includeContext.checked,
           planMode: planModeToggle.checked,
           agentMode: agentModeToggle.checked,
+          pinnedFiles: pinnedFiles.slice(),
         });
       }
 
@@ -1651,6 +2033,13 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
 
         if (message.type === "contextPreview") {
           renderContextPreview(message.preview);
+        }
+
+        if (message.type === "clearTranscript") {
+          transcript.textContent = "";
+          activeAssistant = undefined;
+          lastTurnWasPlan = false;
+          updateModeUi();
         }
 
         if (message.type === "assistantMessage") {
@@ -1712,6 +2101,21 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           modelLabel.textContent = message.text;
         }
 
+        if (message.type === "usage") {
+          const tokens = Number(message.tokens) || 0;
+          const usageChip = document.getElementById("usage-chip");
+          const label = tokens < 1000 ? String(tokens) : (tokens / 1000).toFixed(1) + "k";
+          usageChip.textContent = "~" + label + " ctx";
+          usageChip.hidden = false;
+        }
+
+        if (message.type === "fileResults") {
+          // Ignore stale responses: only the latest @-query may render.
+          if (message.requestId === String(mentionRequestSeq) && mentionRange) {
+            renderMentionMenu(message.items || []);
+          }
+        }
+
         if (message.type === "busy") {
           const isBusy = Boolean(message.value);
           // Swap Send for Stop while a turn is in flight so the user can cancel.
@@ -1724,6 +2128,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           modelChip.disabled = isBusy;
         }
       });
+
+      // Tell the host the webview is mounted so it can replay a persisted
+      // conversation into the transcript (restore on reload).
+      vscode.postMessage({ type: "ready" });
     </script>
   </body>
 </html>`;

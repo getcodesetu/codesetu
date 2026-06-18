@@ -69,6 +69,15 @@ export function trackActiveEditor(vscode: VSCodeApi): vscodeTypes.Disposable {
   });
 }
 
+/**
+ * The editor to act on from the chat panel (insert-at-cursor, etc.). Prefers the
+ * live active editor, falling back to the last real one we saw before the
+ * webview took focus — same recovery logic collectVSCodeContext relies on.
+ */
+export function getActiveOrLastEditor(vscode: VSCodeApi): vscodeTypes.TextEditor | undefined {
+  return vscode.window.activeTextEditor ?? lastActiveEditor;
+}
+
 export async function collectVSCodeContext(): Promise<IdeContextPayload> {
   const vscode: VSCodeApi = await import("vscode");
   const editor = vscode.window.activeTextEditor ?? lastActiveEditor;

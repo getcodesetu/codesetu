@@ -34,6 +34,7 @@ export interface CodeSetuConfiguration {
   fimMaxPrefixChars: number;
   fimMaxSuffixChars: number;
   fimStopSequences: string[];
+  fimDebounceMs: number;
   chatMaxTokens: number;
   chatTemperature: number;
   skillsAutoRoute: boolean;
@@ -67,6 +68,7 @@ export function readCodeSetuConfiguration(): CodeSetuConfiguration {
       "\n\n",
       "\n```",
     ]),
+    fimDebounceMs: configuration.get<number>("inlineCompletions.debounceMs", 200),
     chatMaxTokens: configuration.get<number>("chat.maxTokens", 4096),
     chatTemperature: configuration.get<number>("chat.temperature", 0.2),
     skillsAutoRoute: configuration.get<boolean>("skills.autoRoute", true),

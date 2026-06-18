@@ -18,6 +18,13 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     // into PasswordSafe on first access. New keys are never persisted here.
     var apiKey: String = "",
     var skillsAutoRoute: Boolean = true,
+    // Inline (ghost-text) fill-in-the-middle completions as you type.
+    var inlineCompletionsEnabled: Boolean = true,
+    var fimMaxTokens: Int = 96,
+    var fimMaxPrefixChars: Int = 4000,
+    var fimMaxSuffixChars: Int = 2000,
+    // Debounce before requesting a completion, so a keystroke burst fires once.
+    var fimDebounceMs: Int = 200,
     // Default to Sarvam in JetBrains: browser SpeechRecognition does not work
     // in JCEF (no Google cloud-speech keys in the embedded Chromium build),
     // so the only out-of-the-box working option is a server provider.

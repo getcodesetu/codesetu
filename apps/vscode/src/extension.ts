@@ -36,6 +36,7 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import type { WorkspaceCheckpoint } from "./agentCheckpoint";
 import { AGENT_MODE_SYSTEM_NOTE, runAgentTurn } from "./agentRunner";
 import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
@@ -43,7 +44,10 @@ import { resolveAssistantResponse } from "./chatStreaming";
 import { registerCodeSetuEditorActions } from "./codeActions";
 import { CodeSetuInlineCompletionProvider } from "./completionProvider";
 import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./configuration";
+import { registerEditCommand } from "./editCommand";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
+import { readPinnedFiles } from "./pinnedFiles";
+import { estimateTokensForParts } from "./tokenEstimate";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
 import { setupCodeSetuProvider } from "./providerSetup";
@@ -89,6 +93,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     apiKey,
   });
 
+  // The most recent agent turn's file checkpoint, for one-click revert.
+  let lastAgentCheckpoint: WorkspaceCheckpoint | undefined;
+
   const inlineCompletionProvider = vscode.languages.registerInlineCompletionItemProvider(
     { scheme: "file" },
     new CodeSetuInlineCompletionProvider({
@@ -107,6 +114,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // truth); falls back to the constants if the bundle is missing/unparseable.
   const builtinSkills = await loadBuiltinSkills(context, outputChannel);
   ChatPanel.configureBuiltinSkills(builtinSkills);
+  // Persist the chat transcript per-workspace so it survives a reload.
+  ChatPanel.configureStorage(context.workspaceState);
 
   const responder: ChatResponder = async (messages, requestContext) => {
     const configuration = readCodeSetuConfiguration();
@@ -131,9 +140,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ? withLastUserMessage(messages, routed.cleanedUserText)
         : messages;
 
-    const ideContext =
+    const ideContext: IdeContextPayload =
       requestContext?.ideContext ??
       ((requestContext?.includeIdeContext ?? true) ? await collectVSCodeContext() : {});
+    // @-pinned files are an explicit user choice, so they're attached even when
+    // automatic IDE context is turned off for this turn.
+    if (requestContext?.pinnedFiles !== undefined && requestContext.pinnedFiles.length > 0) {
+      const pinned = await readPinnedFiles(vscode, requestContext.pinnedFiles);
+      if (pinned.length > 0) {
+        ideContext.pinnedFiles = pinned;
+      }
+    }
     const instructions = await loadInstructions();
 
     // Surface exactly what we're about to send — selected code, routed skills,
@@ -141,6 +158,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     requestContext?.onContextPreview?.(
       buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
     );
+
+    // Estimate how much context this turn carries (system prompt + IDE context +
+    // the rolling history) for the composer's usage gauge.
+    requestContext?.onUsage?.({
+      tokens: estimateTokensForParts([
+        buildCodeSetuSystemMessage([...instructions], { pinnedSkills: [...routed.selected] }),
+        hasIdeContext(ideContext) ? buildContextMarkdown(ideContext) : "",
+        ...providerMessages.map((message) =>
+          typeof message.content === "string" ? message.content : "",
+        ),
+      ]),
+    });
 
     outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
     if (requestContext?.agentMode === true) {
@@ -156,6 +185,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         requestContext?.persistMessages,
         requestContext?.signal,
         requestContext?.requestApproval,
+        (checkpoint) => {
+          lastAgentCheckpoint = checkpoint;
+        },
       );
     }
 
@@ -177,6 +209,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const openChatCommand = vscode.commands.registerCommand("codesetu.openChat", () => {
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
   });
+  const newChatCommand = vscode.commands.registerCommand("codesetu.newChat", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
+    ChatPanel.newConversation();
+  });
+  const chatHistoryCommand = vscode.commands.registerCommand("codesetu.chatHistory", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
+    ChatPanel.showHistory();
+  });
   const setupProviderCommand = vscode.commands.registerCommand("codesetu.setupProvider", () =>
     setupCodeSetuProvider(context.secrets),
   );
@@ -191,12 +231,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     await selectCodeSetuModel();
     ChatPanel.refreshModelLabel();
   });
+  const revertAgentEditsCommand = vscode.commands.registerCommand(
+    "codesetu.revertLastAgentEdits",
+    async () => {
+      if (lastAgentCheckpoint === undefined || lastAgentCheckpoint.isEmpty()) {
+        void vscode.window.showInformationMessage("CodeSetu: no agent edits to revert.");
+        return;
+      }
+      const files = lastAgentCheckpoint.changedFiles();
+      const confirm = await vscode.window.showWarningMessage(
+        `Revert the last CodeSetu agent turn? This restores ${files.length} file${files.length === 1 ? "" : "s"} to their pre-turn state.`,
+        { modal: true, detail: files.join("\n") },
+        "Revert",
+      );
+      if (confirm !== "Revert") {
+        return;
+      }
+      const result = await lastAgentCheckpoint.revert();
+      lastAgentCheckpoint = undefined;
+      outputChannel.appendLine(
+        `[agent] reverted — restored=${result.restored}, deleted=${result.deleted}, failed=${result.failed}`,
+      );
+      const summary =
+        `CodeSetu reverted ${result.restored} file${result.restored === 1 ? "" : "s"}` +
+        (result.deleted > 0
+          ? `, deleted ${result.deleted} new file${result.deleted === 1 ? "" : "s"}`
+          : "") +
+        (result.failed > 0 ? `, ${result.failed} failed` : "") +
+        ".";
+      void vscode.window.showInformationMessage(summary);
+    },
+  );
 
   const editorActions = registerCodeSetuEditorActions({
     context,
     responder,
     outputChannel,
     speechBridge: buildSpeechBridge,
+  });
+
+  const editCommand = registerEditCommand({
+    createProvider: () => createProvider(buildProviderOptions()),
+    getConfiguration: readCodeSetuConfiguration,
+    outputChannel,
   });
 
   const homeView = vscode.window.registerTreeDataProvider("codesetuHome", {
@@ -209,11 +286,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     outputChannel,
     inlineCompletionProvider,
     openChatCommand,
+    newChatCommand,
+    chatHistoryCommand,
     setupProviderCommand,
     setupSpeechProviderCommand,
     diagnoseProviderCommand,
     selectModelCommand,
+    revertAgentEditsCommand,
     ...editorActions,
+    ...editCommand,
     homeView,
   );
 }
@@ -350,6 +431,7 @@ async function sendAgentChatRequest(
   persistMessages?: (messages: ChatMessage[]) => void,
   signal?: AbortSignal,
   requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
+  onCheckpoint?: (checkpoint: WorkspaceCheckpoint) => void,
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -387,6 +469,7 @@ async function sendAgentChatRequest(
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       ...(signal === undefined ? {} : { signal }),
       ...(requestApproval === undefined ? {} : { requestApproval }),
+      ...(onCheckpoint === undefined ? {} : { onCheckpoint }),
       outputChannel,
     });
   } catch (error: unknown) {
@@ -431,7 +514,8 @@ function hasIdeContext(context: IdeContextPayload): boolean {
     context.selectedText !== undefined ||
     context.cursorPrefix !== undefined ||
     context.cursorSuffix !== undefined ||
-    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0)
+    (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0) ||
+    (context.pinnedFiles !== undefined && context.pinnedFiles.length > 0)
   );
 }
 

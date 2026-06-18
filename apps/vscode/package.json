@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {
@@ -107,6 +107,26 @@
         "command": "codesetu.setupSpeechProvider",
         "title": "CodeSetu: Setup Speech Provider",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.editSelection",
+        "title": "Edit with CodeSetu",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.revertLastAgentEdits",
+        "title": "CodeSetu: Revert Last Agent Edits",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.newChat",
+        "title": "CodeSetu: New Chat",
+        "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.chatHistory",
+        "title": "CodeSetu: Chat History",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
@@ -135,6 +155,11 @@
           "command": "codesetu.addDocsToSelection",
           "when": "editorHasSelection",
           "group": "1_modification@34"
+        },
+        {
+          "command": "codesetu.editSelection",
+          "when": "editorHasSelection",
+          "group": "1_modification@35"
         }
       ]
     },
@@ -238,6 +263,13 @@
             "type": "string"
           },
           "description": "Stop sequences for inline completions."
+        },
+        "codesetu.inlineCompletions.debounceMs": {
+          "type": "number",
+          "default": 200,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Delay in milliseconds before requesting an inline completion, so a burst of keystrokes fires only one request."
         },
         "codesetu.chat.maxTokens": {
           "type": "number",

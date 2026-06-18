@@ -11,10 +11,16 @@ import ai.codesetu.agent.DEFAULT_MAX_ITERATIONS
 import ai.codesetu.agent.GetDiagnosticsTool
 import ai.codesetu.agent.createBashCommandPolicy
 import ai.codesetu.agent.defaultAgentTools
+import ai.codesetu.agent.RevertResult
+import ai.codesetu.agent.WorkspaceCheckpoint
+import ai.codesetu.agent.checkpointingHost
 import ai.codesetu.agent.parseAgentPolicy
 import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
 import ai.codesetu.context.collectIdeContext
+import ai.codesetu.context.estimateTokensForParts
+import ai.codesetu.context.readPinnedFiles
+import ai.codesetu.context.searchWorkspaceFiles
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
@@ -39,14 +45,18 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
@@ -56,6 +66,7 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import javax.swing.JComponent
 import javax.swing.JLabel
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -63,6 +74,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -99,7 +111,13 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
   private val speechClient = CodeSetuSpeechClient()
+  private val historyJson = Json { ignoreUnknownKeys = true }
   private val history = mutableListOf<ChatMessage>()
+  // Snapshot of the persisted transcript, replayed once the webview mounts.
+  private val restoredHistory: List<ChatMessage> = loadPersistedHistory()
+  private var replayedHistory = false
+  // File snapshots from the most recent agent turn, for "Revert Last Agent Edits".
+  private var lastAgentCheckpoint: WorkspaceCheckpoint? = null
 
   // EDT-only state: outgoing messages buffered until the page signals "ready".
   private val pending = mutableListOf<String>()
@@ -118,6 +136,9 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       handlePost(request)
       null
     }
+    // Resume the conversation persisted for this project so a reload (or IDE
+    // restart) doesn't lose the transcript. Replayed into the webview on ready.
+    history.addAll(restoredHistory)
     browser.loadHTML(ChatWebviewHtml.render(modelLabelText(), jsQuery.inject("payload")))
   }
 
@@ -155,13 +176,32 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val settings = CodeSetuSettingsState.getInstance().state
         val planMode = obj["planMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatPlanModeOn
         val agentMode = obj["agentMode"]?.jsonPrimitive?.booleanOrNull ?: settings.chatAgentModeOn
-        runChat(text, include, null, planMode, agentMode)
+        val pinned = obj["pinnedFiles"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        runChat(text, include, null, planMode, agentMode, pinned)
+      }
+      "searchFiles" -> {
+        val requestId = obj["requestId"]?.jsonPrimitive?.contentOrNull ?: return
+        val query = obj["query"]?.jsonPrimitive?.contentOrNull ?: ""
+        ApplicationManager.getApplication().executeOnPooledThread {
+          val files = searchWorkspaceFiles(project.basePath, query)
+          push(
+            message("fileResults") {
+              put("requestId", requestId)
+              putJsonArray("items") { files.forEach { add(it) } }
+            },
+          )
+        }
       }
       "uiState" -> {
         val state = CodeSetuSettingsState.getInstance().state
         obj["planMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatPlanModeOn = it }
         obj["agentMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatAgentModeOn = it }
       }
+      "insertCode" -> {
+        val code = obj["code"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().invokeLater { insertCodeIntoEditor(code) }
+      }
+      "newChat" -> ApplicationManager.getApplication().invokeLater { clearConversation() }
       "cancel" -> {
         cancelRequested.set(true)
         resolvePendingApprovals(ApprovalDecision.DENY)
@@ -290,6 +330,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     captured: IdeContextPayload?,
     planMode: Boolean = false,
     agentMode: Boolean = false,
+    pinnedFiles: List<String> = emptyList(),
   ) {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return
@@ -305,17 +346,28 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       val ideContext = captured ?: if (includeContext) collectIdeContext(project) else IdeContextPayload()
 
       ApplicationManager.getApplication().executeOnPooledThread {
-        runRequest(trimmed, ideContext, planMode, agentMode)
+        runRequest(trimmed, ideContext, planMode, agentMode, pinnedFiles)
       }
     }
   }
 
   private fun runRequest(
     userText: String,
-    ideContext: IdeContextPayload,
+    baseIdeContext: IdeContextPayload,
     planMode: Boolean,
     agentMode: Boolean = false,
+    pinnedFiles: List<String> = emptyList(),
   ) {
+    // @-pinned files are an explicit user choice — read them (off the EDT) and
+    // attach as related snippets so they ride along as primary context.
+    val ideContext =
+      if (pinnedFiles.isEmpty()) {
+        baseIdeContext
+      } else {
+        baseIdeContext.copy(
+          relatedSnippets = baseIdeContext.relatedSnippets + readPinnedFiles(project.basePath, pinnedFiles),
+        )
+      }
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
@@ -345,6 +397,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
     // Surface exactly what we're about to send for the "Context sent to AI" panel.
     pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
+
+    // Estimate how much context this turn carries (system prompt + rolling
+    // history, which already folds in the IDE context) for the composer gauge.
+    push(message("usage") { put("tokens", estimateTokensForParts(messages.map { it.content ?: "" })) })
 
     if (agentMode) {
       val agentMessages =
@@ -430,7 +486,9 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   }
 
   private fun runAgentTurn(messages: List<ChatMessage>) {
-    val host = IntellijAgentHost(project)
+    // Snapshot every file the agent writes this turn so it can be reverted in
+    // one click (structured edits only; bash side effects aren't tracked).
+    val (host, checkpoint) = checkpointingHost(IntellijAgentHost(project))
     val policy = loadAgentPolicy()
     cancelRequested.set(false)
     var started = false
@@ -496,6 +554,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       finish()
       return
     }
+
+    // Keep this turn's snapshots around so the user can revert the agent's file
+    // edits in one click (replaces any prior turn's checkpoint).
+    lastAgentCheckpoint = checkpoint.takeIf { !it.isEmpty() }
 
     if (result.stoppedReason == "aborted") {
       ensureStarted()
@@ -570,6 +632,35 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   }
 
   private fun firstLine(text: String): String = truncateInline(text.split("\n").firstOrNull() ?: "", 200)
+
+  /**
+   * Insert a code snippet from a chat code block into the active editor —
+   * replacing the selection if there is one, otherwise inserting at the caret.
+   */
+  private fun insertCodeIntoEditor(code: String) {
+    val editor = FileEditorManager.getInstance(project).selectedTextEditor
+    if (editor == null) {
+      Messages.showInfoMessage(
+        project,
+        "Open a file and place the caret where you want the code inserted.",
+        "CodeSetu",
+      )
+      return
+    }
+    WriteCommandAction.runWriteCommandAction(project) {
+      val document = editor.document
+      val selection = editor.selectionModel
+      if (selection.hasSelection()) {
+        val start = selection.selectionStart
+        document.replaceString(start, selection.selectionEnd, code)
+        editor.caretModel.moveToOffset(start + code.length)
+      } else {
+        val offset = editor.caretModel.offset
+        document.insertString(offset, code)
+        editor.caretModel.moveToOffset(offset + code.length)
+      }
+    }
+  }
 
   private fun showModelPicker() {
     ApplicationManager.getApplication().invokeLater {
@@ -665,7 +756,90 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   private fun finish() {
     ApplicationManager.getApplication().invokeLater { inFlight = false }
+    persistHistory()
     push(busy(false))
+  }
+
+  private fun historyStorageKey(): String = "codesetu.chat.history"
+
+  private fun loadPersistedHistory(): List<ChatMessage> {
+    val raw = PropertiesComponent.getInstance(project).getValue(historyStorageKey()) ?: return emptyList()
+    return try {
+      historyJson.decodeFromString<List<ChatMessage>>(raw)
+    } catch (error: Exception) {
+      emptyList()
+    }
+  }
+
+  /** Persist the current transcript for this project so it survives a reload. */
+  private fun persistHistory() {
+    PropertiesComponent.getInstance(project)
+      .setValue(historyStorageKey(), historyJson.encodeToString(history.toList()))
+  }
+
+  /** Replay the persisted conversation into a freshly mounted webview (once). */
+  private fun replayRestoredHistory() {
+    if (replayedHistory) return
+    replayedHistory = true
+    for (entry in restoredHistory) {
+      if (entry.content.isEmpty()) continue // skip tool-call / tool-result turns
+      when (entry.role) {
+        "user" -> push(message("userMessage") { put("text", entry.content) })
+        "assistant" -> push(message("assistantMessage") { put("text", entry.content) })
+      }
+    }
+  }
+
+  /**
+   * Revert the file edits made by the most recent agent turn, restoring each
+   * touched file to its pre-turn state (and deleting files the agent created).
+   */
+  fun revertLastAgentEdits() {
+    ApplicationManager.getApplication().invokeLater {
+      val checkpoint = lastAgentCheckpoint
+      if (checkpoint == null || checkpoint.isEmpty()) {
+        Messages.showInfoMessage(project, "No CodeSetu agent edits to revert.", "CodeSetu")
+        return@invokeLater
+      }
+      val files = checkpoint.changedFiles()
+      val confirm = Messages.showYesNoDialog(
+        project,
+        "Revert the last CodeSetu agent turn? This restores ${files.size} " +
+          "file${if (files.size == 1) "" else "s"} to their pre-turn state.",
+        "Revert Agent Edits",
+        Messages.getWarningIcon(),
+      )
+      if (confirm != Messages.YES) return@invokeLater
+
+      val result = ApplicationManager.getApplication().runWriteAction<RevertResult> {
+        checkpoint.revert()
+      }
+      lastAgentCheckpoint = null
+      // Re-sync the VFS / open editors with the restored on-disk state.
+      project.basePath?.let {
+        LocalFileSystem.getInstance().refreshAndFindFileByPath(it)?.refresh(false, true)
+      }
+      val extra = buildString {
+        if (result.deleted > 0) append(", deleted ${result.deleted}")
+        if (result.failed > 0) append(", ${result.failed} failed")
+      }
+      Messages.showInfoMessage(
+        project,
+        "Reverted ${result.restored} file${if (result.restored == 1) "" else "s"}$extra.",
+        "CodeSetu",
+      )
+    }
+  }
+
+  /** Clear the conversation in both the host and the webview ("New chat"). */
+  private fun clearConversation() {
+    if (inFlight) {
+      cancelRequested.set(true)
+      resolvePendingApprovals(ApprovalDecision.DENY)
+    }
+    history.clear()
+    persistHistory()
+    push(message("clearTranscript"))
   }
 
   private fun push(json: String) {
@@ -683,7 +857,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       ready = true
       pending.forEach { executeJs(it) }
       pending.clear()
-      pushWelcome()
+      replayRestoredHistory()
+      // A restored transcript means the user is mid-conversation — skip the
+      // first-run welcome panel in that case.
+      if (history.isEmpty()) pushWelcome()
     }
   }
 

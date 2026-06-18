@@ -28,14 +28,35 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import {
+  deriveSessionTitle,
+  relativeTime,
+  removeSession,
+  upsertSession,
+  type ChatSession,
+} from "./chatSessions";
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
+import { getActiveOrLastEditor } from "./ideContext";
+import { searchWorkspaceFiles } from "./pinnedFiles";
 import { DictationController, NoRecorderError } from "./dictation";
 import { readSpeechConfiguration } from "./speechConfiguration";
 
 // Cap the rolling transcript sent to the provider so long sessions don't
 // overflow the context window. The most recent turns are always kept.
 const MAX_HISTORY_CHARS = 100_000;
+
+// Workspace-state key holding the legacy single transcript (pre-multi-session).
+// Read once and migrated into a session; never written anymore.
+const HISTORY_STORAGE_KEY = "codesetu.chat.history";
+
+// Workspace-state key holding the list of saved chat sessions.
+const SESSIONS_STORAGE_KEY = "codesetu.chat.sessions";
+
+/** A history-picker entry bound to a session id. */
+interface HistoryQuickPickItem extends vscode.QuickPickItem {
+  sessionId: string;
+}
 
 /** Preview of what the responder is about to send to the model, for the
  *  collapsible "Context sent to AI" panel. */
@@ -57,6 +78,8 @@ export interface ChatResponderContext {
   planMode?: boolean;
   /** When true, drive the tool-calling agent loop instead of a single reply. */
   agentMode?: boolean;
+  /** Workspace-relative paths the user @-pinned in the composer for this turn. */
+  pinnedFiles?: string[];
   /** Aborts when the user hits Stop; the agent loop checks it between steps. */
   signal?: AbortSignal;
   /** Approve a mutating tool call inline in the chat (replaces the native modal). */
@@ -64,6 +87,8 @@ export interface ChatResponderContext {
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Called once the payload is assembled, before the reply streams. */
   onContextPreview?: (preview: ContextPreview) => void;
+  /** Reports the estimated tokens in the assembled context for the UI gauge. */
+  onUsage?: (usage: { tokens: number }) => void;
   /**
    * Agent mode: the messages the turn produced (assistant tool-call turns, tool
    * results, final answer) to append to history verbatim, so the next turn keeps
@@ -78,6 +103,7 @@ export interface SendUserMessageOptions {
   includeIdeContext?: boolean;
   planMode?: boolean;
   agentMode?: boolean;
+  pinnedFiles?: string[];
 }
 
 export type ChatResponder = (
@@ -96,6 +122,13 @@ interface SendMessageRequest {
   includeIdeContext?: boolean;
   planMode?: boolean;
   agentMode?: boolean;
+  pinnedFiles?: string[];
+}
+
+interface SearchFilesRequest {
+  type: "searchFiles";
+  requestId: string;
+  query: string;
 }
 
 interface TranscribeRequest {
@@ -122,6 +155,16 @@ interface DictationRequest {
   action: "start" | "stop";
 }
 
+interface InsertCodeRequest {
+  type: "insertCode";
+  code: string;
+}
+
+interface CopyCodeRequest {
+  type: "copyCode";
+  code: string;
+}
+
 export class ChatPanel {
   private static currentPanel: ChatPanel | undefined;
   // Built-in skills resolved at activation (loaded from bundled SKILL.md, or the
@@ -134,8 +177,33 @@ export class ChatPanel {
     ChatPanel.builtinSkills = skills;
   }
 
+  // Workspace-scoped store for the chat transcript so it survives a reload.
+  private static storage: vscode.Memento | undefined;
+
+  /** Provide the Memento used to persist/restore the conversation (call once). */
+  public static configureStorage(storage: vscode.Memento): void {
+    ChatPanel.storage = storage;
+  }
+
+  /** Clear the active panel's conversation (backs the New Chat command). */
+  public static newConversation(): void {
+    ChatPanel.currentPanel?.clearConversation();
+  }
+
+  /** Open the chat-history picker on the active panel (backs the History command). */
+  public static showHistory(): void {
+    void ChatPanel.currentPanel?.openHistory();
+  }
+
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
+  // All saved conversations (most-recent first); the active one is mirrored in
+  // `history`. Persisted under SESSIONS_STORAGE_KEY.
+  private sessions: ChatSession[] = [];
+  private activeSessionId: string;
+  // Snapshot of the persisted conversation to replay once the webview mounts.
+  private readonly restoredHistory: readonly ChatMessage[];
+  private hasReplayed = false;
   private inFlight = false;
   // Webview-owned UI state mirrored to the host so editor actions (which don't
   // go through the composer) can inherit the user's current Plan Mode pick.
@@ -156,6 +224,14 @@ export class ChatPanel {
     private readonly speechBridge: SpeechBridge | undefined,
   ) {
     this.panel = panel;
+    // Seed from saved sessions so a reload resumes the most recent conversation;
+    // the snapshot is replayed once the webview mounts.
+    const loaded = ChatPanel.loadSessions();
+    this.sessions = loaded.sessions;
+    this.activeSessionId = loaded.activeId ?? crypto.randomUUID();
+    const restored = this.sessions.find((s) => s.id === this.activeSessionId)?.messages ?? [];
+    this.restoredHistory = restored;
+    this.history.push(...restored);
     this.dictation = new DictationController(speechBridge, {
       onState: (state) => this.postWebview({ type: "dictationState", state }),
       onResult: (text) => this.postWebview({ type: "dictationResult", text }),
@@ -270,6 +346,37 @@ export class ChatPanel {
       return;
     }
 
+    if (isReadyRequest(message)) {
+      this.replayRestoredHistory();
+      return;
+    }
+
+    if (isNewChatRequest(message)) {
+      this.clearConversation();
+      return;
+    }
+
+    if (isOpenHistoryRequest(message)) {
+      void this.openHistory();
+      return;
+    }
+
+    if (isSearchFilesRequest(message)) {
+      const files = await searchWorkspaceFiles(vscode, message.query);
+      this.postWebview({ type: "fileResults", requestId: message.requestId, items: files });
+      return;
+    }
+
+    if (isInsertCodeRequest(message)) {
+      await this.insertCodeIntoEditor(message.code);
+      return;
+    }
+
+    if (isCopyCodeRequest(message)) {
+      await vscode.env.clipboard.writeText(message.code);
+      return;
+    }
+
     if (!isSendMessageRequest(message) || this.inFlight) {
       return;
     }
@@ -278,6 +385,7 @@ export class ChatPanel {
       includeIdeContext: message.includeIdeContext,
       planMode: message.planMode,
       agentMode: message.agentMode,
+      ...(message.pinnedFiles === undefined ? {} : { pinnedFiles: message.pinnedFiles }),
     });
   }
 
@@ -335,6 +443,33 @@ export class ChatPanel {
       this.outputChannel.appendLine(`Dictation start failed: ${formatErrorMessage(error)}`);
       this.postWebview({ type: "dictationError", message: formatErrorMessage(error) });
       this.postWebview({ type: "dictationState", state: "idle" });
+    }
+  }
+
+  /**
+   * Insert a chat code block into the editor the user was last in (the webview
+   * holds focus, so window.activeTextEditor is undefined — we use the tracked
+   * last editor). Replaces the current selection if there is one; otherwise
+   * inserts at the cursor. Focuses the editor so the change is visible.
+   */
+  private async insertCodeIntoEditor(code: string): Promise<void> {
+    const editor = getActiveOrLastEditor(vscode);
+    if (editor === undefined) {
+      void vscode.window.showWarningMessage(
+        "CodeSetu: open a file and place your cursor where the code should go, then try again.",
+      );
+      return;
+    }
+    const target = editor.selection;
+    const shown = await vscode.window.showTextDocument(editor.document, {
+      viewColumn: editor.viewColumn ?? vscode.ViewColumn.One,
+      preserveFocus: false,
+    });
+    const applied = await shown.edit((builder) => {
+      builder.replace(target, code);
+    });
+    if (!applied) {
+      void vscode.window.showWarningMessage("CodeSetu could not insert the code into the editor.");
     }
   }
 
@@ -407,6 +542,153 @@ export class ChatPanel {
     this.pendingApprovals.clear();
   }
 
+  /** Replay the persisted conversation into a freshly mounted webview (once). */
+  private replayRestoredHistory(): void {
+    if (this.hasReplayed) {
+      return;
+    }
+    this.hasReplayed = true;
+    for (const message of this.restoredHistory) {
+      if (typeof message.content !== "string" || message.content.length === 0) {
+        continue; // skip tool-call / tool-result turns — not user-visible bubbles
+      }
+      if (message.role === "user") {
+        this.postWebview({ type: "userMessage", text: message.content });
+      } else if (message.role === "assistant") {
+        this.postWebview({ type: "assistantMessage", text: message.content });
+      }
+    }
+  }
+
+  /** Load saved sessions, migrating a legacy single transcript on first run. */
+  private static loadSessions(): { sessions: ChatSession[]; activeId: string | undefined } {
+    const stored = ChatPanel.storage?.get<ChatSession[]>(SESSIONS_STORAGE_KEY);
+    if (stored !== undefined && stored.length > 0) {
+      const sorted = [...stored].sort((a, b) => b.updatedAt - a.updatedAt);
+      return { sessions: sorted, activeId: sorted[0]?.id };
+    }
+    const legacy = ChatPanel.storage?.get<ChatMessage[]>(HISTORY_STORAGE_KEY) ?? [];
+    if (legacy.length > 0) {
+      const migrated: ChatSession = {
+        id: crypto.randomUUID(),
+        title: deriveSessionTitle(legacy),
+        updatedAt: Date.now(),
+        messages: legacy,
+      };
+      return { sessions: [migrated], activeId: migrated.id };
+    }
+    return { sessions: [], activeId: undefined };
+  }
+
+  /**
+   * Persist the active conversation as a session. Empty conversations aren't
+   * stored, so a freshly-opened "New chat" doesn't litter the history list.
+   */
+  private persistHistory(): void {
+    if (this.history.length === 0) {
+      return;
+    }
+    const session: ChatSession = {
+      id: this.activeSessionId,
+      title: deriveSessionTitle(this.history),
+      updatedAt: Date.now(),
+      messages: [...this.history],
+    };
+    this.sessions = upsertSession(this.sessions, session);
+    void ChatPanel.storage?.update(SESSIONS_STORAGE_KEY, this.sessions);
+  }
+
+  /**
+   * Start a fresh conversation ("New chat"). The current one is already saved as
+   * a session (persisted after each turn), so it stays available in history.
+   */
+  private clearConversation(): void {
+    if (this.inFlight) {
+      this.inFlightController?.abort();
+    }
+    this.persistHistory();
+    this.history.length = 0;
+    this.activeSessionId = crypto.randomUUID();
+    this.postWebview({ type: "clearTranscript" });
+  }
+
+  /** Show a picker of past chats; selecting one loads it, the trash icon deletes it. */
+  private openHistory(): void {
+    this.persistHistory();
+    const hasSessions = (): ChatSession[] => this.sessions.filter((s) => s.messages.length > 0);
+    if (hasSessions().length === 0) {
+      void vscode.window.showInformationMessage("CodeSetu: no past chats yet.");
+      return;
+    }
+
+    const deleteButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon("trash"),
+      tooltip: "Delete this chat",
+    };
+    const toItems = (list: readonly ChatSession[]): HistoryQuickPickItem[] =>
+      list.map((s) => ({
+        label: s.title,
+        description:
+          s.id === this.activeSessionId ? "current" : relativeTime(s.updatedAt, Date.now()),
+        sessionId: s.id,
+        buttons: [deleteButton],
+      }));
+
+    const quickPick = vscode.window.createQuickPick<HistoryQuickPickItem>();
+    quickPick.title = "CodeSetu chat history";
+    quickPick.placeholder = "Switch to a previous chat";
+    quickPick.items = toItems(hasSessions());
+
+    quickPick.onDidTriggerItemButton((event) => {
+      this.sessions = removeSession(this.sessions, event.item.sessionId);
+      void ChatPanel.storage?.update(SESSIONS_STORAGE_KEY, this.sessions);
+      const remaining = hasSessions();
+      if (remaining.length === 0) {
+        quickPick.hide();
+        return;
+      }
+      quickPick.items = toItems(remaining);
+    });
+    quickPick.onDidAccept(() => {
+      const picked = quickPick.selectedItems[0];
+      quickPick.hide();
+      if (picked !== undefined) {
+        this.loadSession(picked.sessionId);
+      }
+    });
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
+  }
+
+  /** Make a saved session the active conversation and render it in the webview. */
+  private loadSession(id: string): void {
+    if (id === this.activeSessionId) {
+      return;
+    }
+    if (this.inFlight) {
+      this.inFlightController?.abort();
+    }
+    this.persistHistory();
+    const session = this.sessions.find((s) => s.id === id);
+    if (session === undefined) {
+      return;
+    }
+    this.activeSessionId = id;
+    this.history.length = 0;
+    this.history.push(...session.messages);
+    this.postWebview({ type: "clearTranscript" });
+    for (const message of session.messages) {
+      if (typeof message.content !== "string" || message.content.length === 0) {
+        continue;
+      }
+      if (message.role === "user") {
+        this.postWebview({ type: "userMessage", text: message.content });
+      } else if (message.role === "assistant") {
+        this.postWebview({ type: "assistantMessage", text: message.content });
+      }
+    }
+  }
+
   private async submitMessage(
     rawText: string,
     options: SendUserMessageOptions = {},
@@ -444,12 +726,16 @@ export class ChatPanel {
         agentMode: options.agentMode ?? this.currentAgentMode,
         signal: controller.signal,
         requestApproval: (request) => this.requestToolApproval(request),
+        ...(options.pinnedFiles === undefined ? {} : { pinnedFiles: options.pinnedFiles }),
         ...(options.ideContext === undefined ? {} : { ideContext: options.ideContext }),
         persistMessages: (messages) => {
           persistedMessages = messages;
         },
         onContextPreview: (preview) => {
           void this.panel.webview.postMessage({ type: "contextPreview", preview });
+        },
+        onUsage: (usage) => {
+          void this.panel.webview.postMessage({ type: "usage", tokens: usage.tokens });
         },
         onChunk: (chunk) => {
           ensureStarted();
@@ -494,6 +780,7 @@ export class ChatPanel {
     } finally {
       this.inFlight = false;
       this.inFlightController = undefined;
+      this.persistHistory();
       void this.panel.webview.postMessage({ type: "busy", value: false });
     }
   }
@@ -602,6 +889,52 @@ function isDictationRequest(message: unknown): message is DictationRequest {
   return (
     candidate.type === "dictation" && (candidate.action === "start" || candidate.action === "stop")
   );
+}
+
+function isReadyRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "ready"
+  );
+}
+
+function isNewChatRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "newChat"
+  );
+}
+
+function isOpenHistoryRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "openHistory"
+  );
+}
+
+function isSearchFilesRequest(message: unknown): message is SearchFilesRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<SearchFilesRequest>;
+  return (
+    candidate.type === "searchFiles" &&
+    typeof candidate.requestId === "string" &&
+    typeof candidate.query === "string"
+  );
+}
+
+function isInsertCodeRequest(message: unknown): message is InsertCodeRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<InsertCodeRequest>;
+  return candidate.type === "insertCode" && typeof candidate.code === "string";
+}
+
+function isCopyCodeRequest(message: unknown): message is CopyCodeRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<CopyCodeRequest>;
+  return candidate.type === "copyCode" && typeof candidate.code === "string";
 }
 
 function isCancelRequest(message: unknown): boolean {
@@ -738,7 +1071,10 @@ function isSendMessageRequest(message: unknown): message is SendMessageRequest {
     (candidate.includeIdeContext === undefined ||
       typeof candidate.includeIdeContext === "boolean") &&
     (candidate.planMode === undefined || typeof candidate.planMode === "boolean") &&
-    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean")
+    (candidate.agentMode === undefined || typeof candidate.agentMode === "boolean") &&
+    (candidate.pinnedFiles === undefined ||
+      (Array.isArray(candidate.pinnedFiles) &&
+        candidate.pinnedFiles.every((entry) => typeof entry === "string")))
   );
 }
 

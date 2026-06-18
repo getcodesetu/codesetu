@@ -75,6 +75,9 @@ fun buildContextMarkdown(context: IdeContextPayload): String {
   context.activeFileText?.takeIf { it.isNotBlank() }?.let {
     sections.add(fenced("Active file excerpt", context.languageId, trimMiddle(it, 12_000)))
   }
+  context.relatedSnippets.forEach { snippet ->
+    sections.add(fenced("Pinned: ${snippet.path}", snippet.languageId, trimMiddle(snippet.text, 12_000)))
+  }
 
   return sections.joinToString("\n\n")
 }

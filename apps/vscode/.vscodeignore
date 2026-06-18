@@ -1,9 +1,12 @@
 node_modules/
 src/
 test/
+test-support/
 scripts/
+vitest.config.ts
 tsconfig*.json
 *.tsbuildinfo
+dist/*.tsbuildinfo
 .vscodeignore
 .env
 .env.*

@@ -39,6 +39,20 @@ describe("IDE context markdown", () => {
     expect(markdown).toContain("Active file excerpt");
     expect(markdown.length).toBeLessThan(1200);
   });
+
+  it("renders user-pinned files as their own primary-context section", () => {
+    const markdown = buildContextMarkdown({
+      activeFilePath: "src/service.ts",
+      languageId: "typescript",
+      pinnedFiles: [
+        { path: "src/config.ts", languageId: "typescript", text: "export const PORT = 8080;" },
+      ],
+    });
+
+    expect(markdown).toContain("Pinned file: src/config.ts");
+    expect(markdown).toContain("export const PORT = 8080;");
+    expect(markdown).toContain("treat as primary context");
+  });
 });
 
 describe("action prompt builder", () => {

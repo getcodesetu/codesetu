@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-codesetu",
+      "type": "shell",
+      "command": "corepack pnpm build",
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "detail": "Build @codesetu/core + the VSCode extension before launching the dev host."
+    }
+  ]
+}
