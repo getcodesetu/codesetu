@@ -40,6 +40,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
@@ -59,6 +60,7 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import javax.swing.JComponent
 import javax.swing.JLabel
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -102,7 +104,11 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val jsQuery = JBCefJSQuery.create(browser as JBCefBrowserBase)
   private val client = CodeSetuProviderClient()
   private val speechClient = CodeSetuSpeechClient()
+  private val historyJson = Json { ignoreUnknownKeys = true }
   private val history = mutableListOf<ChatMessage>()
+  // Snapshot of the persisted transcript, replayed once the webview mounts.
+  private val restoredHistory: List<ChatMessage> = loadPersistedHistory()
+  private var replayedHistory = false
 
   // EDT-only state: outgoing messages buffered until the page signals "ready".
   private val pending = mutableListOf<String>()
@@ -121,6 +127,9 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       handlePost(request)
       null
     }
+    // Resume the conversation persisted for this project so a reload (or IDE
+    // restart) doesn't lose the transcript. Replayed into the webview on ready.
+    history.addAll(restoredHistory)
     browser.loadHTML(ChatWebviewHtml.render(modelLabelText(), jsQuery.inject("payload")))
   }
 
@@ -169,6 +178,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val code = obj["code"]?.jsonPrimitive?.contentOrNull ?: return
         ApplicationManager.getApplication().invokeLater { insertCodeIntoEditor(code) }
       }
+      "newChat" -> ApplicationManager.getApplication().invokeLater { clearConversation() }
       "cancel" -> {
         cancelRequested.set(true)
         resolvePendingApprovals(ApprovalDecision.DENY)
@@ -705,7 +715,49 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   private fun finish() {
     ApplicationManager.getApplication().invokeLater { inFlight = false }
+    persistHistory()
     push(busy(false))
+  }
+
+  private fun historyStorageKey(): String = "codesetu.chat.history"
+
+  private fun loadPersistedHistory(): List<ChatMessage> {
+    val raw = PropertiesComponent.getInstance(project).getValue(historyStorageKey()) ?: return emptyList()
+    return try {
+      historyJson.decodeFromString<List<ChatMessage>>(raw)
+    } catch (error: Exception) {
+      emptyList()
+    }
+  }
+
+  /** Persist the current transcript for this project so it survives a reload. */
+  private fun persistHistory() {
+    PropertiesComponent.getInstance(project)
+      .setValue(historyStorageKey(), historyJson.encodeToString(history.toList()))
+  }
+
+  /** Replay the persisted conversation into a freshly mounted webview (once). */
+  private fun replayRestoredHistory() {
+    if (replayedHistory) return
+    replayedHistory = true
+    for (entry in restoredHistory) {
+      if (entry.content.isEmpty()) continue // skip tool-call / tool-result turns
+      when (entry.role) {
+        "user" -> push(message("userMessage") { put("text", entry.content) })
+        "assistant" -> push(message("assistantMessage") { put("text", entry.content) })
+      }
+    }
+  }
+
+  /** Clear the conversation in both the host and the webview ("New chat"). */
+  private fun clearConversation() {
+    if (inFlight) {
+      cancelRequested.set(true)
+      resolvePendingApprovals(ApprovalDecision.DENY)
+    }
+    history.clear()
+    persistHistory()
+    push(message("clearTranscript"))
   }
 
   private fun push(json: String) {
@@ -723,7 +775,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       ready = true
       pending.forEach { executeJs(it) }
       pending.clear()
-      pushWelcome()
+      replayRestoredHistory()
+      // A restored transcript means the user is mid-conversation — skip the
+      // first-run welcome panel in that case.
+      if (history.isEmpty()) pushWelcome()
     }
   }
 

@@ -574,6 +574,14 @@
         text-align: left;
       }
 
+      .menu-action {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
       .menu-leading {
         display: inline-flex;
         align-items: center;
@@ -1030,6 +1038,17 @@
               <span class="switch-track"></span>
             </span>
           </label>
+          <button id="new-chat" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="new-chat" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14" />
+                  <path d="M5 12h14" />
+                </svg>
+              </span>
+              New chat
+            </span>
+          </button>
         </div>
         <div
           id="slash-menu"
@@ -2002,6 +2021,11 @@
         post({ type: "selectModel" });
       });
 
+      document.getElementById("new-chat").addEventListener("click", () => {
+        setMenuOpen(false);
+        post({ type: "newChat" });
+      });
+
       welcomeConfigure.addEventListener("click", () => {
         post({ type: "configureProvider" });
       });
@@ -2126,6 +2150,14 @@
 
         if (message.type === "welcome") {
           welcome.hidden = !message.show;
+        }
+
+        if (message.type === "clearTranscript") {
+          transcript.replaceChildren();
+          activeAssistant = undefined;
+          const usageChip = document.getElementById("usage-chip");
+          usageChip.hidden = true;
+          welcome.hidden = false;
         }
 
         if (message.type === "busy") {
