@@ -1103,7 +1103,12 @@
           <button id="new-chat" type="button" class="menu-row menu-action">
             <span class="menu-leading">
               <span class="menu-icon">
-                <svg class="composer-icon" data-icon="new-chat" viewBox="0 0 24 24" aria-hidden="true">
+                <svg
+                  class="composer-icon"
+                  data-icon="new-chat"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
                   <path d="M12 5v14" />
                   <path d="M5 12h14" />
                 </svg>
@@ -1491,7 +1496,8 @@
       }
 
       mentionMenu.addEventListener("click", (event) => {
-        const target = event.target instanceof Element ? event.target.closest(".mention-row") : null;
+        const target =
+          event.target instanceof Element ? event.target.closest(".mention-row") : null;
         if (!target) return;
         const index = Number(target.getAttribute("data-index"));
         if (Number.isFinite(index)) {
