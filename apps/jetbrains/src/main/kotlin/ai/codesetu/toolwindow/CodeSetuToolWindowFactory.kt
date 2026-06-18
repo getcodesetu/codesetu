@@ -15,6 +15,7 @@ import ai.codesetu.agent.parseAgentPolicy
 import ai.codesetu.agent.runAgentLoop
 import ai.codesetu.agent.sanitizeToolMessages
 import ai.codesetu.context.collectIdeContext
+import ai.codesetu.context.estimateTokensForParts
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
@@ -351,6 +352,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
     // Surface exactly what we're about to send for the "Context sent to AI" panel.
     pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
+
+    // Estimate how much context this turn carries (system prompt + rolling
+    // history, which already folds in the IDE context) for the composer gauge.
+    push(message("usage") { put("tokens", estimateTokensForParts(messages.map { it.content ?: "" })) })
 
     if (agentMode) {
       val agentMessages =
