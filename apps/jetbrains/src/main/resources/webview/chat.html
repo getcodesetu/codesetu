@@ -146,6 +146,40 @@
         background: none;
       }
 
+      .code-block {
+        position: relative;
+      }
+
+      .code-actions {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+      }
+
+      .code-block:hover .code-actions,
+      .code-actions:focus-within {
+        opacity: 1;
+      }
+
+      .code-action-btn {
+        font-size: 11px;
+        line-height: 1;
+        padding: 4px 7px;
+        border-radius: 5px;
+        border: 1px solid rgba(127, 127, 127, 0.35);
+        background: var(--vscode-button-secondaryBackground, rgba(127, 127, 127, 0.18));
+        color: var(--vscode-button-secondaryForeground, inherit);
+        cursor: pointer;
+      }
+
+      .code-action-btn:hover {
+        background: var(--vscode-button-secondaryHoverBackground, rgba(127, 127, 127, 0.3));
+      }
+
       .assistant code {
         font-family: var(--vscode-editor-font-family, monospace);
         font-size: 0.95em;
@@ -1593,6 +1627,7 @@
         message.className = "message " + kind;
         if (kind === "assistant") {
           message.innerHTML = renderMarkdown(text);
+          enhanceCodeBlocks(message);
         } else {
           message.textContent = text;
         }
@@ -1601,6 +1636,74 @@
         welcome.hidden = true;
         message.scrollIntoView({ block: "end", behavior: "smooth" });
         return message;
+      }
+
+      // Add a hover Copy / Insert toolbar to every fenced code block in a
+      // rendered assistant message. Copy writes to the clipboard; Insert asks
+      // the host to drop the snippet into the active editor at the caret.
+      function enhanceCodeBlocks(container) {
+        const blocks = container.querySelectorAll("pre");
+        for (const pre of blocks) {
+          if (pre.dataset.enhanced === "1") continue;
+          pre.dataset.enhanced = "1";
+          const code = pre.querySelector("code");
+          const text = code ? code.textContent : pre.textContent;
+
+          const wrap = document.createElement("div");
+          wrap.className = "code-block";
+          pre.parentNode.insertBefore(wrap, pre);
+          wrap.appendChild(pre);
+
+          const actions = document.createElement("div");
+          actions.className = "code-actions";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.type = "button";
+          copyBtn.className = "code-action-btn";
+          copyBtn.textContent = "Copy";
+          copyBtn.addEventListener("click", () => {
+            copyToClipboard(text);
+            copyBtn.textContent = "Copied";
+            setTimeout(() => {
+              copyBtn.textContent = "Copy";
+            }, 1200);
+          });
+
+          const insertBtn = document.createElement("button");
+          insertBtn.type = "button";
+          insertBtn.className = "code-action-btn";
+          insertBtn.textContent = "Insert";
+          insertBtn.addEventListener("click", () => {
+            post({ type: "insertCode", code: text });
+          });
+
+          actions.appendChild(copyBtn);
+          actions.appendChild(insertBtn);
+          wrap.appendChild(actions);
+        }
+      }
+
+      function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+        } else {
+          fallbackCopy(text);
+        }
+      }
+
+      function fallbackCopy(text) {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        try {
+          document.execCommand("copy");
+        } catch (error) {
+          // Clipboard unavailable in this webview; nothing else we can do.
+        }
+        document.body.removeChild(area);
       }
 
       // Inline tool-approval card: replaces the native dialog so the user
@@ -1768,6 +1871,8 @@
           a.thinkLabel.textContent = "Thought for " + secs + "s";
           a.thinking.open = false;
         }
+        // The streamed answer is now complete — add Copy / Insert toolbars.
+        enhanceCodeBlocks(a.answer);
         activeAssistant = undefined;
       }
 

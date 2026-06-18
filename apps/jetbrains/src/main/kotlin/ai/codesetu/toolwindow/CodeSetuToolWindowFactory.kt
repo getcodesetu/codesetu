@@ -42,6 +42,8 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -161,6 +163,10 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val state = CodeSetuSettingsState.getInstance().state
         obj["planMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatPlanModeOn = it }
         obj["agentMode"]?.jsonPrimitive?.booleanOrNull?.let { state.chatAgentModeOn = it }
+      }
+      "insertCode" -> {
+        val code = obj["code"]?.jsonPrimitive?.contentOrNull ?: return
+        ApplicationManager.getApplication().invokeLater { insertCodeIntoEditor(code) }
       }
       "cancel" -> {
         cancelRequested.set(true)
@@ -570,6 +576,35 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   }
 
   private fun firstLine(text: String): String = truncateInline(text.split("\n").firstOrNull() ?: "", 200)
+
+  /**
+   * Insert a code snippet from a chat code block into the active editor —
+   * replacing the selection if there is one, otherwise inserting at the caret.
+   */
+  private fun insertCodeIntoEditor(code: String) {
+    val editor = FileEditorManager.getInstance(project).selectedTextEditor
+    if (editor == null) {
+      Messages.showInfoMessage(
+        project,
+        "Open a file and place the caret where you want the code inserted.",
+        "CodeSetu",
+      )
+      return
+    }
+    WriteCommandAction.runWriteCommandAction(project) {
+      val document = editor.document
+      val selection = editor.selectionModel
+      if (selection.hasSelection()) {
+        val start = selection.selectionStart
+        document.replaceString(start, selection.selectionEnd, code)
+        editor.caretModel.moveToOffset(start + code.length)
+      } else {
+        val offset = editor.caretModel.offset
+        document.insertString(offset, code)
+        editor.caretModel.moveToOffset(offset + code.length)
+      }
+    }
+  }
 
   private fun showModelPicker() {
     ApplicationManager.getApplication().invokeLater {
