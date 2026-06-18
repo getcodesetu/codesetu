@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Planned for v0.1
+
+- Inline FIM completions via Sarvam-30B
+- Chat panel for VSCode
+- Chat panel for JetBrains (IntelliJ, PyCharm, WebStorm)
+- `/edit` command with diff view
+- Codebase indexing (`@workspace`)
+- On-prem Docker installer
+
+---
+
+## [0.4.1] - 2026-06-18
+
 ### Added
 
 - **Inline completion polish** (VSCode): inline FIM completions are now
@@ -70,15 +83,6 @@ Versioning: [Semantic Versioning](https://semver.org/)
 - Chat webview CSP tightened with explicit `media-src 'self' blob:` and an
   allowlisted `connect-src` derived from the configured speech endpoints,
   instead of being unconstrained.
-
-### Planned for v0.1
-
-- Inline FIM completions via Sarvam-30B
-- Chat panel for VSCode
-- Chat panel for JetBrains (IntelliJ, PyCharm, WebStorm)
-- `/edit` command with diff view
-- Codebase indexing (`@workspace`)
-- On-prem Docker installer
 
 ---
 
