@@ -213,6 +213,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
     ChatPanel.newConversation();
   });
+  const chatHistoryCommand = vscode.commands.registerCommand("codesetu.chatHistory", () => {
+    ChatPanel.createOrShow(context.extensionUri, responder, outputChannel, buildSpeechBridge());
+    ChatPanel.showHistory();
+  });
   const setupProviderCommand = vscode.commands.registerCommand("codesetu.setupProvider", () =>
     setupCodeSetuProvider(context.secrets),
   );
@@ -283,6 +287,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     inlineCompletionProvider,
     openChatCommand,
     newChatCommand,
+    chatHistoryCommand,
     setupProviderCommand,
     setupSpeechProviderCommand,
     diagnoseProviderCommand,

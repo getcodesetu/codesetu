@@ -28,6 +28,13 @@ import {
 } from "@codesetu/core";
 import * as vscode from "vscode";
 
+import {
+  deriveSessionTitle,
+  relativeTime,
+  removeSession,
+  upsertSession,
+  type ChatSession,
+} from "./chatSessions";
 import { renderChatPanelHtml } from "./chatPanelHtml";
 import { summarizeCodeSetuConfiguration } from "./configuration";
 import { getActiveOrLastEditor } from "./ideContext";
@@ -39,8 +46,17 @@ import { readSpeechConfiguration } from "./speechConfiguration";
 // overflow the context window. The most recent turns are always kept.
 const MAX_HISTORY_CHARS = 100_000;
 
-// Workspace-state key holding the persisted conversation across reloads.
+// Workspace-state key holding the legacy single transcript (pre-multi-session).
+// Read once and migrated into a session; never written anymore.
 const HISTORY_STORAGE_KEY = "codesetu.chat.history";
+
+// Workspace-state key holding the list of saved chat sessions.
+const SESSIONS_STORAGE_KEY = "codesetu.chat.sessions";
+
+/** A history-picker entry bound to a session id. */
+interface HistoryQuickPickItem extends vscode.QuickPickItem {
+  sessionId: string;
+}
 
 /** Preview of what the responder is about to send to the model, for the
  *  collapsible "Context sent to AI" panel. */
@@ -174,8 +190,17 @@ export class ChatPanel {
     ChatPanel.currentPanel?.clearConversation();
   }
 
+  /** Open the chat-history picker on the active panel (backs the History command). */
+  public static showHistory(): void {
+    void ChatPanel.currentPanel?.openHistory();
+  }
+
   private readonly panel: vscode.WebviewPanel;
   private readonly history: ChatMessage[] = [];
+  // All saved conversations (most-recent first); the active one is mirrored in
+  // `history`. Persisted under SESSIONS_STORAGE_KEY.
+  private sessions: ChatSession[] = [];
+  private activeSessionId: string;
   // Snapshot of the persisted conversation to replay once the webview mounts.
   private readonly restoredHistory: readonly ChatMessage[];
   private hasReplayed = false;
@@ -199,9 +224,12 @@ export class ChatPanel {
     private readonly speechBridge: SpeechBridge | undefined,
   ) {
     this.panel = panel;
-    // Seed the conversation from the persisted transcript so a reload resumes
-    // where the user left off; the snapshot is replayed once the webview mounts.
-    const restored = ChatPanel.storage?.get<ChatMessage[]>(HISTORY_STORAGE_KEY) ?? [];
+    // Seed from saved sessions so a reload resumes the most recent conversation;
+    // the snapshot is replayed once the webview mounts.
+    const loaded = ChatPanel.loadSessions();
+    this.sessions = loaded.sessions;
+    this.activeSessionId = loaded.activeId ?? crypto.randomUUID();
+    const restored = this.sessions.find((s) => s.id === this.activeSessionId)?.messages ?? [];
     this.restoredHistory = restored;
     this.history.push(...restored);
     this.dictation = new DictationController(speechBridge, {
@@ -325,6 +353,11 @@ export class ChatPanel {
 
     if (isNewChatRequest(message)) {
       this.clearConversation();
+      return;
+    }
+
+    if (isOpenHistoryRequest(message)) {
+      void this.openHistory();
       return;
     }
 
@@ -527,19 +560,133 @@ export class ChatPanel {
     }
   }
 
-  /** Persist the current transcript so it survives a reload. */
-  private persistHistory(): void {
-    void ChatPanel.storage?.update(HISTORY_STORAGE_KEY, this.history);
+  /** Load saved sessions, migrating a legacy single transcript on first run. */
+  private static loadSessions(): { sessions: ChatSession[]; activeId: string | undefined } {
+    const stored = ChatPanel.storage?.get<ChatSession[]>(SESSIONS_STORAGE_KEY);
+    if (stored !== undefined && stored.length > 0) {
+      const sorted = [...stored].sort((a, b) => b.updatedAt - a.updatedAt);
+      return { sessions: sorted, activeId: sorted[0]?.id };
+    }
+    const legacy = ChatPanel.storage?.get<ChatMessage[]>(HISTORY_STORAGE_KEY) ?? [];
+    if (legacy.length > 0) {
+      const migrated: ChatSession = {
+        id: crypto.randomUUID(),
+        title: deriveSessionTitle(legacy),
+        updatedAt: Date.now(),
+        messages: legacy,
+      };
+      return { sessions: [migrated], activeId: migrated.id };
+    }
+    return { sessions: [], activeId: undefined };
   }
 
-  /** Clear the conversation in both the host and the webview. */
+  /**
+   * Persist the active conversation as a session. Empty conversations aren't
+   * stored, so a freshly-opened "New chat" doesn't litter the history list.
+   */
+  private persistHistory(): void {
+    if (this.history.length === 0) {
+      return;
+    }
+    const session: ChatSession = {
+      id: this.activeSessionId,
+      title: deriveSessionTitle(this.history),
+      updatedAt: Date.now(),
+      messages: [...this.history],
+    };
+    this.sessions = upsertSession(this.sessions, session);
+    void ChatPanel.storage?.update(SESSIONS_STORAGE_KEY, this.sessions);
+  }
+
+  /**
+   * Start a fresh conversation ("New chat"). The current one is already saved as
+   * a session (persisted after each turn), so it stays available in history.
+   */
   private clearConversation(): void {
     if (this.inFlight) {
       this.inFlightController?.abort();
     }
-    this.history.length = 0;
     this.persistHistory();
+    this.history.length = 0;
+    this.activeSessionId = crypto.randomUUID();
     this.postWebview({ type: "clearTranscript" });
+  }
+
+  /** Show a picker of past chats; selecting one loads it, the trash icon deletes it. */
+  private openHistory(): void {
+    this.persistHistory();
+    const hasSessions = (): ChatSession[] => this.sessions.filter((s) => s.messages.length > 0);
+    if (hasSessions().length === 0) {
+      void vscode.window.showInformationMessage("CodeSetu: no past chats yet.");
+      return;
+    }
+
+    const deleteButton: vscode.QuickInputButton = {
+      iconPath: new vscode.ThemeIcon("trash"),
+      tooltip: "Delete this chat",
+    };
+    const toItems = (list: readonly ChatSession[]): HistoryQuickPickItem[] =>
+      list.map((s) => ({
+        label: s.title,
+        description:
+          s.id === this.activeSessionId ? "current" : relativeTime(s.updatedAt, Date.now()),
+        sessionId: s.id,
+        buttons: [deleteButton],
+      }));
+
+    const quickPick = vscode.window.createQuickPick<HistoryQuickPickItem>();
+    quickPick.title = "CodeSetu chat history";
+    quickPick.placeholder = "Switch to a previous chat";
+    quickPick.items = toItems(hasSessions());
+
+    quickPick.onDidTriggerItemButton((event) => {
+      this.sessions = removeSession(this.sessions, event.item.sessionId);
+      void ChatPanel.storage?.update(SESSIONS_STORAGE_KEY, this.sessions);
+      const remaining = hasSessions();
+      if (remaining.length === 0) {
+        quickPick.hide();
+        return;
+      }
+      quickPick.items = toItems(remaining);
+    });
+    quickPick.onDidAccept(() => {
+      const picked = quickPick.selectedItems[0];
+      quickPick.hide();
+      if (picked !== undefined) {
+        this.loadSession(picked.sessionId);
+      }
+    });
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
+  }
+
+  /** Make a saved session the active conversation and render it in the webview. */
+  private loadSession(id: string): void {
+    if (id === this.activeSessionId) {
+      return;
+    }
+    if (this.inFlight) {
+      this.inFlightController?.abort();
+    }
+    this.persistHistory();
+    const session = this.sessions.find((s) => s.id === id);
+    if (session === undefined) {
+      return;
+    }
+    this.activeSessionId = id;
+    this.history.length = 0;
+    this.history.push(...session.messages);
+    this.postWebview({ type: "clearTranscript" });
+    for (const message of session.messages) {
+      if (typeof message.content !== "string" || message.content.length === 0) {
+        continue;
+      }
+      if (message.role === "user") {
+        this.postWebview({ type: "userMessage", text: message.content });
+      } else if (message.role === "assistant") {
+        this.postWebview({ type: "assistantMessage", text: message.content });
+      }
+    }
   }
 
   private async submitMessage(
@@ -757,6 +904,14 @@ function isNewChatRequest(message: unknown): boolean {
     typeof message === "object" &&
     message !== null &&
     (message as { type?: unknown }).type === "newChat"
+  );
+}
+
+function isOpenHistoryRequest(message: unknown): boolean {
+  return (
+    typeof message === "object" &&
+    message !== null &&
+    (message as { type?: unknown }).type === "openHistory"
   );
 }
 

@@ -977,6 +977,18 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               New chat
             </span>
           </button>
+          <button id="chat-history" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg class="composer-icon" data-icon="history" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+                  <path d="M3 4v4h4" />
+                  <path d="M12 8v4l3 2" />
+                </svg>
+              </span>
+              Chat history…
+            </span>
+          </button>
         </div>
         <div id="slash-menu" class="menu slash-menu" hidden role="listbox" aria-label="Slash commands"></div>
         <div id="mention-menu" class="menu mention-menu" hidden role="listbox" aria-label="Workspace files"></div>
@@ -1950,6 +1962,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       document.getElementById("new-chat").addEventListener("click", () => {
         setMenuOpen(false);
         vscode.postMessage({ type: "newChat" });
+      });
+
+      document.getElementById("chat-history").addEventListener("click", () => {
+        setMenuOpen(false);
+        vscode.postMessage({ type: "openHistory" });
       });
 
       document.addEventListener("click", (event) => {

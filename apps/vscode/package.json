@@ -122,6 +122,11 @@
         "command": "codesetu.newChat",
         "title": "CodeSetu: New Chat",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.chatHistory",
+        "title": "CodeSetu: Chat History",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
