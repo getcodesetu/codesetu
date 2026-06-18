@@ -139,6 +139,13 @@
         class="ai.codesetu.actions.RevertLastAgentEditsAction"
         text="Revert Last Agent Edits"
         description="Restore the files changed by the most recent CodeSetu agent turn"/>
+      <action
+        id="ai.codesetu.EditWithCodeSetuAction"
+        class="ai.codesetu.edit.EditWithCodeSetuAction"
+        text="Edit with CodeSetu"
+        description="Rewrite the selection (or whole file) from an instruction, with a diff preview">
+        <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      </action>
     </group>
   </actions>
 
