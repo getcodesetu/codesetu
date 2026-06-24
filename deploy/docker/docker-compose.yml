@@ -1,0 +1,64 @@
+# CodeSetu on-prem inference stack.
+#
+# Brings up an OpenAI-compatible server (Ollama) that serves BOTH the chat/agent
+# model and the @workspace embedding model, fully inside your network. The
+# CodeSetu IDE extensions are unchanged — they just point at this endpoint.
+#
+#   1. cp .env.example .env   (then edit models if you like)
+#   2. docker compose up -d   (first run downloads the models; needs internet ONCE)
+#   3. ./print-settings.sh    (prints the exact IDE settings to use)
+#
+# For an air-gapped install, do step 2 on a connected machine, then transfer the
+# image and the model volume — see README.md ("Air-gapped install").
+
+name: codesetu-onprem
+
+services:
+  inference:
+    image: ollama/ollama:latest
+    container_name: codesetu-inference
+    ports:
+      - "${CODESETU_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # --- GPU (optional) -------------------------------------------------------
+    # Uncomment to use NVIDIA GPUs (needs the NVIDIA Container Toolkit on the host).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # One-shot: pull the chat + embedding models into the shared volume, then exit.
+  # Re-runs are cheap (already-present models are skipped).
+  model-init:
+    image: ollama/ollama:latest
+    container_name: codesetu-model-init
+    depends_on:
+      inference:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: "http://inference:11434"
+      CHAT_MODEL: "${CHAT_MODEL:-qwen2.5-coder:7b}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-nomic-embed-text}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        echo "Pulling chat model: $${CHAT_MODEL}" &&
+        ollama pull "$${CHAT_MODEL}" &&
+        echo "Pulling embedding model: $${EMBEDDING_MODEL}" &&
+        ollama pull "$${EMBEDDING_MODEL}" &&
+        echo "CodeSetu models ready."
+    restart: "no"
+
+volumes:
+  ollama-models:
+    name: codesetu-ollama-models
