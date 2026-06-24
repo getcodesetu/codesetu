@@ -78,6 +78,19 @@ fun buildContextMarkdown(context: IdeContextPayload): String {
   context.relatedSnippets.forEach { snippet ->
     sections.add(fenced("Pinned: ${snippet.path}", snippet.languageId, trimMiddle(snippet.text, 12_000)))
   }
+  if (context.retrievedSnippets.isNotEmpty()) {
+    val retrieved = context.retrievedSnippets.map { snippet ->
+      fenced(
+        "From ${snippet.path}:${snippet.startLine}-${snippet.endLine}",
+        snippet.languageId,
+        trimMiddle(snippet.text, 4_000),
+      )
+    }
+    sections.add(
+      (listOf("Relevant code retrieved from the workspace index (@workspace, matched by meaning)") +
+        retrieved).joinToString("\n\n"),
+    )
+  }
 
   return sections.joinToString("\n\n")
 }

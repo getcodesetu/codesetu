@@ -38,6 +38,13 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     var chatPlanModeOn: Boolean = false,
     // Mirror of the Agent Mode toggle in the chat composer (tool-calling loop).
     var chatAgentModeOn: Boolean = false,
+    // @workspace semantic indexing. Embeddings can target a different
+    // OpenAI-compatible endpoint/model than chat; blank = fall back to baseUrl /
+    // the embedding default. The API key is shared with chat (getApiKey()).
+    var embeddingBaseUrl: String = "",
+    var embeddingModel: String = "",
+    var workspaceIndexMaxFiles: Int = 2000,
+    var workspaceRetrievalK: Int = 8,
   )
 
   private var state = State()

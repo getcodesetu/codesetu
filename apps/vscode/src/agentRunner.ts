@@ -24,6 +24,7 @@ import {
   runAgentLoop,
   type AgentEvent,
   type AgentPolicy,
+  type AgentTool,
   type ApprovalDecision,
   type ApprovalRequest,
   type ChatMessage,
@@ -62,6 +63,8 @@ export interface RunAgentTurnOptions {
   temperature?: number;
   maxTokens?: number;
   workspaceRoot: string | undefined;
+  /** Extra tools appended to the defaults (e.g. @workspace semantic search). */
+  extraTools?: AgentTool[];
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Receives the turn's new messages (tool turns + final answer) to persist. */
   onPersist?: (messages: ChatMessage[]) => void;
@@ -83,7 +86,11 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
     options.workspaceRoot,
   );
   const policy = await loadAgentPolicy(options.workspaceRoot);
-  const tools = [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)];
+  const tools = [
+    ...DEFAULT_AGENT_TOOLS,
+    ...createVscodeNativeTools(options.workspaceRoot),
+    ...(options.extraTools ?? []),
+  ];
   let toolCallCount = 0;
 
   options.outputChannel.appendLine(

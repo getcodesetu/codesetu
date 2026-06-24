@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+export * from "./retrieval/index.js";
 export type {
   ChatCompletion,
   ChatCompletionRequest,
@@ -106,6 +107,7 @@ export {
   type IdeContextPayload,
   type ProviderDiagnostic,
   type ProviderDiagnosticStatus,
+  type RetrievedSnippet,
   type WorkspaceInstruction,
   type WorkspaceInstructionParseResult,
   type WorkspaceInstructionSource,
@@ -131,8 +133,11 @@ export {
   GLOB_TOOL,
   MAX_DIAGNOSTICS,
   MAX_DIFF_LINES,
+  applyHunks,
+  computeHunks,
   createBashCommandPolicy,
   diffLines,
+  type DiffHunk,
   formatDiagnostics,
   parseAgentPolicy,
   parseToolCallsFromContent,

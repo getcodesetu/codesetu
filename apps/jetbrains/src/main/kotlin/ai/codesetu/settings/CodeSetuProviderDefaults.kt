@@ -5,8 +5,16 @@ import ai.codesetu.model.ProviderKind
 const val DEFAULT_CODESETU_BASE_URL = "https://api.sarvam.ai/v1"
 const val DEFAULT_CODESETU_MODEL = "sarvam-30b"
 
+// @workspace embedding defaults. Any OpenAI-compatible /v1/embeddings endpoint
+// works, so an air-gapped setup can point at a local server.
+const val DEFAULT_EMBEDDING_BASE_URL = "http://localhost:11434/v1"
+const val DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+
 fun resolveCodeSetuModel(model: String): String =
   model.ifBlank { DEFAULT_CODESETU_MODEL }
+
+fun resolveEmbeddingModel(model: String): String =
+  model.ifBlank { DEFAULT_EMBEDDING_MODEL }
 
 data class ProviderDefaults(val baseUrl: String, val model: String)
 

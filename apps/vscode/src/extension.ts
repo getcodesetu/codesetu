@@ -23,6 +23,7 @@ import {
   isPlanModeApproval,
   routeSkills,
   sanitizeToolMessages,
+  type AgentTool,
   type ApprovalDecision,
   type ApprovalRequest,
   type AudioBlob,
@@ -47,6 +48,7 @@ import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./con
 import { registerEditCommand } from "./editCommand";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
 import { readPinnedFiles } from "./pinnedFiles";
+import { WorkspaceIndexManager, mentionsWorkspace } from "./workspaceIndex";
 import { estimateTokensForParts } from "./tokenEstimate";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
@@ -92,6 +94,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ...readCodeSetuConfiguration().providerOptions,
     apiKey,
   });
+
+  // Owns the @workspace semantic index (build, retrieve, agent search tool).
+  const workspaceIndex = new WorkspaceIndexManager(() => apiKey, outputChannel);
 
   // The most recent agent turn's file checkpoint, for one-click revert.
   let lastAgentCheckpoint: WorkspaceCheckpoint | undefined;
@@ -151,6 +156,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ideContext.pinnedFiles = pinned;
       }
     }
+    // @workspace opts the turn into semantic retrieval: pull the most relevant
+    // indexed chunks and attach them as their own context section.
+    if (mentionsWorkspace(lastUserText)) {
+      const k = vscode.workspace.getConfiguration("codesetu").get<number>("workspaceIndex.retrievalK", 8);
+      const retrieved = await workspaceIndex.retrieve(lastUserText, k);
+      if (retrieved.length > 0) {
+        ideContext.retrievedSnippets = retrieved;
+      } else {
+        outputChannel.appendLine(
+          "[index] @workspace requested but no results — run 'CodeSetu: Index Workspace' first.",
+        );
+      }
+    }
     const instructions = await loadInstructions();
 
     // Surface exactly what we're about to send — selected code, routed skills,
@@ -173,6 +191,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
     if (requestContext?.agentMode === true) {
+      // Give the agent the semantic-search tool when an index exists, so it can
+      // retrieve by meaning instead of only grep/glob.
+      const searchTool = await workspaceIndex.searchTool();
       return sendAgentChatRequest(
         providerMessages,
         buildProviderOptions(),
@@ -188,6 +209,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (checkpoint) => {
           lastAgentCheckpoint = checkpoint;
         },
+        searchTool === undefined ? [] : [searchTool],
       );
     }
 
@@ -263,6 +285,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   );
 
+  const indexWorkspaceCommand = vscode.commands.registerCommand("codesetu.indexWorkspace", () =>
+    vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "CodeSetu: indexing workspace…" },
+      async (progress) => {
+        try {
+          const summary = await workspaceIndex.reindex((done, total) => {
+            progress.report({ message: `embedding ${done}/${total} chunks` });
+          });
+          void vscode.window.showInformationMessage(`CodeSetu: ${summary}`);
+        } catch (error: unknown) {
+          const message = formatErrorMessage(error);
+          outputChannel.appendLine(`[index] failed: ${message}`);
+          void vscode.window.showErrorMessage(`CodeSetu indexing failed: ${message}`);
+        }
+      },
+    ),
+  );
+
   const editorActions = registerCodeSetuEditorActions({
     context,
     responder,
@@ -293,6 +333,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     diagnoseProviderCommand,
     selectModelCommand,
     revertAgentEditsCommand,
+    indexWorkspaceCommand,
     ...editorActions,
     ...editCommand,
     homeView,
@@ -432,6 +473,7 @@ async function sendAgentChatRequest(
   signal?: AbortSignal,
   requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
   onCheckpoint?: (checkpoint: WorkspaceCheckpoint) => void,
+  extraTools: AgentTool[] = [],
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -465,6 +507,7 @@ async function sendAgentChatRequest(
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      ...(extraTools.length === 0 ? {} : { extraTools }),
       ...(onChunk === undefined ? {} : { onChunk }),
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       ...(signal === undefined ? {} : { signal }),

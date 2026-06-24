@@ -127,6 +127,11 @@
         "command": "codesetu.chatHistory",
         "title": "CodeSetu: Chat History",
         "category": "CodeSetu"
+      },
+      {
+        "command": "codesetu.indexWorkspace",
+        "title": "CodeSetu: Index Workspace (@workspace)",
+        "category": "CodeSetu"
       }
     ],
     "menus": {
@@ -320,6 +325,26 @@
           "type": "string",
           "default": "",
           "description": "Model id for STT (e.g. whisper-1, openai/whisper-large-v3, saarika:v2). Empty = provider default."
+        },
+        "codesetu.workspaceIndex.embeddingBaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL for the OpenAI-compatible embeddings endpoint used by @workspace indexing (e.g. http://localhost:8000/v1). Empty = fall back to codesetu.baseUrl, then the default."
+        },
+        "codesetu.workspaceIndex.embeddingModel": {
+          "type": "string",
+          "default": "",
+          "description": "Embedding model id for @workspace indexing (e.g. text-embedding-3-small, nomic-embed-text). Empty = provider default. Changing this rebuilds the index."
+        },
+        "codesetu.workspaceIndex.maxFiles": {
+          "type": "number",
+          "default": 2000,
+          "description": "Maximum number of workspace files to include when building the @workspace index."
+        },
+        "codesetu.workspaceIndex.retrievalK": {
+          "type": "number",
+          "default": 8,
+          "description": "How many code chunks @workspace retrieval adds to the chat context per turn."
         }
       }
     }

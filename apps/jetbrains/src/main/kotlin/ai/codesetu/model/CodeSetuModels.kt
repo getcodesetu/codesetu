@@ -29,6 +29,18 @@ data class WorkspaceSnippet(
   val text: String,
 )
 
+/**
+ * A chunk pulled from the @workspace semantic index for the current turn,
+ * carrying the line range it came from so the model can cite it precisely.
+ */
+data class RetrievedSnippet(
+  val path: String,
+  val startLine: Int,
+  val endLine: Int,
+  val languageId: String? = null,
+  val text: String,
+)
+
 data class IdeContextPayload(
   val activeFilePath: String? = null,
   val languageId: String? = null,
@@ -37,6 +49,8 @@ data class IdeContextPayload(
   val cursorPrefix: String? = null,
   val cursorSuffix: String? = null,
   val relatedSnippets: List<WorkspaceSnippet> = emptyList(),
+  // Chunks retrieved from the @workspace index (matched by meaning).
+  val retrievedSnippets: List<RetrievedSnippet> = emptyList(),
 )
 
 data class WorkspaceInstruction(

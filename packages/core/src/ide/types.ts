@@ -33,6 +33,15 @@ export interface WorkspaceSnippet {
   text: string;
 }
 
+/**
+ * A chunk pulled from the `@workspace` semantic index for the current turn,
+ * carrying the line range it came from so the model can cite it precisely.
+ */
+export interface RetrievedSnippet extends WorkspaceSnippet {
+  startLine: number;
+  endLine: number;
+}
+
 export interface IdeContextPayload {
   activeFilePath?: string;
   activeFileText?: string;
@@ -48,6 +57,12 @@ export interface IdeContextPayload {
    * and the model is told they were chosen on purpose.
    */
   pinnedFiles?: WorkspaceSnippet[];
+  /**
+   * Chunks retrieved from the `@workspace` semantic index for this turn. Like
+   * relatedSnippets they're auto-collected, but they're matched by meaning
+   * (embeddings) rather than proximity, so they get their own labelled section.
+   */
+  retrievedSnippets?: RetrievedSnippet[];
 }
 
 export interface WorkspaceInstructionSource {

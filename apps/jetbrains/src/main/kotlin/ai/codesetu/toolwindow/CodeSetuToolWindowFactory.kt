@@ -24,8 +24,11 @@ import ai.codesetu.context.searchWorkspaceFiles
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
+import ai.codesetu.model.RetrievedSnippet
 import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
+import ai.codesetu.retrieval.WorkspaceIndexService
+import ai.codesetu.retrieval.mentionsWorkspace
 import ai.codesetu.prompts.PLAN_MODE_SKILL_ID
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
@@ -360,7 +363,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   ) {
     // @-pinned files are an explicit user choice — read them (off the EDT) and
     // attach as related snippets so they ride along as primary context.
-    val ideContext =
+    var ideContext =
       if (pinnedFiles.isEmpty()) {
         baseIdeContext
       } else {
@@ -368,6 +371,19 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
           relatedSnippets = baseIdeContext.relatedSnippets + readPinnedFiles(project.basePath, pinnedFiles),
         )
       }
+    // @workspace opts the turn into semantic retrieval: pull the most relevant
+    // indexed chunks and attach them as their own context section.
+    if (mentionsWorkspace(userText)) {
+      val k = CodeSetuSettingsState.getInstance().state.workspaceRetrievalK
+      val retrieved = WorkspaceIndexService.getInstance(project).retrieve(userText, k)
+      if (retrieved.isNotEmpty()) {
+        ideContext = ideContext.copy(
+          retrievedSnippets = retrieved.map {
+            RetrievedSnippet(path = it.path, startLine = it.startLine, endLine = it.endLine, text = it.text)
+          },
+        )
+      }
+    }
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
@@ -503,7 +519,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       runAgentLoop(
         client = client,
         initialMessages = messages,
-        tools = defaultAgentTools() + GetDiagnosticsTool(project),
+        tools = defaultAgentTools() + GetDiagnosticsTool(project) +
+          listOfNotNull(WorkspaceIndexService.getInstance(project).searchToolOrNull()),
         host = host,
         maxTokens = 4096,
         temperature = 0.2,

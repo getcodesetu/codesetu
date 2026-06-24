@@ -103,6 +103,22 @@ export function buildContextMarkdown(
     );
   }
 
+  if (context.retrievedSnippets !== undefined && context.retrievedSnippets.length > 0) {
+    const retrieved = context.retrievedSnippets.map((snippet) =>
+      [
+        `From ${snippet.path}:${snippet.startLine}-${snippet.endLine}`,
+        codeFence(snippet.languageId ?? "plaintext", trimMiddle(snippet.text, maxSnippetChars)),
+      ].join("\n"),
+    );
+
+    sections.push(
+      [
+        "Relevant code retrieved from the workspace index (@workspace, matched by meaning)",
+        ...retrieved,
+      ].join("\n\n"),
+    );
+  }
+
   if (context.relatedSnippets !== undefined && context.relatedSnippets.length > 0) {
     const snippets = context.relatedSnippets.map((snippet) =>
       [
