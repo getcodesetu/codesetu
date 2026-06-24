@@ -70,7 +70,9 @@ export function registerEditCommand(options: RegisterEditCommandOptions): vscode
   );
   let counter = 0;
 
-  const command = vscode.commands.registerCommand("codesetu.editSelection", async () => {
+  const command = vscode.commands.registerCommand(
+    "codesetu.editSelection",
+    async (presetInstruction?: unknown) => {
     const editor = getActiveOrLastEditor(vscode);
     if (editor === undefined) {
       void vscode.window.showWarningMessage(
@@ -89,14 +91,20 @@ export function registerEditCommand(options: RegisterEditCommandOptions): vscode
       return;
     }
 
-    const instruction = await vscode.window.showInputBox({
-      title: "Edit with CodeSetu",
-      prompt: editor.selection.isEmpty
-        ? "Describe the change for the whole file"
-        : "Describe the change for the selection",
-      placeHolder: "e.g. add error handling and JSDoc",
-      ignoreFocusOut: true,
-    });
+    // When invoked from the chat composer's `/edit <instruction>`, the
+    // instruction is passed in and we skip the prompt; otherwise ask for it.
+    const preset = typeof presetInstruction === "string" ? presetInstruction.trim() : "";
+    const instruction =
+      preset.length > 0
+        ? preset
+        : await vscode.window.showInputBox({
+            title: "Edit with CodeSetu",
+            prompt: editor.selection.isEmpty
+              ? "Describe the change for the whole file"
+              : "Describe the change for the selection",
+            placeHolder: "e.g. add error handling and JSDoc",
+            ignoreFocusOut: true,
+          });
     if (instruction === undefined || instruction.trim().length === 0) {
       return;
     }

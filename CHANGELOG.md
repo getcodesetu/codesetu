@@ -20,6 +20,26 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.3] - 2026-06-24
+
+### Fixed
+
+- **`@workspace` is now selectable in the chat composer** (VSCode): typing `@`
+  offers a dedicated **@workspace — search the indexed codebase** entry at the
+  top of the mention menu. Picking it inserts the literal `@workspace ` text
+  (instead of being swallowed by the file-pin picker), so the host reliably
+  detects it and runs semantic retrieval.
+
+### Added
+
+- **`/edit` slash command in chat** (VSCode): the composer's slash palette now
+  lists `/edit`. Sending `/edit <instruction>` triggers the Edit with CodeSetu
+  diff flow on the active editor (with per-hunk accept/reject) using the text
+  after the command as the instruction; `/edit` alone prompts for one.
+  `codesetu.editSelection` now accepts an optional instruction argument.
+
+---
+
 ## [0.4.2] - 2026-06-24
 
 ### Added

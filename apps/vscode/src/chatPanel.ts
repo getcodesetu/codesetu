@@ -165,6 +165,11 @@ interface CopyCodeRequest {
   code: string;
 }
 
+interface EditSelectionRequest {
+  type: "editSelection";
+  instruction: string;
+}
+
 export class ChatPanel {
   private static currentPanel: ChatPanel | undefined;
   // Built-in skills resolved at activation (loaded from bundled SKILL.md, or the
@@ -369,6 +374,16 @@ export class ChatPanel {
 
     if (isInsertCodeRequest(message)) {
       await this.insertCodeIntoEditor(message.code);
+      return;
+    }
+
+    if (isEditSelectionRequest(message)) {
+      // Delegate to the Edit with CodeSetu command; an empty instruction makes it
+      // prompt for one. The instruction is optional on the command.
+      await vscode.commands.executeCommand(
+        "codesetu.editSelection",
+        message.instruction.length > 0 ? message.instruction : undefined,
+      );
       return;
     }
 
@@ -807,13 +822,22 @@ export class ChatPanel {
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
-      slashCommands: ChatPanel.builtinSkills.flatMap((skill) =>
-        skill.slashCommands.map((command) => ({
-          command,
-          skillName: skill.name,
-          description: skill.description,
-        })),
-      ),
+      slashCommands: [
+        // /edit is not a skill — it triggers the Edit with CodeSetu diff flow on
+        // the active editor rather than producing a chat reply.
+        {
+          command: "/edit",
+          skillName: "Edit with CodeSetu",
+          description: "Rewrite the active selection/file from an instruction, with a diff preview",
+        },
+        ...ChatPanel.builtinSkills.flatMap((skill) =>
+          skill.slashCommands.map((command) => ({
+            command,
+            skillName: skill.name,
+            description: skill.description,
+          })),
+        ),
+      ],
       speechConnectSources: speechConnectSources(speech),
       speechSttProvider: speech.sttProvider,
       speechLanguage: speech.language,
@@ -935,6 +959,12 @@ function isCopyCodeRequest(message: unknown): message is CopyCodeRequest {
   if (typeof message !== "object" || message === null) return false;
   const candidate = message as Partial<CopyCodeRequest>;
   return candidate.type === "copyCode" && typeof candidate.code === "string";
+}
+
+function isEditSelectionRequest(message: unknown): message is EditSelectionRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<EditSelectionRequest>;
+  return candidate.type === "editSelection" && typeof candidate.instruction === "string";
 }
 
 function isCancelRequest(message: unknown): boolean {

@@ -1259,15 +1259,33 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         });
       }
 
+      // @workspace is a reserved mention (semantic codebase search), not a file
+      // pin — offer it whenever the typed token is still a prefix of "workspace".
+      function workspaceMentionMatches(token) {
+        return "workspace".startsWith(String(token || "").toLowerCase());
+      }
+
       function renderMentionMenu(items) {
-        mentionItems = items;
-        if (!items || items.length === 0) {
+        const token = mentionRange ? mentionRange.token : "";
+        const list = (workspaceMentionMatches(token) ? ["@workspace"] : []).concat(items || []);
+        mentionItems = list;
+        if (list.length === 0) {
           closeMentionMenu();
           return;
         }
         mentionSelectedIndex = 0;
-        mentionMenu.innerHTML = items
+        mentionMenu.innerHTML = list
           .map((path, index) => {
+            const selected = index === 0 ? "true" : "false";
+            if (path === "@workspace") {
+              return (
+                '<button type="button" class="mention-row" role="option" data-index="' +
+                index +
+                '" aria-selected="' +
+                selected +
+                '"><span class="dir">@</span>workspace <span class="desc">— search the indexed codebase</span></button>'
+              );
+            }
             const isDir = path.endsWith("/");
             const display = isDir ? path.slice(0, -1) : path;
             const slash = display.lastIndexOf("/");
@@ -1277,7 +1295,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
               '<button type="button" class="mention-row" role="option" data-index="' +
               index +
               '" aria-selected="' +
-              (index === 0 ? "true" : "false") +
+              selected +
               '"><span class="dir">' +
               escapeAttr(dir) +
               "</span>" +
@@ -1309,6 +1327,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       function applyMentionSelection() {
         const path = mentionItems[mentionSelectedIndex];
         if (!path) return false;
+        // @workspace is kept as literal text (the host detects it), not pinned.
+        if (path === "@workspace") {
+          if (mentionRange) {
+            const v = textarea.value;
+            const insert = "@workspace ";
+            textarea.value = v.slice(0, mentionRange.start) + insert + v.slice(mentionRange.end);
+            const caret = mentionRange.start + insert.length;
+            textarea.setSelectionRange(caret, caret);
+          }
+          closeMentionMenu();
+          textarea.focus();
+          return true;
+        }
         addPin(path);
         if (mentionRange) {
           const v = textarea.value;
@@ -2014,6 +2045,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         const text = textarea.value.trim();
 
         if (text.length === 0) {
+          return;
+        }
+
+        // /edit triggers the Edit with CodeSetu diff flow on the active editor,
+        // using anything after the command as the instruction — it is not a chat
+        // turn, so don't post it as a message.
+        const editMatch = /^\\/edit\\b([\\s\\S]*)$/.exec(text);
+        if (editMatch) {
+          textarea.value = "";
+          closeSlashMenu();
+          vscode.postMessage({ type: "editSelection", instruction: editMatch[1].trim() });
           return;
         }
 
