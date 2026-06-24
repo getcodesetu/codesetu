@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Planned for v0.1
+
+- Inline FIM completions via Sarvam-30B
+- Chat panel for VSCode
+- Chat panel for JetBrains (IntelliJ, PyCharm, WebStorm)
+- `/edit` command with diff view
+- Codebase indexing (`@workspace`)
+- On-prem Docker installer
+
+---
+
+## [0.4.2] - 2026-06-24
+
 ### Added
 
 - **On-prem Docker installer** (`deploy/docker/`): a turnkey self-hosted stack —
@@ -42,15 +55,6 @@ Versioning: [Semantic Versioning](https://semver.org/)
   Single-change edits keep the simple Apply/Discard prompt. Backed by new
   `computeHunks` / `applyHunks` helpers in `@codesetu/core` (with a Kotlin
   mirror in the JetBrains plugin).
-
-### Planned for v0.1
-
-- Inline FIM completions via Sarvam-30B
-- Chat panel for VSCode
-- Chat panel for JetBrains (IntelliJ, PyCharm, WebStorm)
-- `/edit` command with diff view
-- Codebase indexing (`@workspace`)
-- On-prem Docker installer
 
 ---
 
