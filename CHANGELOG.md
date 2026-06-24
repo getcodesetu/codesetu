@@ -9,6 +9,40 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **On-prem Docker installer** (`deploy/docker/`): a turnkey self-hosted stack —
+  one OpenAI-compatible server (Ollama) serving both the chat/agent model and the
+  `@workspace` embedding model, fully inside your network. `cp .env.example .env
+  && docker compose up -d`, then `./print-settings.sh` emits the exact IDE
+  config. Includes an air-gapped install path (save the image + model volume,
+  restore offline), a `healthcheck.sh`, an optional GPU toggle, and a documented
+  vLLM/TGI alternative. The IDE extensions are unchanged — they point at the
+  endpoint.
+- **`@workspace` semantic indexing** (VSCode + JetBrains): build a local
+  embeddings index of the repo (**CodeSetu: Index Workspace**) and retrieve code
+  by *meaning*. Type `@workspace …` in chat to add the most relevant chunks to
+  the turn's context, and in Agent Mode the model gets a `search_workspace` tool
+  to retrieve on demand instead of guessing with grep/glob. Embeddings run
+  against any OpenAI-compatible `/v1/embeddings` endpoint (VSCode:
+  `codesetu.workspaceIndex.*` settings / `CODESETU_EMBEDDING_*` env vars;
+  JetBrains: Settings ▸ embedding base URL/model), so it works air-gapped against
+  a local server. The index persists under `.codesetu/` and re-indexes
+  incrementally by file hash. The engine lives in `@codesetu/core` (`chunkFile`,
+  `WorkspaceIndex`, `updateWorkspaceIndex`, `retrieveFromWorkspace`,
+  `OpenAIEmbeddingProvider`, `createSearchWorkspaceTool`) with a Kotlin mirror in
+  the JetBrains plugin.
+- **@folder pinning** (VSCode + JetBrains): the chat composer's `@`-mention
+  picker now offers folders (shown with a trailing `/`), and pinning one expands
+  to the files under it as context — capped at 24 files, skipping excluded dirs
+  and likely-secret files. Single-file pins are unchanged.
+- **Per-hunk accept/reject in Edit with CodeSetu** (VSCode + JetBrains): when a
+  proposed edit has more than one independent change, the review step offers
+  **Choose Hunks…** — a multi-select picker to apply only the hunks you want.
+  Single-change edits keep the simple Apply/Discard prompt. Backed by new
+  `computeHunks` / `applyHunks` helpers in `@codesetu/core` (with a Kotlin
+  mirror in the JetBrains plugin).
+
 ### Planned for v0.1
 
 - Inline FIM completions via Sarvam-30B

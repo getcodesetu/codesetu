@@ -142,6 +142,23 @@ set `codesetu.model` to the served model name.
 }
 ```
 
+### On-prem / air-gapped (Docker)
+
+For a turnkey self-hosted backend — one OpenAI-compatible server that runs both
+the chat/agent model and the `@workspace` embedding model fully inside your
+network — use the bundled installer:
+
+```bash
+cd deploy/docker
+cp .env.example .env       # optionally pick CHAT_MODEL / EMBEDDING_MODEL
+docker compose up -d       # first run downloads the models
+./print-settings.sh        # prints the exact IDE settings to paste
+```
+
+See [`deploy/docker/README.md`](deploy/docker/README.md) for the full guide,
+including the air-gapped install (save the image + model volume, restore
+offline), GPU setup, and a vLLM alternative.
+
 ## Smoke Test
 
 1. Open a code file.
