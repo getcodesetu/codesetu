@@ -15,7 +15,7 @@
  */
 
 export type { AgentHost, DirEntry, ExecOptions, ExecResult } from "./host.js";
-export { MAX_DIFF_LINES, diffLines } from "./diff.js";
+export { MAX_DIFF_LINES, diffLines, computeHunks, applyHunks, type DiffHunk } from "./diff.js";
 export {
   MAX_DIAGNOSTICS,
   formatDiagnostics,

@@ -86,7 +86,7 @@ class EditWithCodeSetuAction : AnAction() {
 
       val proposedFull = originalFull.substring(0, start) + newCode + originalFull.substring(end)
       ApplicationManager.getApplication().invokeLater {
-        reviewAndApply(project, document, fileType, originalFull, proposedFull, start, end, newCode)
+        reviewAndApply(project, document, fileType, originalFull, proposedFull, start, end, target, newCode)
       }
     }
   }
@@ -99,6 +99,7 @@ class EditWithCodeSetuAction : AnAction() {
     proposedFull: String,
     start: Int,
     end: Int,
+    target: String,
     newCode: String,
   ) {
     val factory = DiffContentFactory.getInstance()
@@ -107,22 +108,53 @@ class EditWithCodeSetuAction : AnAction() {
     DiffManager.getInstance()
       .showDiff(project, SimpleDiffRequest("CodeSetu edit — review", left, right, "Current", "CodeSetu edit"))
 
-    val choice =
-      Messages.showYesNoDialog(
-        project,
-        "Apply this CodeSetu edit?",
-        "Edit with CodeSetu",
-        "Apply",
-        "Discard",
-        Messages.getQuestionIcon(),
-      )
-    if (choice != Messages.YES) return
+    val hunks = computeHunks(target, newCode)
+    // Only offer per-hunk selection when there's more than one independent
+    // change — a single hunk is just the all-or-nothing case.
+    val finalText: String =
+      if (hunks.size > 1) {
+        when (
+          Messages.showDialog(
+            project,
+            "Apply this CodeSetu edit?",
+            "Edit with CodeSetu",
+            arrayOf("Apply All", "Choose Hunks…", "Discard"),
+            0,
+            Messages.getQuestionIcon(),
+          )
+        ) {
+          0 -> newCode
+          1 -> {
+            val dialog = HunkSelectionDialog(project, hunks)
+            if (!dialog.showAndGet()) return
+            val accepted = dialog.acceptedIndices()
+            if (accepted.isEmpty()) {
+              warn(project, "No hunks selected — nothing applied.")
+              return
+            }
+            applyHunks(target, hunks, accepted)
+          }
+          else -> return
+        }
+      } else {
+        val choice =
+          Messages.showYesNoDialog(
+            project,
+            "Apply this CodeSetu edit?",
+            "Edit with CodeSetu",
+            "Apply",
+            "Discard",
+            Messages.getQuestionIcon(),
+          )
+        if (choice != Messages.YES) return
+        newCode
+      }
 
     // Guard the range in case the document shifted while the dialog was open.
     val safeEnd = minOf(end, document.textLength)
     val safeStart = minOf(start, safeEnd)
     WriteCommandAction.runWriteCommandAction(project) {
-      document.replaceString(safeStart, safeEnd, newCode)
+      document.replaceString(safeStart, safeEnd, finalText)
     }
   }
 

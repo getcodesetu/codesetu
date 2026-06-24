@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { getAssistantText, type LlmProvider } from "@codesetu/core";
+import { applyHunks, computeHunks, getAssistantText, type DiffHunk, type LlmProvider } from "@codesetu/core";
 import * as vscode from "vscode";
 
 import type { CodeSetuConfiguration } from "./configuration";
@@ -141,19 +141,28 @@ export function registerEditCommand(options: RegisterEditCommandOptions): vscode
         { preview: true },
       );
 
+      const hunks = computeHunks(target, newCode);
+      // Only offer per-hunk selection when there's more than one independent
+      // change — a single hunk is just the all-or-nothing case.
+      const canChooseHunks = hunks.length > 1;
+      const actions = canChooseHunks ? ["Apply All", "Choose Hunks…", "Discard"] : ["Apply", "Discard"];
+
       const choice = await vscode.window.showInformationMessage(
         "Apply this CodeSetu edit?",
         { modal: false },
-        "Apply",
-        "Discard",
+        ...actions,
       );
 
-      if (choice === "Apply") {
-        const edit = new vscode.WorkspaceEdit();
-        edit.replace(document.uri, range, newCode);
-        const applied = await vscode.workspace.applyEdit(edit);
-        if (!applied) {
-          void vscode.window.showWarningMessage("CodeSetu could not apply the edit.");
+      if (choice === "Apply" || choice === "Apply All") {
+        await applyRangeEdit(document.uri, range, newCode);
+      } else if (choice === "Choose Hunks…") {
+        const accepted = await pickHunks(hunks);
+        if (accepted !== undefined) {
+          if (accepted.length === 0) {
+            void vscode.window.showInformationMessage("CodeSetu: no hunks selected — nothing applied.");
+          } else {
+            await applyRangeEdit(document.uri, range, applyHunks(target, hunks, accepted));
+          }
         }
       }
     } finally {
@@ -162,6 +171,51 @@ export function registerEditCommand(options: RegisterEditCommandOptions): vscode
   });
 
   return [command, providerRegistration];
+}
+
+/** Apply a single range replacement, warning if VS Code rejects it. */
+async function applyRangeEdit(uri: vscode.Uri, range: vscode.Range, text: string): Promise<void> {
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(uri, range, text);
+  const applied = await vscode.workspace.applyEdit(edit);
+  if (!applied) {
+    void vscode.window.showWarningMessage("CodeSetu could not apply the edit.");
+  }
+}
+
+/**
+ * Show a multi-select picker of the edit's hunks (all pre-selected) and return
+ * the indices the user kept, or undefined if they cancelled.
+ */
+async function pickHunks(hunks: readonly DiffHunk[]): Promise<number[] | undefined> {
+  interface HunkItem extends vscode.QuickPickItem {
+    index: number;
+  }
+  const items: HunkItem[] = hunks.map((hunk, index) => ({
+    index,
+    label: `Hunk ${index + 1}`,
+    description: `−${hunk.oldLines.length} +${hunk.newLines.length}`,
+    detail: hunkPreview(hunk),
+    picked: true,
+  }));
+
+  const selected = await vscode.window.showQuickPick(items, {
+    canPickMany: true,
+    title: "Choose hunks to apply",
+    placeHolder: "Toggle the changes to keep, then press Enter",
+    ignoreFocusOut: true,
+  });
+  if (selected === undefined) {
+    return undefined;
+  }
+  return selected.map((item) => item.index);
+}
+
+/** A one-line summary of a hunk for the picker's detail row. */
+function hunkPreview(hunk: DiffHunk): string {
+  const removed = hunk.oldLines.length > 0 ? `− ${hunk.oldLines[0]!.trim()}` : "";
+  const added = hunk.newLines.length > 0 ? `+ ${hunk.newLines[0]!.trim()}` : "";
+  return [removed, added].filter((part) => part.length > 0).join("   ").slice(0, 120);
 }
 
 async function requestEdit(
