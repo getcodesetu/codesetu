@@ -1268,9 +1268,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         mentionSelectedIndex = 0;
         mentionMenu.innerHTML = items
           .map((path, index) => {
-            const slash = path.lastIndexOf("/");
-            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
-            const name = slash === -1 ? path : path.slice(slash + 1);
+            const isDir = path.endsWith("/");
+            const display = isDir ? path.slice(0, -1) : path;
+            const slash = display.lastIndexOf("/");
+            const dir = slash === -1 ? "" : display.slice(0, slash + 1);
+            const name = (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
             return (
               '<button type="button" class="mention-row" role="option" data-index="' +
               index +
@@ -1344,8 +1346,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           chip.className = "pin-chip";
           const label = document.createElement("span");
           label.className = "label";
-          const slash = path.lastIndexOf("/");
-          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          const isDir = path.endsWith("/");
+          const display = isDir ? path.slice(0, -1) : path;
+          const slash = display.lastIndexOf("/");
+          label.textContent =
+            "@" + (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
           label.title = path;
           chip.appendChild(label);
           const close = document.createElement("button");

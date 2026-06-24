@@ -16,7 +16,73 @@
 
 import { describe, expect, it } from "vitest";
 
-import { toSearchGlob } from "../src/pinnedFiles";
+import { readPinnedFiles, searchWorkspaceFiles, toSearchGlob } from "../src/pinnedFiles";
+
+type SearchApi = Parameters<typeof searchWorkspaceFiles>[0];
+interface FakeUri {
+  path: string;
+}
+
+/** Minimal stand-in for the bits of the VS Code API these helpers touch. */
+function makeVscode(files: string[]): SearchApi {
+  const uris: FakeUri[] = files.map((path) => ({ path }));
+  const api = {
+    workspace: {
+      async findFiles(pattern: string, _exclude: string, max: number): Promise<FakeUri[]> {
+        if (pattern.endsWith("/**/*")) {
+          const folder = pattern.slice(0, -"**/*".length);
+          return uris.filter((u) => u.path.startsWith(folder)).slice(0, max);
+        }
+        return uris.slice(0, max);
+      },
+      asRelativePath(uri: FakeUri): string {
+        return uri.path;
+      },
+      workspaceFolders: [{ uri: { fsPath: "/root" } }],
+      async openTextDocument(uri: FakeUri) {
+        return { languageId: "ts", getText: () => `content of ${uri.path}` };
+      },
+    },
+    Uri: {
+      joinPath(_base: unknown, path: string): FakeUri {
+        return { path };
+      },
+    },
+  };
+  return api as unknown as SearchApi;
+}
+
+describe("searchWorkspaceFiles", () => {
+  it("offers matching folders with a trailing slash alongside files", async () => {
+    const vscode = makeVscode(["src/auth/Login.ts", "src/auth/Token.ts", "README.md"]);
+
+    const results = await searchWorkspaceFiles(vscode, "auth");
+
+    expect(results).toContain("src/auth/");
+    expect(results).toContain("src/auth/Login.ts");
+  });
+});
+
+describe("readPinnedFiles", () => {
+  it("expands a pinned folder into the files under it", async () => {
+    const vscode = makeVscode(["src/auth/Login.ts", "src/auth/Token.ts", "src/db/Pool.ts"]);
+
+    const snippets = await readPinnedFiles(vscode, ["src/auth/"]);
+    const paths = snippets.map((s) => s.path);
+
+    expect(paths).toContain("src/auth/Login.ts");
+    expect(paths).toContain("src/auth/Token.ts");
+    expect(paths).not.toContain("src/db/Pool.ts");
+  });
+
+  it("de-dupes a folder pin against an explicitly pinned file", async () => {
+    const vscode = makeVscode(["src/auth/Login.ts"]);
+
+    const snippets = await readPinnedFiles(vscode, ["src/auth/Login.ts", "src/auth/"]);
+
+    expect(snippets.filter((s) => s.path === "src/auth/Login.ts")).toHaveLength(1);
+  });
+});
 
 describe("toSearchGlob", () => {
   it("matches everything for an empty query", () => {
