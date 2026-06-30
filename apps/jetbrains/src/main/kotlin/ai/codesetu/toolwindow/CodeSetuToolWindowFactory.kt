@@ -21,6 +21,7 @@ import ai.codesetu.context.collectIdeContext
 import ai.codesetu.context.estimateTokensForParts
 import ai.codesetu.context.readPinnedFiles
 import ai.codesetu.context.searchWorkspaceFiles
+import ai.codesetu.edit.EditWithCodeSetuAction
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
@@ -203,6 +204,14 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       "insertCode" -> {
         val code = obj["code"]?.jsonPrimitive?.contentOrNull ?: return
         ApplicationManager.getApplication().invokeLater { insertCodeIntoEditor(code) }
+      }
+      "editSelection" -> {
+        // /edit <instruction> from the composer: run Edit with CodeSetu on the
+        // active editor (blank instruction → it prompts).
+        val instruction = obj["instruction"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        ApplicationManager.getApplication().invokeLater {
+          EditWithCodeSetuAction().run(project, null, instruction.ifBlank { null })
+        }
       }
       "newChat" -> ApplicationManager.getApplication().invokeLater { clearConversation() }
       "cancel" -> {

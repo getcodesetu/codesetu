@@ -2,6 +2,8 @@ package ai.codesetu.toolwindow
 
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.skills.loadBuiltinSkills
+import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.extensions.PluginId
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
@@ -28,7 +30,12 @@ object ChatWebviewHtml {
       .replace("__SPEECH_CONNECT_SOURCES__", speechConnectSources(state))
       .replace("__PLAN_MODE_INITIAL__", state.chatPlanModeOn.toString())
       .replace("__AGENT_MODE_INITIAL__", state.chatAgentModeOn.toString())
+      .replace("__VERSION__", escapeHtml(pluginVersion()))
   }
+
+  /** The installed plugin version, shown as a badge so a stale build is obvious. */
+  private fun pluginVersion(): String =
+    PluginManagerCore.getPlugin(PluginId.getId("ai.codesetu.codesetu"))?.version ?: ""
 
   private fun speechConfigJson(state: CodeSetuSettingsState.State): String =
     "{\"sttProvider\":${jsonString(state.speechSttProvider)}," +
@@ -59,11 +66,20 @@ object ChatWebviewHtml {
   }
 
   private fun slashCommandsJson(): String {
-    val entries = loadBuiltinSkills().flatMap { skill ->
-      skill.slashCommands.map { command ->
-        Triple(command, skill.instruction.name, skill.instruction.description)
+    // /edit is not a skill — it triggers the Edit with CodeSetu diff flow on the
+    // active editor rather than producing a chat reply.
+    val editEntry =
+      Triple(
+        "/edit",
+        "Edit with CodeSetu",
+        "Rewrite the active selection/file from an instruction, with a diff preview",
+      )
+    val entries = listOf(editEntry) +
+      loadBuiltinSkills().flatMap { skill ->
+        skill.slashCommands.map { command ->
+          Triple(command, skill.instruction.name, skill.instruction.description)
+        }
       }
-    }
     val items = entries.joinToString(",") { (command, name, description) ->
       "{\"command\":${jsonString(command)},\"skillName\":${jsonString(name)}," +
         "\"description\":${jsonString(description)}}"

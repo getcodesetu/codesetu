@@ -11,6 +11,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **JetBrains: full composer parity with VS Code** (plugin 0.4.13): Agent Mode
+  is now the **default** for new chats; a **version badge** (`v<x.y.z>`) sits by
+  the model picker; typing `@` offers a dedicated **@workspace** entry (inserts
+  the literal mention instead of pinning a file); and the slash palette includes
+  **`/edit`**, which runs the Edit with CodeSetu diff flow (per-hunk
+  accept/reject) on the active editor using the text after the command.
 - **JetBrains: Context & activity panel** (plugin 0.4.12): the per-turn panel
   (renamed from "Context sent to AI") now shows the **provider · model ·
   endpoint**, whether **Agent Mode** is on, an expandable **Tools available (N)**

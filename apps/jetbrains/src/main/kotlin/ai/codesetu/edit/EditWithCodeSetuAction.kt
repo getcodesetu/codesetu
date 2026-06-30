@@ -30,6 +30,16 @@ class EditWithCodeSetuAction : AnAction() {
     val project = e.project ?: return
     val editor =
       FileEditorManager.getInstance(project).selectedTextEditor ?: e.getData(CommonDataKeys.EDITOR)
+    run(project, editor, null)
+  }
+
+  /**
+   * Run the edit flow. [presetInstruction] (e.g. from the chat composer's
+   * `/edit <instruction>`) skips the input prompt when non-blank. Public so the
+   * chat tool window can invoke it.
+   */
+  fun run(project: Project, editorArg: com.intellij.openapi.editor.Editor?, presetInstruction: String?) {
+    val editor = editorArg ?: FileEditorManager.getInstance(project).selectedTextEditor
     if (editor == null) {
       warn(project, "Open a file (and optionally select code) before running Edit with CodeSetu.")
       return
@@ -46,15 +56,20 @@ class EditWithCodeSetuAction : AnAction() {
       return
     }
 
+    val preset = presetInstruction?.trim().orEmpty()
     val instruction =
-      Messages.showInputDialog(
-        project,
-        if (hasSelection) "Describe the change for the selection" else "Describe the change for the whole file",
-        "Edit with CodeSetu",
-        null,
-        "",
-        null,
-      )
+      if (preset.isNotEmpty()) {
+        preset
+      } else {
+        Messages.showInputDialog(
+          project,
+          if (hasSelection) "Describe the change for the selection" else "Describe the change for the whole file",
+          "Edit with CodeSetu",
+          null,
+          "",
+          null,
+        )
+      }
     if (instruction.isNullOrBlank()) return
 
     // Capture everything we need on the EDT before going to a background thread.
