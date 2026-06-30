@@ -160,12 +160,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // indexed chunks and attach them as their own context section.
     if (mentionsWorkspace(lastUserText)) {
       const k = vscode.workspace.getConfiguration("codesetu").get<number>("workspaceIndex.retrievalK", 8);
+      // First use of @workspace auto-builds the index so the user doesn't have to
+      // run the command manually. Subsequent turns reuse it (re-index is cheap).
+      if (!(await workspaceIndex.isIndexed())) {
+        try {
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: "CodeSetu: building @workspace index…",
+            },
+            (progress) =>
+              workspaceIndex.reindex((done, total) =>
+                progress.report({ message: `embedding ${done}/${total} chunks` }),
+              ),
+          );
+        } catch (error) {
+          outputChannel.appendLine(`[index] auto-build failed: ${formatErrorMessage(error)}`);
+        }
+      }
       const retrieved = await workspaceIndex.retrieve(lastUserText, k);
       if (retrieved.length > 0) {
         ideContext.retrievedSnippets = retrieved;
       } else {
         outputChannel.appendLine(
-          "[index] @workspace requested but no results — run 'CodeSetu: Index Workspace' first.",
+          "[index] @workspace produced no results (index empty or embeddings endpoint unreachable).",
         );
       }
     }

@@ -116,6 +116,18 @@ export class WorkspaceIndexManager {
     return summary;
   }
 
+  /** True once an index with at least one chunk is available (loads from disk if needed). */
+  public async isIndexed(): Promise<boolean> {
+    const root = this.root;
+    if (root === undefined) {
+      return false;
+    }
+    if (this.index === undefined) {
+      await this.load(root);
+    }
+    return this.index !== undefined && this.index.chunkCount > 0;
+  }
+
   /** Retrieve chunks for a chat turn, mapped to the IDE-context snippet shape. */
   public async retrieve(query: string, k: number): Promise<RetrievedSnippet[]> {
     const root = this.root;

@@ -20,6 +20,19 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.4] - 2026-06-24
+
+### Changed
+
+- **`@workspace` auto-builds the index on first use** (VSCode): typing
+  `@workspace …` when no index exists now builds it automatically (with a
+  progress notification) before retrieving, instead of silently returning
+  nothing. The **CodeSetu: Index Workspace** command remains for explicit
+  rebuilds. Indexing is lazy (on first use), not at activation, to avoid
+  embedding the whole repo every time the IDE opens.
+
+---
+
 ## [0.4.3] - 2026-06-24
 
 ### Fixed
