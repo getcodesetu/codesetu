@@ -1117,6 +1117,23 @@
               New chat
             </span>
           </button>
+          <button id="chat-history" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg
+                  class="composer-icon"
+                  data-icon="history"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M3 3v5h5" />
+                  <path d="M3.05 13a9 9 0 1 0 2.13-5.66L3 8" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </span>
+              Chat history…
+            </span>
+          </button>
         </div>
         <div
           id="slash-menu"
@@ -2365,6 +2382,11 @@
       document.getElementById("new-chat").addEventListener("click", () => {
         setMenuOpen(false);
         post({ type: "newChat" });
+      });
+
+      document.getElementById("chat-history").addEventListener("click", () => {
+        setMenuOpen(false);
+        post({ type: "openHistory" });
       });
 
       welcomeConfigure.addEventListener("click", () => {

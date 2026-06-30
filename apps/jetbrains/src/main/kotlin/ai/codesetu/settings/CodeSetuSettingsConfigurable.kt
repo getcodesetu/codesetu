@@ -13,6 +13,10 @@ class CodeSetuSettingsConfigurable : Configurable {
   private var model = settings.state.model
   private var apiKey = settings.getApiKey()
   private var skillsAutoRoute = settings.state.skillsAutoRoute
+  private var embeddingBaseUrl = settings.state.embeddingBaseUrl
+  private var embeddingModel = settings.state.embeddingModel
+  private var workspaceAutoReindex = settings.state.workspaceAutoReindex
+  private var workspaceAlwaysRetrieve = settings.state.workspaceAlwaysRetrieve
   private var speechSttProvider = settings.state.speechSttProvider
   private var speechLanguage = settings.state.speechLanguage
   private var speechSttBaseUrl = settings.state.speechSttBaseUrl
@@ -32,6 +36,18 @@ class CodeSetuSettingsConfigurable : Configurable {
           .bindSelected(::skillsAutoRoute)
       }
     }
+    group("@workspace (codebase index)") {
+      row("Embedding base URL") { textField().bindText(::embeddingBaseUrl) }
+      row("Embedding model") { textField().bindText(::embeddingModel) }
+      row {
+        checkBox("Auto re-index a short delay after saving a file")
+          .bindSelected(::workspaceAutoReindex)
+      }
+      row {
+        checkBox("Always retrieve from the index every turn (not only with @workspace)")
+          .bindSelected(::workspaceAlwaysRetrieve)
+      }
+    }
     group("Speech (voice in)") {
       row("STT provider") { textField().bindText(::speechSttProvider) }
       row("Language (BCP-47)") { textField().bindText(::speechLanguage) }
@@ -47,6 +63,10 @@ class CodeSetuSettingsConfigurable : Configurable {
       model != settings.state.model ||
       apiKey != settings.getApiKey() ||
       skillsAutoRoute != settings.state.skillsAutoRoute ||
+      embeddingBaseUrl != settings.state.embeddingBaseUrl ||
+      embeddingModel != settings.state.embeddingModel ||
+      workspaceAutoReindex != settings.state.workspaceAutoReindex ||
+      workspaceAlwaysRetrieve != settings.state.workspaceAlwaysRetrieve ||
       speechSttProvider != settings.state.speechSttProvider ||
       speechLanguage != settings.state.speechLanguage ||
       speechSttBaseUrl != settings.state.speechSttBaseUrl ||
@@ -59,6 +79,10 @@ class CodeSetuSettingsConfigurable : Configurable {
     settings.state.model = model.trim()
     settings.setApiKey(apiKey)
     settings.state.skillsAutoRoute = skillsAutoRoute
+    settings.state.embeddingBaseUrl = embeddingBaseUrl.trim()
+    settings.state.embeddingModel = embeddingModel.trim()
+    settings.state.workspaceAutoReindex = workspaceAutoReindex
+    settings.state.workspaceAlwaysRetrieve = workspaceAlwaysRetrieve
     settings.state.speechSttProvider = speechSttProvider.trim().ifBlank { "browser" }
     settings.state.speechLanguage = speechLanguage.trim().ifBlank { "en-US" }
     settings.state.speechSttBaseUrl = speechSttBaseUrl.trim()
@@ -72,6 +96,10 @@ class CodeSetuSettingsConfigurable : Configurable {
     model = settings.state.model
     apiKey = settings.getApiKey()
     skillsAutoRoute = settings.state.skillsAutoRoute
+    embeddingBaseUrl = settings.state.embeddingBaseUrl
+    embeddingModel = settings.state.embeddingModel
+    workspaceAutoReindex = settings.state.workspaceAutoReindex
+    workspaceAlwaysRetrieve = settings.state.workspaceAlwaysRetrieve
     speechSttProvider = settings.state.speechSttProvider
     speechLanguage = settings.state.speechLanguage
     speechSttBaseUrl = settings.state.speechSttBaseUrl

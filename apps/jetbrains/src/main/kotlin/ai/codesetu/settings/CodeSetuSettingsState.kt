@@ -46,6 +46,10 @@ class CodeSetuSettingsState : PersistentStateComponent<CodeSetuSettingsState.Sta
     var embeddingModel: String = "",
     var workspaceIndexMaxFiles: Int = 2000,
     var workspaceRetrievalK: Int = 8,
+    // Re-index an existing @workspace index shortly after a save (incremental).
+    var workspaceAutoReindex: Boolean = true,
+    // Retrieve from the index on every turn, not only when @workspace is typed.
+    var workspaceAlwaysRetrieve: Boolean = false,
   )
 
   private var state = State()

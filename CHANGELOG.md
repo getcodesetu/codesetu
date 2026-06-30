@@ -11,6 +11,13 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **JetBrains: parity for index freshness, always-on retrieval, and multi-session
+  history** (plugin 0.4.14): auto re-index `@workspace` after a save (debounced;
+  toggle in Settings ▸ Tools ▸ CodeSetu), an "always retrieve every turn" option,
+  and a **Chat history…** switcher (composer menu) backed by saved sessions —
+  New chat now starts a fresh session and the old one is kept. Settings UI gains
+  a **@workspace** group (embedding base URL/model + the two toggles). Brings
+  JetBrains level with VS Code 0.4.14.
 - **Auto re-index `@workspace` on save** (VSCode 0.4.14): when an index already
   exists, CodeSetu re-indexes incrementally a few seconds after you save a file,
   so retrieval stays fresh without re-running the command. Toggle with
