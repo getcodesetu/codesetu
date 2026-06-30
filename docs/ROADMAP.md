@@ -7,7 +7,7 @@ This is intentionally lightweight — it records intent and sequencing, not
 commitments. The [CHANGELOG](../CHANGELOG.md) remains the source of truth for
 what has actually shipped.
 
-Last reviewed: 2026-06-17
+Last reviewed: 2026-06-30
 
 ---
 
@@ -37,8 +37,11 @@ build/lint/test. JetBrains parity is the open follow-up for each.
 
 ### Open follow-ups from this batch
 
-- JetBrains parity for all seven (shared logic already lives in
-  `@codesetu/core` where applicable).
+- ~~JetBrains parity~~ **Done** — JetBrains (plugin 0.4.13) now matches VS Code
+  across `@workspace` (auto-build, mention entry, Context & activity panel with
+  provider/tools/retrieved-chunks), `@folder` pinning, per-hunk `/edit` (command
+  **and** `/edit` slash), prompted tool-calling for non-native models (Gemma),
+  default Agent Mode, the version badge, and inline `🔧` tool-use.
 - ~~`@folder` pinning (only `@file` shipped).~~ **Done** — pinning a folder
   expands to the files under it (capped, excludes honoured) on both platforms.
 - Multi-session history list (single rolling transcript shipped; no session
