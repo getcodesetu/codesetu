@@ -20,6 +20,16 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.5] - 2026-06-24
+
+### Added
+
+- **Version badge in the chat composer** (VSCode): a small `v<x.y.z>` chip next
+  to the model picker shows the loaded extension version, so it's obvious after
+  an update whether the running build is current (vs. a stale extension host).
+
+---
+
 ## [0.4.4] - 2026-06-24
 
 ### Changed

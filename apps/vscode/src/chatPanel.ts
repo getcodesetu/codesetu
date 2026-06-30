@@ -190,6 +190,15 @@ export class ChatPanel {
     ChatPanel.storage = storage;
   }
 
+  // Extension version, shown in the composer so users can confirm which build is
+  // actually loaded after an update.
+  private static version = "";
+
+  /** Provide the extension version for the panel badge (call once at activation). */
+  public static configureVersion(version: string): void {
+    ChatPanel.version = version;
+  }
+
   /** Clear the active panel's conversation (backs the New Chat command). */
   public static newConversation(): void {
     ChatPanel.currentPanel?.clearConversation();
@@ -822,6 +831,7 @@ export class ChatPanel {
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
+      version: ChatPanel.version,
       slashCommands: [
         // /edit is not a skill — it triggers the Edit with CodeSetu diff flow on
         // the active editor rather than producing a chat reply.

@@ -19,6 +19,8 @@ export interface RenderChatPanelHtmlOptions {
   nonce: string;
   /** Human-readable "provider · model" shown in the composer (real, configured values). */
   modelLabel: string;
+  /** Extension version, shown as a small badge so users can confirm the loaded build. */
+  version?: string;
   /** Slash commands available in the composer palette. */
   slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
   /**
@@ -43,6 +45,7 @@ function escapeHtml(value: string): string {
 
 export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string {
   const modelLabel = escapeHtml(options.modelLabel);
+  const version = escapeHtml(options.version ?? "");
   // Serialized into the script body via JSON. JSON.stringify can produce "</"
   // sequences that would close the script tag, so escape the slash.
   const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(/</g, "\\u003c");
@@ -889,6 +892,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 </svg>
               </button>
               <span id="usage-chip" class="usage-chip" hidden title="Estimated tokens in the context sent to the model (approximate)"></span>
+              ${version.length > 0 ? `<span id="version-chip" class="usage-chip" title="CodeSetu extension version">v${version}</span>` : ""}
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">

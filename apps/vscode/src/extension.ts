@@ -119,6 +119,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // truth); falls back to the constants if the bundle is missing/unparseable.
   const builtinSkills = await loadBuiltinSkills(context, outputChannel);
   ChatPanel.configureBuiltinSkills(builtinSkills);
+  // Surface the extension version in the composer so a stale build is obvious.
+  ChatPanel.configureVersion(
+    typeof context.extension?.packageJSON?.version === "string"
+      ? context.extension.packageJSON.version
+      : "",
+  );
   // Persist the chat transcript per-workspace so it survives a reload.
   ChatPanel.configureStorage(context.workspaceState);
 
