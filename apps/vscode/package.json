@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {

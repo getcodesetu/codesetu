@@ -166,31 +166,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // indexed chunks and attach them as their own context section.
     if (mentionsWorkspace(lastUserText)) {
       const k = vscode.workspace.getConfiguration("codesetu").get<number>("workspaceIndex.retrievalK", 8);
-      // First use of @workspace auto-builds the index so the user doesn't have to
-      // run the command manually. Subsequent turns reuse it (re-index is cheap).
-      if (!(await workspaceIndex.isIndexed())) {
-        try {
-          await vscode.window.withProgress(
-            {
-              location: vscode.ProgressLocation.Notification,
-              title: "CodeSetu: building @workspace index…",
-            },
-            (progress) =>
-              workspaceIndex.reindex((done, total) =>
-                progress.report({ message: `embedding ${done}/${total} chunks` }),
-              ),
-          );
-        } catch (error) {
-          outputChannel.appendLine(`[index] auto-build failed: ${formatErrorMessage(error)}`);
-        }
-      }
-      const retrieved = await workspaceIndex.retrieve(lastUserText, k);
-      if (retrieved.length > 0) {
-        ideContext.retrievedSnippets = retrieved;
-      } else {
-        outputChannel.appendLine(
-          "[index] @workspace produced no results (index empty or embeddings endpoint unreachable).",
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      if (folders.length === 0) {
+        // No folder open → nothing to index. Tell the user instead of silently
+        // answering generically.
+        outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
+        void vscode.window.showWarningMessage(
+          "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
         );
+      } else {
+        try {
+          // First use of @workspace auto-builds the index so the user doesn't have
+          // to run the command manually. Subsequent turns reuse it.
+          if (!(await workspaceIndex.isIndexed())) {
+            const summary = await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: "CodeSetu: building @workspace index…",
+              },
+              (progress) =>
+                workspaceIndex.reindex((done, total) =>
+                  progress.report({ message: `embedding ${done}/${total} chunks` }),
+                ),
+            );
+            outputChannel.appendLine(`[index] ${summary}`);
+          }
+          const retrieved = await workspaceIndex.retrieve(lastUserText, k);
+          if (retrieved.length > 0) {
+            ideContext.retrievedSnippets = retrieved;
+            outputChannel.appendLine(`[index] @workspace retrieved ${retrieved.length} chunk(s).`);
+          } else {
+            outputChannel.appendLine("[index] @workspace produced no results.");
+            void vscode.window.showWarningMessage(
+              "CodeSetu @workspace found no matches. The index may be empty — run 'CodeSetu: Index Workspace' and check Output → CodeSetu.",
+            );
+          }
+        } catch (error) {
+          const message = formatErrorMessage(error);
+          outputChannel.appendLine(`[index] @workspace failed: ${message}`);
+          void vscode.window.showErrorMessage(
+            `CodeSetu @workspace failed: ${message}. Check the embeddings endpoint (codesetu.workspaceIndex.embeddingBaseUrl/Model).`,
+          );
+        }
       }
     }
     const instructions = await loadInstructions();

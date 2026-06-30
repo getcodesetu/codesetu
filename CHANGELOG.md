@@ -20,6 +20,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.6] - 2026-06-24
+
+### Fixed
+
+- **`@workspace` now reports why it found nothing** (VSCode): instead of
+  silently answering generically, it surfaces the actual reason — no folder open
+  (File → Open Folder), an empty index, or an embeddings-endpoint error (with the
+  message) — via a notification, and logs `[index]` lines (build summary,
+  retrieved chunk count) to **Output → CodeSetu**.
+
+---
+
 ## [0.4.5] - 2026-06-24
 
 ### Added
