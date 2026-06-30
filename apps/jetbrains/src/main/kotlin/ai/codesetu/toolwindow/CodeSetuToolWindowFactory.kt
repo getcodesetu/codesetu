@@ -375,6 +375,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     // indexed chunks and attach them as their own context section. The first use
     // auto-builds the index (this runs off the EDT) so the user doesn't have to
     // run "Index Workspace" manually — matching the VS Code behaviour.
+    var workspacePreview: WorkspacePreview? = null
     if (mentionsWorkspace(userText)) {
       val svc = WorkspaceIndexService.getInstance(project)
       val k = CodeSetuSettingsState.getInstance().state.workspaceRetrievalK
@@ -389,10 +390,18 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
               RetrievedSnippet(path = it.path, startLine = it.startLine, endLine = it.endLine, text = it.text)
             },
           )
+          workspacePreview = WorkspacePreview(
+            status = "ok",
+            retrieved = retrieved.size,
+            hits = retrieved.map { "${it.path}:${it.startLine}-${it.endLine}" },
+          )
+        } else {
+          workspacePreview = WorkspacePreview(status = "empty")
         }
       } catch (error: Exception) {
         // A down/misconfigured embeddings endpoint must not break the chat turn;
         // the model still answers without @workspace context.
+        workspacePreview = WorkspacePreview(status = "error", message = error.message ?: error.toString())
         push(
           message("error") {
             put(
@@ -431,8 +440,18 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     // split a tool-call/result pair, which the provider would reject.
     val messages = sanitizeToolMessages(listOf(ChatMessage("system", systemPrompt)) + history)
 
-    // Surface exactly what we're about to send for the "Context sent to AI" panel.
-    pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
+    // Surface exactly what we're about to send — provider, mode, tools, and the
+    // @workspace outcome — for the chat's "Context & activity" panel.
+    pushContextPreview(
+      ideContext,
+      routed.selected,
+      systemPrompt,
+      contextMarkdown,
+      agentMode = agentMode,
+      toolNames = if (agentMode) agentToolNames() else emptyList(),
+      pinnedCount = pinnedFiles.size,
+      workspace = workspacePreview,
+    )
 
     // Estimate how much context this turn carries (system prompt + rolling
     // history, which already folds in the IDE context) for the composer gauge.
@@ -928,15 +947,45 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   /** Emit the "Context sent to AI" preview: routed skills, the IDE-context
    *  summary, and the full assembled payload for deep inspection. */
+  /** The names of the tools the agent has this turn — defaults + diagnostics + @workspace search. */
+  private fun agentToolNames(): List<String> =
+    (defaultAgentTools() + GetDiagnosticsTool(project) +
+      listOfNotNull(WorkspaceIndexService.getInstance(project).searchToolOrNull()))
+      .map { it.name }
+
   private fun pushContextPreview(
     ideContext: IdeContextPayload,
     selectedSkills: List<WorkspaceInstruction>,
     systemPrompt: String,
     contextMarkdown: String,
+    agentMode: Boolean,
+    toolNames: List<String>,
+    pinnedCount: Int,
+    workspace: WorkspacePreview?,
   ) {
+    val settings = CodeSetuSettingsState.getInstance().state
     push(
       message("contextPreview") {
         putJsonObject("preview") {
+          putJsonObject("provider") {
+            put("provider", settings.provider)
+            put("model", resolveCodeSetuModel(settings.model))
+            put("baseURL", settings.baseUrl)
+          }
+          put("agentMode", agentMode)
+          if (agentMode && toolNames.isNotEmpty()) {
+            putJsonArray("tools") { toolNames.forEach { add(it) } }
+          }
+          workspace?.let { ws ->
+            putJsonObject("workspace") {
+              put("status", ws.status)
+              put("retrieved", ws.retrieved)
+              ws.message?.let { put("message", it) }
+              if (ws.hits.isNotEmpty()) {
+                putJsonArray("hits") { ws.hits.forEach { add(it) } }
+              }
+            }
+          }
           putJsonArray("skills") {
             selectedSkills.forEach { skill ->
               addJsonObject {
@@ -953,6 +1002,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
             put("hasSelection", !ideContext.selectedText.isNullOrEmpty())
             ideContext.selectedText?.let { put("selectedText", it) }
             put("snippetCount", ideContext.relatedSnippets.size)
+            put("pinnedCount", pinnedCount)
+            put("retrievedCount", ideContext.retrievedSnippets.size)
           }
           putJsonObject("full") {
             put("systemPrompt", systemPrompt)
@@ -969,3 +1020,11 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     Disposer.dispose(browser)
   }
 }
+
+/** @workspace retrieval outcome for the "Context & activity" panel. */
+private data class WorkspacePreview(
+  val status: String,
+  val retrieved: Int = 0,
+  val hits: List<String> = emptyList(),
+  val message: String? = null,
+)

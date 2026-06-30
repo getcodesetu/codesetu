@@ -11,6 +11,12 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **JetBrains: Context & activity panel** (plugin 0.4.12): the per-turn panel
+  (renamed from "Context sent to AI") now shows the **provider · model ·
+  endpoint**, whether **Agent Mode** is on, an expandable **Tools available (N)**
+  list, and the **@workspace** outcome (retrieved N chunks with the file hits, or
+  the failure reason) plus pinned/retrieved counts — matching VS Code. (Tool
+  calls actually *used* during a turn already stream inline as `🔧` lines.)
 - **JetBrains: `@workspace` auto-builds the index on first use** (plugin 0.4.11):
   typing `@workspace …` when no index exists now builds it automatically before
   retrieving (off the EDT), instead of silently returning nothing — matching the

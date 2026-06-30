@@ -2199,11 +2199,64 @@
         const details = document.createElement("details");
         details.className = "context-preview";
         const summary = document.createElement("summary");
-        summary.textContent = "Context sent to AI";
+        summary.textContent = "Context & activity";
         details.appendChild(summary);
 
         const body = document.createElement("div");
         body.className = "ctx-body";
+
+        // Provider / model / endpoint this turn is actually sent to.
+        if (preview.provider) {
+          const p = preview.provider;
+          const label = p.provider + (p.model ? " · " + p.model : "");
+          body.appendChild(ctxRow("Provider", p.baseURL ? label + "  (" + p.baseURL + ")" : label));
+        }
+        body.appendChild(ctxRow("Mode", preview.agentMode ? "Agent (tools enabled)" : "Chat"));
+
+        // Available tools (agent mode) under an expandable row.
+        if (preview.agentMode && preview.tools && preview.tools.length) {
+          const toolsDetails = document.createElement("details");
+          toolsDetails.className = "ctx-tools";
+          const ts = document.createElement("summary");
+          ts.textContent = "Tools available (" + preview.tools.length + ")";
+          toolsDetails.appendChild(ts);
+          const ul = document.createElement("ul");
+          ul.className = "ctx-hits";
+          preview.tools.forEach((t) => {
+            const li = document.createElement("li");
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          toolsDetails.appendChild(ul);
+          body.appendChild(toolsDetails);
+        }
+
+        // @workspace retrieval outcome + the actual file hits.
+        if (preview.workspace) {
+          const w = preview.workspace;
+          let line;
+          if (w.status === "ok") line = "retrieved " + (w.retrieved || 0) + " chunk(s)";
+          else if (w.status === "empty") line = "no matches (index may be empty)";
+          else line = "error: " + (w.message || "see Settings ▸ Tools ▸ CodeSetu");
+          body.appendChild(ctxRow("@workspace", line));
+          if (w.hits && w.hits.length) {
+            const hitsRow = document.createElement("div");
+            hitsRow.className = "ctx-row";
+            const hl = document.createElement("span");
+            hl.className = "ctx-label";
+            hl.textContent = "Retrieved files: ";
+            hitsRow.appendChild(hl);
+            const ul = document.createElement("ul");
+            ul.className = "ctx-hits";
+            w.hits.forEach((h) => {
+              const li = document.createElement("li");
+              li.textContent = h;
+              ul.appendChild(li);
+            });
+            hitsRow.appendChild(ul);
+            body.appendChild(hitsRow);
+          }
+        }
 
         const skills = (preview.skills || []).map((s) =>
           s.slash ? s.slash + " (" + s.name + ")" : s.name,
@@ -2239,6 +2292,10 @@
         body.appendChild(selRow);
 
         body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+        if (ctx.pinnedCount) body.appendChild(ctxRow("Pinned files", String(ctx.pinnedCount)));
+        if (ctx.retrievedCount) {
+          body.appendChild(ctxRow("Retrieved (@workspace)", String(ctx.retrievedCount)));
+        }
 
         const fullDetails = document.createElement("details");
         fullDetails.className = "ctx-full";
