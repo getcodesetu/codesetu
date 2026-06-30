@@ -81,6 +81,10 @@ class WorkspaceIndexService(private val project: Project) {
       "removed ${result.removed}. ${idx.chunkCount} chunks total."
   }
 
+  /** True once an index with at least one chunk is available (loads from disk if needed). */
+  @Synchronized
+  fun isIndexed(): Boolean = load().chunkCount > 0
+
   /** Retrieve chunks for a chat turn (empty on error or empty index). */
   fun retrieve(query: String, k: Int): List<RetrievedChunk> {
     val idx = load()

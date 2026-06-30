@@ -9,6 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+
+- **JetBrains: `@workspace` auto-builds the index on first use** (plugin 0.4.11):
+  typing `@workspace …` when no index exists now builds it automatically before
+  retrieving (off the EDT), instead of silently returning nothing — matching the
+  VS Code behaviour. A down/misconfigured embeddings endpoint surfaces an error
+  in the chat rather than breaking the turn. The **Index Workspace** command
+  remains for explicit rebuilds.
+
 ### Planned for v0.1
 
 - Inline FIM completions via Sarvam-30B

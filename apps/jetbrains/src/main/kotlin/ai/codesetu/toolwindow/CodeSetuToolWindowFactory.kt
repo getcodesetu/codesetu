@@ -372,14 +372,34 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         )
       }
     // @workspace opts the turn into semantic retrieval: pull the most relevant
-    // indexed chunks and attach them as their own context section.
+    // indexed chunks and attach them as their own context section. The first use
+    // auto-builds the index (this runs off the EDT) so the user doesn't have to
+    // run "Index Workspace" manually — matching the VS Code behaviour.
     if (mentionsWorkspace(userText)) {
+      val svc = WorkspaceIndexService.getInstance(project)
       val k = CodeSetuSettingsState.getInstance().state.workspaceRetrievalK
-      val retrieved = WorkspaceIndexService.getInstance(project).retrieve(userText, k)
-      if (retrieved.isNotEmpty()) {
-        ideContext = ideContext.copy(
-          retrievedSnippets = retrieved.map {
-            RetrievedSnippet(path = it.path, startLine = it.startLine, endLine = it.endLine, text = it.text)
+      try {
+        // First use builds the index (off the EDT) so the user doesn't have to
+        // run "Index Workspace" manually — matching VS Code.
+        if (!svc.isIndexed()) svc.reindex()
+        val retrieved = svc.retrieve(userText, k)
+        if (retrieved.isNotEmpty()) {
+          ideContext = ideContext.copy(
+            retrievedSnippets = retrieved.map {
+              RetrievedSnippet(path = it.path, startLine = it.startLine, endLine = it.endLine, text = it.text)
+            },
+          )
+        }
+      } catch (error: Exception) {
+        // A down/misconfigured embeddings endpoint must not break the chat turn;
+        // the model still answers without @workspace context.
+        push(
+          message("error") {
+            put(
+              "text",
+              "CodeSetu @workspace failed: ${error.message ?: error}. " +
+                "Check the embeddings endpoint (Settings ▸ Tools ▸ CodeSetu) and that the model is pulled.",
+            )
           },
         )
       }
