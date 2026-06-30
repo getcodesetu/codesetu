@@ -1944,6 +1944,22 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           body.appendChild(ctxRow("Provider", p.baseURL ? label + "  (" + p.baseURL + ")" : label));
         }
         body.appendChild(ctxRow("Mode", preview.agentMode ? "Agent (tools enabled)" : "Chat"));
+        if (preview.agentMode && preview.tools && preview.tools.length) {
+          const toolsDetails = document.createElement("details");
+          toolsDetails.className = "ctx-tools";
+          const ts = document.createElement("summary");
+          ts.textContent = "Tools available (" + preview.tools.length + ")";
+          toolsDetails.appendChild(ts);
+          const ul = document.createElement("ul");
+          ul.className = "ctx-hits";
+          preview.tools.forEach((t) => {
+            const li = document.createElement("li");
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          toolsDetails.appendChild(ul);
+          body.appendChild(toolsDetails);
+        }
 
         // @workspace retrieval status + the actual file hits, so it's obvious
         // whether semantic context was injected (and why not, when it wasn't).

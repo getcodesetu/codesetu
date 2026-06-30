@@ -20,6 +20,18 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.9] - 2026-06-24
+
+### Added
+
+- **Agent tools are now visible** (VSCode): the "Context & activity" panel lists
+  the exact tools the agent has this turn under an expandable **Tools available
+  (N)** row (e.g. `read_file, write_file, edit_file, bash, list_dir, glob, grep,
+  todo_write, get_diagnostics, find_symbol, find_references, search_workspace`).
+  The Output → CodeSetu log also prints the tool names, not just the count.
+
+---
+
 ## [0.4.8] - 2026-06-24
 
 ### Fixed

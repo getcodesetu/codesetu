@@ -38,7 +38,7 @@ import {
 import * as vscode from "vscode";
 
 import type { WorkspaceCheckpoint } from "./agentCheckpoint";
-import { AGENT_MODE_SYSTEM_NOTE, runAgentTurn } from "./agentRunner";
+import { AGENT_MODE_SYSTEM_NOTE, agentToolNames, runAgentTurn } from "./agentRunner";
 import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
@@ -223,10 +223,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Surface exactly what we're about to send — provider, agent mode, @workspace
     // retrieval, selected code, routed skills, and the full assembled payload —
     // for the chat's "Context & activity" panel.
+    const agentMode = requestContext?.agentMode === true;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // The semantic-search tool is added to the agent only when an index exists;
+    // compute it now so the preview can list the exact toolset for this turn.
+    const searchTool = agentMode ? await workspaceIndex.searchTool() : undefined;
+    const extraAgentTools = searchTool === undefined ? [] : [searchTool];
     requestContext?.onContextPreview?.(
       buildContextPreview(ideContext, routed.selected, instructions, builtinSkills, {
         provider: providerSummaryForPreview(),
-        agentMode: requestContext?.agentMode === true,
+        agentMode,
+        ...(agentMode ? { tools: agentToolNames(workspaceRoot, extraAgentTools) } : {}),
         ...(workspaceInfo === undefined ? {} : { workspace: workspaceInfo }),
       }),
     );
@@ -243,11 +250,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ]),
     });
 
-    outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
-    if (requestContext?.agentMode === true) {
+    outputChannel.appendLine(`Chat request — agentMode=${agentMode}`);
+    if (agentMode) {
       // Give the agent the semantic-search tool when an index exists, so it can
       // retrieve by meaning instead of only grep/glob.
-      const searchTool = await workspaceIndex.searchTool();
       return sendAgentChatRequest(
         providerMessages,
         buildProviderOptions(),
@@ -263,7 +269,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (checkpoint) => {
           lastAgentCheckpoint = checkpoint;
         },
-        searchTool === undefined ? [] : [searchTool],
+        extraAgentTools,
       );
     }
 
@@ -625,6 +631,7 @@ function hasIdeContext(context: IdeContextPayload): boolean {
 interface ContextPreviewExtras {
   provider?: ContextPreview["provider"];
   agentMode?: boolean;
+  tools?: string[];
   workspace?: ContextPreview["workspace"];
 }
 
@@ -643,6 +650,7 @@ function buildContextPreview(
     }),
     ...(extras.provider === undefined ? {} : { provider: extras.provider }),
     ...(extras.agentMode === undefined ? {} : { agentMode: extras.agentMode }),
+    ...(extras.tools === undefined ? {} : { tools: extras.tools }),
     ...(extras.workspace === undefined ? {} : { workspace: extras.workspace }),
     ideContext: {
       ...(ideContext.activeFilePath === undefined

@@ -66,6 +66,8 @@ export interface ContextPreview {
   provider?: { provider: string; model?: string; baseURL?: string };
   /** Whether the tool-calling agent loop drives this turn. */
   agentMode?: boolean;
+  /** Names of the tools available to the agent this turn (agent mode only). */
+  tools?: string[];
   /** @workspace retrieval status for this turn (absent when not requested). */
   workspace?: {
     status: "ok" | "empty" | "error" | "no-folder";
