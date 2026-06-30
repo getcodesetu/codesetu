@@ -20,6 +20,20 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.8] - 2026-06-24
+
+### Fixed
+
+- **Default embedding model now works on a local server** (core/VSCode): the
+  `@workspace` embedding default was `text-embedding-3-small` (OpenAI-only),
+  which 404s on a local Ollama/vLLM endpoint. Changed the defaults to
+  `nomic-embed-text` @ `http://localhost:11434/v1`, matching the JetBrains plugin
+  and the on-prem Docker stack. Override with
+  `codesetu.workspaceIndex.embeddingModel` / `embeddingBaseUrl` (or
+  `CODESETU_EMBEDDING_*`).
+
+---
+
 ## [0.4.7] - 2026-06-24
 
 ### Added

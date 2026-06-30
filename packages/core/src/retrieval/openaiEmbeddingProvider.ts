@@ -18,8 +18,11 @@ import OpenAI from "openai";
 
 import type { EmbeddingProvider } from "./types.js";
 
-export const DEFAULT_EMBEDDING_BASE_URL = "http://localhost:8000/v1";
-export const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+// Local-first defaults that match the JetBrains plugin and the on-prem Docker
+// stack (Ollama). text-embedding-3-small is OpenAI-only and 404s on a local
+// server, so it's a poor default for CodeSetu's bring-your-own-model setup.
+export const DEFAULT_EMBEDDING_BASE_URL = "http://localhost:11434/v1";
+export const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 
 /** The slice of the OpenAI embeddings API this provider uses; injectable for tests. */
 export interface EmbeddingClient {
