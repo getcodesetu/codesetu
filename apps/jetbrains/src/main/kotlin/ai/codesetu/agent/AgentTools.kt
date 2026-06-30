@@ -55,6 +55,48 @@ fun defaultAgentTools(): List<AgentTool> =
     TodoWriteTool,
   )
 
+/**
+ * A system-prompt section that teaches a model to call tools as text, for models
+ * without native function-calling (e.g. Gemma, many small local models via
+ * Ollama). The loop recovers these `<tool_call>{…}</tool_call>` blocks via
+ * parseToolCallsFromContent; native-tool models ignore it. Mirrors the
+ * TypeScript buildAgentToolsPrompt in @codesetu/core.
+ */
+fun buildAgentToolsPrompt(tools: List<AgentTool>): String {
+  val lines = tools.map { tool ->
+    val params = describeToolParams(tool.parameters)
+    "- ${tool.name}: ${tool.description}" + if (params.isNotEmpty()) " Arguments: $params" else ""
+  }
+  return (
+    listOf(
+      "## Calling tools",
+      "You can act on the workspace by calling the tools listed below. If your runtime",
+      "supports native function/tool calling, use it. Otherwise, call a tool by writing",
+      "a line in EXACTLY this format (raw, not inside a code fence):",
+      "<tool_call>{\"name\": \"<tool-name>\", \"arguments\": { ...json args... }}</tool_call>",
+      "Rules:",
+      "- Emit a <tool_call> only to run a tool; keep the JSON on a single line.",
+      "- You may emit several <tool_call> lines to run multiple tools.",
+      "- After emitting tool call(s), STOP — wait for the results before continuing.",
+      "- When the task is done, reply normally with NO <tool_call>.",
+      "Available tools:",
+    ) + lines
+  ).joinToString("\n")
+}
+
+/** Compact one-line summary of a tool's JSON-schema arguments for the prompt. */
+private fun describeToolParams(parameters: JsonObject): String {
+  val properties = parameters["properties"] as? JsonObject ?: return ""
+  if (properties.isEmpty()) return ""
+  val required =
+    (parameters["required"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull }?.toSet()
+      ?: emptySet()
+  return properties.entries.joinToString(", ") { (key, value) ->
+    val type = (value as? JsonObject)?.get("type")?.jsonPrimitive?.contentOrNull ?: "any"
+    "$key${if (key in required) "" else "?"}: $type"
+  }
+}
+
 object ReadFileTool : AgentTool {
   override val name = "read_file"
   override val description =

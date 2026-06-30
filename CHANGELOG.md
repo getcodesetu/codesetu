@@ -24,14 +24,16 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
-- **Agent Mode works with models that lack native tool calling** (core/VSCode):
-  the agent loop now folds a prompted tool-calling instruction — the tool catalog
-  plus the `<tool_call>{"name","arguments"}</tool_call>` format — into the system
-  message. Models without OpenAI-style function calling (e.g. **Gemma** and many
-  small local models via Ollama) can now drive the tool loop; their text-emitted
-  calls are recovered by the existing `parseToolCallsFromContent` fallback.
-  Native-tool models are unaffected (they keep using structured calls). Opt out
-  with the loop's `promptTools: false`. New `buildAgentToolsPrompt` export.
+- **Agent Mode works with models that lack native tool calling** (core/VSCode +
+  JetBrains): the agent loop now folds a prompted tool-calling instruction — the
+  tool catalog plus the `<tool_call>{"name","arguments"}</tool_call>` format —
+  into the system message. Models without OpenAI-style function calling (e.g.
+  **Gemma** and many small local models via Ollama) can now drive the tool loop;
+  their text-emitted calls are recovered by the existing
+  `parseToolCallsFromContent` fallback. Native-tool models are unaffected (they
+  keep using structured calls). Opt out with the loop's `promptTools` flag. New
+  `buildAgentToolsPrompt` (TS export + Kotlin mirror). The JetBrains plugin is
+  bumped to 0.4.10 to match.
 
 ---
 

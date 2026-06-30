@@ -168,10 +168,25 @@ fun runAgentLoop(
   onEvent: (AgentEvent) -> Unit,
   isCancelled: () -> Boolean = { false },
   json: Json = Json { ignoreUnknownKeys = true },
+  promptTools: Boolean = true,
 ): AgentLoopResult {
   val messages = initialMessages.toMutableList()
   val toolsByName = tools.associateBy { it.name }
   val toolSchemas = tools.map { Tool(function = ToolFunction(it.name, it.description, it.parameters)) }
+
+  // Teach non-native-tool models how to call tools as text (recovered by
+  // parseToolCallsFromContent). Folded into the system message so it rides with
+  // the prompt; native-tool models ignore it and use the structured path.
+  if (promptTools && tools.isNotEmpty()) {
+    val toolsPrompt = buildAgentToolsPrompt(tools)
+    val systemIndex = messages.indexOfFirst { it.role == "system" }
+    if (systemIndex >= 0) {
+      val existing = messages[systemIndex]
+      messages[systemIndex] = existing.copy(content = existing.content + "\n\n" + toolsPrompt)
+    } else {
+      messages.add(0, ChatMessage("system", toolsPrompt))
+    }
+  }
   val alwaysApproved = mutableSetOf<String>()
   var finalText = ""
 
