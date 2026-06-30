@@ -11,6 +11,15 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ### Added
 
+- **Auto re-index `@workspace` on save** (VSCode 0.4.14): when an index already
+  exists, CodeSetu re-indexes incrementally a few seconds after you save a file,
+  so retrieval stays fresh without re-running the command. Toggle with
+  `codesetu.workspaceIndex.autoReindex` (default on). It never auto-builds — only
+  refreshes an index you've already created.
+- **Always-on `@workspace` retrieval** (VSCode 0.4.14): set
+  `codesetu.workspaceIndex.alwaysRetrieve` to pull relevant indexed code into
+  every chat turn, not only when you type `@workspace`. Retrieves silently when
+  an index exists (never triggers a build).
 - **JetBrains: full composer parity with VS Code** (plugin 0.4.13): Agent Mode
   is now the **default** for new chats; a **version badge** (`v<x.y.z>`) sits by
   the model picker; typing `@` offers a dedicated **@workspace** entry (inserts

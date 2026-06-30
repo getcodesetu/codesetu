@@ -2,7 +2,7 @@
   "name": "codesetu",
   "displayName": "CodeSetu",
   "description": "Open-source AI coding assistant for VSCode with multi-provider chat and inline completions. Works with Sarvam, OpenAI-compatible APIs, and local models.",
-  "version": "0.4.10",
+  "version": "0.4.14",
   "publisher": "codesetu",
   "license": "Apache-2.0",
   "repository": {
@@ -345,6 +345,16 @@
           "type": "number",
           "default": 8,
           "description": "How many code chunks @workspace retrieval adds to the chat context per turn."
+        },
+        "codesetu.workspaceIndex.autoReindex": {
+          "type": "boolean",
+          "default": true,
+          "description": "When an @workspace index exists, automatically re-index (incrementally) a short delay after you save a file, so retrieval stays fresh."
+        },
+        "codesetu.workspaceIndex.alwaysRetrieve": {
+          "type": "boolean",
+          "default": false,
+          "description": "Retrieve relevant code from the @workspace index on every chat turn, not only when you type @workspace. Only retrieves when an index already exists (it won't auto-build)."
         }
       }
     }

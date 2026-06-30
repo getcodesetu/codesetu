@@ -98,6 +98,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Owns the @workspace semantic index (build, retrieve, agent search tool).
   const workspaceIndex = new WorkspaceIndexManager(() => apiKey, outputChannel);
 
+  // Keep an existing @workspace index fresh: a short debounce after any save,
+  // re-index incrementally (only changed files re-embed). Never auto-builds —
+  // it only refreshes an index the user already created.
+  let reindexTimer: ReturnType<typeof setTimeout> | undefined;
+  const autoReindexOnSave = vscode.workspace.onDidSaveTextDocument(() => {
+    if (!vscode.workspace.getConfiguration("codesetu").get<boolean>("workspaceIndex.autoReindex", true)) {
+      return;
+    }
+    if (reindexTimer !== undefined) {
+      clearTimeout(reindexTimer);
+    }
+    reindexTimer = setTimeout(() => {
+      void (async () => {
+        if (!(await workspaceIndex.isIndexed())) {
+          return;
+        }
+        try {
+          outputChannel.appendLine(`[index] auto-reindex on save: ${await workspaceIndex.reindex()}`);
+        } catch (error) {
+          outputChannel.appendLine(`[index] auto-reindex failed: ${formatErrorMessage(error)}`);
+        }
+      })();
+    }, 3000);
+  });
+
   // The most recent agent turn's file checkpoint, for one-click revert.
   let lastAgentCheckpoint: WorkspaceCheckpoint | undefined;
 
@@ -162,22 +187,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // @workspace opts the turn into semantic retrieval: pull the most relevant
     // indexed chunks and attach them as their own context section.
     let workspaceInfo: ContextPreview["workspace"];
-    if (mentionsWorkspace(lastUserText)) {
-      const k = vscode.workspace.getConfiguration("codesetu").get<number>("workspaceIndex.retrievalK", 8);
+    const indexCfg = vscode.workspace.getConfiguration("codesetu");
+    const explicitWorkspace = mentionsWorkspace(lastUserText);
+    // Always-on retrieval pulls context every turn (when an index exists) without
+    // needing @workspace; it never triggers a build (that stays explicit).
+    const alwaysRetrieve = indexCfg.get<boolean>("workspaceIndex.alwaysRetrieve", false);
+    if (explicitWorkspace || alwaysRetrieve) {
+      const k = indexCfg.get<number>("workspaceIndex.retrievalK", 8);
       const folders = vscode.workspace.workspaceFolders ?? [];
       if (folders.length === 0) {
-        // No folder open → nothing to index. Tell the user instead of silently
-        // answering generically.
-        outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
-        workspaceInfo = { status: "no-folder", message: "No folder open — use File → Open Folder." };
-        void vscode.window.showWarningMessage(
-          "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
-        );
+        if (explicitWorkspace) {
+          outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
+          workspaceInfo = { status: "no-folder", message: "No folder open — use File → Open Folder." };
+          void vscode.window.showWarningMessage(
+            "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
+          );
+        }
       } else {
         try {
-          // First use of @workspace auto-builds the index so the user doesn't have
-          // to run the command manually. Subsequent turns reuse it.
-          if (!(await workspaceIndex.isIndexed())) {
+          // Auto-build only on an explicit @workspace request — always-on
+          // retrieval never triggers a (potentially slow) full build.
+          if (explicitWorkspace && !(await workspaceIndex.isIndexed())) {
             const summary = await vscode.window.withProgress(
               {
                 location: vscode.ProgressLocation.Notification,
@@ -190,31 +220,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
             outputChannel.appendLine(`[index] ${summary}`);
           }
-          const indexedChunks = await workspaceIndex.chunkCount();
-          const retrieved = await workspaceIndex.retrieve(lastUserText, k);
-          if (retrieved.length > 0) {
-            ideContext.retrievedSnippets = retrieved;
-            outputChannel.appendLine(`[index] @workspace retrieved ${retrieved.length} chunk(s).`);
-            workspaceInfo = {
-              status: "ok",
-              indexedChunks,
-              retrieved: retrieved.length,
-              hits: retrieved.map((s) => `${s.path}:${s.startLine}-${s.endLine}`),
-            };
-          } else {
-            outputChannel.appendLine("[index] @workspace produced no results.");
-            workspaceInfo = { status: "empty", indexedChunks, retrieved: 0 };
-            void vscode.window.showWarningMessage(
-              "CodeSetu @workspace found no matches. The index may be empty — run 'CodeSetu: Index Workspace' and check Output → CodeSetu.",
-            );
+          if (await workspaceIndex.isIndexed()) {
+            const indexedChunks = await workspaceIndex.chunkCount();
+            const retrieved = await workspaceIndex.retrieve(lastUserText, k);
+            if (retrieved.length > 0) {
+              ideContext.retrievedSnippets = retrieved;
+              outputChannel.appendLine(
+                `[index] ${explicitWorkspace ? "@workspace" : "auto-retrieve"} added ${retrieved.length} chunk(s).`,
+              );
+              workspaceInfo = {
+                status: "ok",
+                indexedChunks,
+                retrieved: retrieved.length,
+                hits: retrieved.map((s) => `${s.path}:${s.startLine}-${s.endLine}`),
+              };
+            } else if (explicitWorkspace) {
+              outputChannel.appendLine("[index] @workspace produced no results.");
+              workspaceInfo = { status: "empty", indexedChunks, retrieved: 0 };
+              void vscode.window.showWarningMessage(
+                "CodeSetu @workspace found no matches. The index may be empty — run 'CodeSetu: Index Workspace' and check Output → CodeSetu.",
+              );
+            }
+          } else if (explicitWorkspace) {
+            workspaceInfo = { status: "empty", indexedChunks: 0, retrieved: 0 };
           }
         } catch (error) {
           const message = formatErrorMessage(error);
-          outputChannel.appendLine(`[index] @workspace failed: ${message}`);
-          workspaceInfo = { status: "error", message };
-          void vscode.window.showErrorMessage(
-            `CodeSetu @workspace failed: ${message}. Check the embeddings endpoint (codesetu.workspaceIndex.embeddingBaseUrl/Model).`,
-          );
+          outputChannel.appendLine(`[index] retrieval failed: ${message}`);
+          if (explicitWorkspace) {
+            workspaceInfo = { status: "error", message };
+            void vscode.window.showErrorMessage(
+              `CodeSetu @workspace failed: ${message}. Check the embeddings endpoint (codesetu.workspaceIndex.embeddingBaseUrl/Model).`,
+            );
+          }
         }
       }
     }
@@ -394,6 +432,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     selectModelCommand,
     revertAgentEditsCommand,
     indexWorkspaceCommand,
+    autoReindexOnSave,
     ...editorActions,
     ...editCommand,
     homeView,

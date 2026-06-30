@@ -98,6 +98,7 @@ export const workspace = {
     return disposable();
   },
   onDidChangeConfiguration: () => disposable(),
+  onDidSaveTextDocument: () => disposable(),
   workspaceFolders: undefined as unknown,
   asRelativePath: (value: unknown) => String(value),
   getWorkspaceFolder: () => undefined,
