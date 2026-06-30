@@ -31,6 +31,7 @@ export {
 } from "./policy.js";
 export {
   BASH_TOOL,
+  buildAgentToolsPrompt,
   DEFAULT_AGENT_TOOLS,
   DEFAULT_BASH_TIMEOUT_MS,
   EDIT_TOOL,

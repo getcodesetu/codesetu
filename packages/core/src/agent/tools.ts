@@ -51,6 +51,53 @@ export interface AgentTool {
   preview?(args: Record<string, unknown>, ctx: AgentToolContext): Promise<string | undefined>;
 }
 
+/**
+ * A system-prompt section that teaches a model to call tools as text, for models
+ * without native function-calling (e.g. Gemma, many small local models served
+ * via Ollama). The agent loop recovers these `<tool_call>{…}</tool_call>` blocks
+ * via parseToolCallsFromContent, so a non-native model can still drive the loop.
+ * Native-tool-calling models simply ignore it and use the structured path.
+ */
+export function buildAgentToolsPrompt(tools: readonly AgentTool[]): string {
+  const lines = tools.map((tool) => {
+    const params = describeToolParams(tool.parameters);
+    return `- ${tool.name}: ${tool.description}${params.length > 0 ? ` Arguments: ${params}` : ""}`;
+  });
+  return [
+    "## Calling tools",
+    "You can act on the workspace by calling the tools listed below. If your runtime",
+    "supports native function/tool calling, use it. Otherwise, call a tool by writing",
+    "a line in EXACTLY this format (raw, not inside a code fence):",
+    '<tool_call>{"name": "<tool-name>", "arguments": { ...json args... }}</tool_call>',
+    "Rules:",
+    "- Emit a <tool_call> only to run a tool; keep the JSON on a single line.",
+    "- You may emit several <tool_call> lines to run multiple tools.",
+    "- After emitting tool call(s), STOP — wait for the results before continuing.",
+    "- When the task is done, reply normally with NO <tool_call>.",
+    "Available tools:",
+    ...lines,
+  ].join("\n");
+}
+
+/** Compact one-line summary of a tool's JSON-schema arguments for the prompt. */
+function describeToolParams(parameters: Record<string, unknown>): string {
+  const properties = (parameters?.properties ?? {}) as Record<string, { type?: unknown }>;
+  const required = new Set(
+    Array.isArray(parameters?.required) ? (parameters.required as string[]) : [],
+  );
+  const keys = Object.keys(properties);
+  if (keys.length === 0) {
+    return "";
+  }
+  return keys
+    .map((key) => {
+      const rawType = properties[key]?.type;
+      const type = typeof rawType === "string" ? rawType : "any";
+      return `${key}${required.has(key) ? "" : "?"}: ${type}`;
+    })
+    .join(", ");
+}
+
 /** Cap tool output so a single call can't blow the model's context window. */
 export const MAX_TOOL_OUTPUT_CHARS = 30_000;
 /** Default wall-clock limit for a single Bash command. */
