@@ -1033,9 +1033,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       if (savedState.planMode === true) {
         planModeToggle.checked = true;
       }
-      if (savedState.agentMode === true) {
-        agentModeToggle.checked = true;
-      }
+      // Agent Mode is the default experience; only off if the user turned it off.
+      agentModeToggle.checked = savedState.agentMode !== false;
       if (savedState.includeContext === false) {
         includeContext.checked = false;
       }
@@ -1932,11 +1931,53 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         const details = document.createElement("details");
         details.className = "context-preview";
         const summary = document.createElement("summary");
-        summary.textContent = "Context sent to AI";
+        summary.textContent = "Context & activity";
         details.appendChild(summary);
 
         const body = document.createElement("div");
         body.className = "ctx-body";
+
+        // Provider / model / endpoint this turn is actually sent to.
+        if (preview.provider) {
+          const p = preview.provider;
+          const label = p.provider + (p.model ? " · " + p.model : "");
+          body.appendChild(ctxRow("Provider", p.baseURL ? label + "  (" + p.baseURL + ")" : label));
+        }
+        body.appendChild(ctxRow("Mode", preview.agentMode ? "Agent (tools enabled)" : "Chat"));
+
+        // @workspace retrieval status + the actual file hits, so it's obvious
+        // whether semantic context was injected (and why not, when it wasn't).
+        if (preview.workspace) {
+          const w = preview.workspace;
+          let line;
+          if (w.status === "ok") {
+            line = "retrieved " + (w.retrieved || 0) + " chunk(s) from " + (w.indexedChunks || 0) + " indexed";
+          } else if (w.status === "empty") {
+            line = "no matches (" + (w.indexedChunks || 0) + " chunks indexed)";
+          } else if (w.status === "no-folder") {
+            line = "no folder open — File → Open Folder";
+          } else {
+            line = "error: " + (w.message || "see Output → CodeSetu");
+          }
+          body.appendChild(ctxRow("@workspace", line));
+          if (w.hits && w.hits.length) {
+            const hitsRow = document.createElement("div");
+            hitsRow.className = "ctx-row";
+            const hl = document.createElement("span");
+            hl.className = "ctx-label";
+            hl.textContent = "Retrieved files: ";
+            hitsRow.appendChild(hl);
+            const ul = document.createElement("ul");
+            ul.className = "ctx-hits";
+            w.hits.forEach((h) => {
+              const li = document.createElement("li");
+              li.textContent = h;
+              ul.appendChild(li);
+            });
+            hitsRow.appendChild(ul);
+            body.appendChild(hitsRow);
+          }
+        }
 
         const skills = (preview.skills || []).map((s) =>
           s.slash ? s.slash + " (" + s.name + ")" : s.name,
@@ -1967,6 +2008,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         body.appendChild(selRow);
 
         body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+        if (ctx.pinnedCount) body.appendChild(ctxRow("Pinned files", String(ctx.pinnedCount)));
+        if (ctx.retrievedCount) {
+          body.appendChild(ctxRow("Retrieved (@workspace)", String(ctx.retrievedCount)));
+        }
 
         const fullDetails = document.createElement("details");
         fullDetails.className = "ctx-full";

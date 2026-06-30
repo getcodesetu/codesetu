@@ -20,6 +20,26 @@ Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
+## [0.4.7] - 2026-06-24
+
+### Added
+
+- **Context & activity panel** (VSCode): the per-turn "Context sent to AI"
+  accordion is now "Context & activity" and shows what CodeSetu is actually
+  doing — the **provider · model · endpoint** the turn is sent to, whether
+  **Agent Mode** is on, and the **@workspace** outcome (retrieved N chunks from
+  M indexed, with the list of retrieved `path:lines`, or the reason it produced
+  nothing: no folder / empty / endpoint error). Also surfaces pinned-file and
+  retrieved-chunk counts.
+
+### Changed
+
+- **Agent Mode is now the default** (VSCode): new chats start with Agent Mode on
+  (tool-calling) unless you turn it off; the choice still persists per the
+  composer toggle.
+
+---
+
 ## [0.4.6] - 2026-06-24
 
 ### Fixed

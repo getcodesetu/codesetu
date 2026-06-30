@@ -62,12 +62,26 @@ interface HistoryQuickPickItem extends vscode.QuickPickItem {
  *  collapsible "Context sent to AI" panel. */
 export interface ContextPreview {
   skills: { name: string; slash?: string }[];
+  /** The provider/model/endpoint this turn is sent to. */
+  provider?: { provider: string; model?: string; baseURL?: string };
+  /** Whether the tool-calling agent loop drives this turn. */
+  agentMode?: boolean;
+  /** @workspace retrieval status for this turn (absent when not requested). */
+  workspace?: {
+    status: "ok" | "empty" | "error" | "no-folder";
+    indexedChunks?: number;
+    retrieved?: number;
+    hits?: string[];
+    message?: string;
+  };
   ideContext: {
     activeFilePath?: string;
     languageId?: string;
     hasSelection: boolean;
     selectedText?: string;
     snippetCount: number;
+    pinnedCount: number;
+    retrievedCount: number;
   };
   full: { systemPrompt: string; contextMarkdown: string };
 }

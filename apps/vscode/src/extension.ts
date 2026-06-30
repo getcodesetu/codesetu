@@ -120,11 +120,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const builtinSkills = await loadBuiltinSkills(context, outputChannel);
   ChatPanel.configureBuiltinSkills(builtinSkills);
   // Surface the extension version in the composer so a stale build is obvious.
-  ChatPanel.configureVersion(
-    typeof context.extension?.packageJSON?.version === "string"
-      ? context.extension.packageJSON.version
-      : "",
-  );
+  const pkgVersion = (context.extension?.packageJSON as { version?: unknown } | undefined)?.version;
+  ChatPanel.configureVersion(typeof pkgVersion === "string" ? pkgVersion : "");
   // Persist the chat transcript per-workspace so it survives a reload.
   ChatPanel.configureStorage(context.workspaceState);
 
@@ -164,6 +161,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     // @workspace opts the turn into semantic retrieval: pull the most relevant
     // indexed chunks and attach them as their own context section.
+    let workspaceInfo: ContextPreview["workspace"];
     if (mentionsWorkspace(lastUserText)) {
       const k = vscode.workspace.getConfiguration("codesetu").get<number>("workspaceIndex.retrievalK", 8);
       const folders = vscode.workspace.workspaceFolders ?? [];
@@ -171,6 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // No folder open → nothing to index. Tell the user instead of silently
         // answering generically.
         outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
+        workspaceInfo = { status: "no-folder", message: "No folder open — use File → Open Folder." };
         void vscode.window.showWarningMessage(
           "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
         );
@@ -191,12 +190,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
             outputChannel.appendLine(`[index] ${summary}`);
           }
+          const indexedChunks = await workspaceIndex.chunkCount();
           const retrieved = await workspaceIndex.retrieve(lastUserText, k);
           if (retrieved.length > 0) {
             ideContext.retrievedSnippets = retrieved;
             outputChannel.appendLine(`[index] @workspace retrieved ${retrieved.length} chunk(s).`);
+            workspaceInfo = {
+              status: "ok",
+              indexedChunks,
+              retrieved: retrieved.length,
+              hits: retrieved.map((s) => `${s.path}:${s.startLine}-${s.endLine}`),
+            };
           } else {
             outputChannel.appendLine("[index] @workspace produced no results.");
+            workspaceInfo = { status: "empty", indexedChunks, retrieved: 0 };
             void vscode.window.showWarningMessage(
               "CodeSetu @workspace found no matches. The index may be empty — run 'CodeSetu: Index Workspace' and check Output → CodeSetu.",
             );
@@ -204,6 +211,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch (error) {
           const message = formatErrorMessage(error);
           outputChannel.appendLine(`[index] @workspace failed: ${message}`);
+          workspaceInfo = { status: "error", message };
           void vscode.window.showErrorMessage(
             `CodeSetu @workspace failed: ${message}. Check the embeddings endpoint (codesetu.workspaceIndex.embeddingBaseUrl/Model).`,
           );
@@ -212,10 +220,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     const instructions = await loadInstructions();
 
-    // Surface exactly what we're about to send — selected code, routed skills,
-    // and the full assembled payload — for the chat's "Context sent to AI" panel.
+    // Surface exactly what we're about to send — provider, agent mode, @workspace
+    // retrieval, selected code, routed skills, and the full assembled payload —
+    // for the chat's "Context & activity" panel.
     requestContext?.onContextPreview?.(
-      buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
+      buildContextPreview(ideContext, routed.selected, instructions, builtinSkills, {
+        provider: providerSummaryForPreview(),
+        agentMode: requestContext?.agentMode === true,
+        ...(workspaceInfo === undefined ? {} : { workspace: workspaceInfo }),
+      }),
     );
 
     // Estimate how much context this turn carries (system prompt + IDE context +
@@ -609,11 +622,18 @@ function hasIdeContext(context: IdeContextPayload): boolean {
  * skills (with their slash), the IDE context summary (selection, file,
  * snippets), and the full system prompt + context markdown for deep inspection.
  */
+interface ContextPreviewExtras {
+  provider?: ContextPreview["provider"];
+  agentMode?: boolean;
+  workspace?: ContextPreview["workspace"];
+}
+
 function buildContextPreview(
   ideContext: IdeContextPayload,
   selectedSkills: readonly WorkspaceInstruction[],
   instructions: readonly WorkspaceInstruction[],
   builtinSkills: readonly { id: string; slashCommands: readonly string[] }[],
+  extras: ContextPreviewExtras = {},
 ): ContextPreview {
   const selection = ideContext.selectedText;
   return {
@@ -621,6 +641,9 @@ function buildContextPreview(
       const slash = builtinSkills.find((b) => b.id === skill.id)?.slashCommands[0];
       return { name: skill.name, ...(slash === undefined ? {} : { slash }) };
     }),
+    ...(extras.provider === undefined ? {} : { provider: extras.provider }),
+    ...(extras.agentMode === undefined ? {} : { agentMode: extras.agentMode }),
+    ...(extras.workspace === undefined ? {} : { workspace: extras.workspace }),
     ideContext: {
       ...(ideContext.activeFilePath === undefined
         ? {}
@@ -629,6 +652,8 @@ function buildContextPreview(
       hasSelection: selection !== undefined && selection.length > 0,
       ...(selection === undefined ? {} : { selectedText: selection }),
       snippetCount: ideContext.relatedSnippets?.length ?? 0,
+      pinnedCount: ideContext.pinnedFiles?.length ?? 0,
+      retrievedCount: ideContext.retrievedSnippets?.length ?? 0,
     },
     full: {
       systemPrompt: buildCodeSetuSystemMessage([...instructions], {
@@ -636,5 +661,15 @@ function buildContextPreview(
       }),
       contextMarkdown: hasIdeContext(ideContext) ? buildContextMarkdown(ideContext) : "",
     },
+  };
+}
+
+/** Provider / model / endpoint shown in the activity panel (no secrets). */
+function providerSummaryForPreview(): ContextPreview["provider"] {
+  const summary = summarizeCodeSetuConfiguration();
+  return {
+    provider: summary.provider,
+    ...(summary.model === undefined ? {} : { model: summary.model }),
+    ...(summary.baseURL === undefined ? {} : { baseURL: summary.baseURL }),
   };
 }
