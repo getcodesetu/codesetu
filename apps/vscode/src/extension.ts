@@ -23,6 +23,7 @@ import {
   isPlanModeApproval,
   routeSkills,
   sanitizeToolMessages,
+  type AgentTool,
   type ApprovalDecision,
   type ApprovalRequest,
   type AudioBlob,
@@ -37,7 +38,7 @@ import {
 import * as vscode from "vscode";
 
 import type { WorkspaceCheckpoint } from "./agentCheckpoint";
-import { AGENT_MODE_SYSTEM_NOTE, runAgentTurn } from "./agentRunner";
+import { AGENT_MODE_SYSTEM_NOTE, agentToolNames, runAgentTurn } from "./agentRunner";
 import { completeAssistantText } from "./chatCompletionRetry";
 import { ChatPanel, type ChatResponder, type ContextPreview, type SpeechBridge } from "./chatPanel";
 import { resolveAssistantResponse } from "./chatStreaming";
@@ -47,6 +48,7 @@ import { readCodeSetuConfiguration, summarizeCodeSetuConfiguration } from "./con
 import { registerEditCommand } from "./editCommand";
 import { collectVSCodeContext, trackActiveEditor } from "./ideContext";
 import { readPinnedFiles } from "./pinnedFiles";
+import { WorkspaceIndexManager, mentionsWorkspace } from "./workspaceIndex";
 import { estimateTokensForParts } from "./tokenEstimate";
 import { selectCodeSetuModel } from "./modelPicker";
 import { formatChatProviderLine, runCodeSetuProviderDiagnostics } from "./providerDiagnostics";
@@ -93,6 +95,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     apiKey,
   });
 
+  // Owns the @workspace semantic index (build, retrieve, agent search tool).
+  const workspaceIndex = new WorkspaceIndexManager(() => apiKey, outputChannel);
+
+  // Keep an existing @workspace index fresh: a short debounce after any save,
+  // re-index incrementally (only changed files re-embed). Never auto-builds —
+  // it only refreshes an index the user already created.
+  let reindexTimer: ReturnType<typeof setTimeout> | undefined;
+  const autoReindexOnSave = vscode.workspace.onDidSaveTextDocument(() => {
+    if (!vscode.workspace.getConfiguration("codesetu").get<boolean>("workspaceIndex.autoReindex", true)) {
+      return;
+    }
+    if (reindexTimer !== undefined) {
+      clearTimeout(reindexTimer);
+    }
+    reindexTimer = setTimeout(() => {
+      void (async () => {
+        if (!(await workspaceIndex.isIndexed())) {
+          return;
+        }
+        try {
+          outputChannel.appendLine(`[index] auto-reindex on save: ${await workspaceIndex.reindex()}`);
+        } catch (error) {
+          outputChannel.appendLine(`[index] auto-reindex failed: ${formatErrorMessage(error)}`);
+        }
+      })();
+    }, 3000);
+  });
+
   // The most recent agent turn's file checkpoint, for one-click revert.
   let lastAgentCheckpoint: WorkspaceCheckpoint | undefined;
 
@@ -114,6 +144,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // truth); falls back to the constants if the bundle is missing/unparseable.
   const builtinSkills = await loadBuiltinSkills(context, outputChannel);
   ChatPanel.configureBuiltinSkills(builtinSkills);
+  // Surface the extension version in the composer so a stale build is obvious.
+  const pkgVersion = (context.extension?.packageJSON as { version?: unknown } | undefined)?.version;
+  ChatPanel.configureVersion(typeof pkgVersion === "string" ? pkgVersion : "");
   // Persist the chat transcript per-workspace so it survives a reload.
   ChatPanel.configureStorage(context.workspaceState);
 
@@ -151,12 +184,96 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ideContext.pinnedFiles = pinned;
       }
     }
+    // @workspace opts the turn into semantic retrieval: pull the most relevant
+    // indexed chunks and attach them as their own context section.
+    let workspaceInfo: ContextPreview["workspace"];
+    const indexCfg = vscode.workspace.getConfiguration("codesetu");
+    const explicitWorkspace = mentionsWorkspace(lastUserText);
+    // Always-on retrieval pulls context every turn (when an index exists) without
+    // needing @workspace; it never triggers a build (that stays explicit).
+    const alwaysRetrieve = indexCfg.get<boolean>("workspaceIndex.alwaysRetrieve", false);
+    if (explicitWorkspace || alwaysRetrieve) {
+      const k = indexCfg.get<number>("workspaceIndex.retrievalK", 8);
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      if (folders.length === 0) {
+        if (explicitWorkspace) {
+          outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
+          workspaceInfo = { status: "no-folder", message: "No folder open — use File → Open Folder." };
+          void vscode.window.showWarningMessage(
+            "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
+          );
+        }
+      } else {
+        try {
+          // Auto-build only on an explicit @workspace request — always-on
+          // retrieval never triggers a (potentially slow) full build.
+          if (explicitWorkspace && !(await workspaceIndex.isIndexed())) {
+            const summary = await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: "CodeSetu: building @workspace index…",
+              },
+              (progress) =>
+                workspaceIndex.reindex((done, total) =>
+                  progress.report({ message: `embedding ${done}/${total} chunks` }),
+                ),
+            );
+            outputChannel.appendLine(`[index] ${summary}`);
+          }
+          if (await workspaceIndex.isIndexed()) {
+            const indexedChunks = await workspaceIndex.chunkCount();
+            const retrieved = await workspaceIndex.retrieve(lastUserText, k);
+            if (retrieved.length > 0) {
+              ideContext.retrievedSnippets = retrieved;
+              outputChannel.appendLine(
+                `[index] ${explicitWorkspace ? "@workspace" : "auto-retrieve"} added ${retrieved.length} chunk(s).`,
+              );
+              workspaceInfo = {
+                status: "ok",
+                indexedChunks,
+                retrieved: retrieved.length,
+                hits: retrieved.map((s) => `${s.path}:${s.startLine}-${s.endLine}`),
+              };
+            } else if (explicitWorkspace) {
+              outputChannel.appendLine("[index] @workspace produced no results.");
+              workspaceInfo = { status: "empty", indexedChunks, retrieved: 0 };
+              void vscode.window.showWarningMessage(
+                "CodeSetu @workspace found no matches. The index may be empty — run 'CodeSetu: Index Workspace' and check Output → CodeSetu.",
+              );
+            }
+          } else if (explicitWorkspace) {
+            workspaceInfo = { status: "empty", indexedChunks: 0, retrieved: 0 };
+          }
+        } catch (error) {
+          const message = formatErrorMessage(error);
+          outputChannel.appendLine(`[index] retrieval failed: ${message}`);
+          if (explicitWorkspace) {
+            workspaceInfo = { status: "error", message };
+            void vscode.window.showErrorMessage(
+              `CodeSetu @workspace failed: ${message}. Check the embeddings endpoint (codesetu.workspaceIndex.embeddingBaseUrl/Model).`,
+            );
+          }
+        }
+      }
+    }
     const instructions = await loadInstructions();
 
-    // Surface exactly what we're about to send — selected code, routed skills,
-    // and the full assembled payload — for the chat's "Context sent to AI" panel.
+    // Surface exactly what we're about to send — provider, agent mode, @workspace
+    // retrieval, selected code, routed skills, and the full assembled payload —
+    // for the chat's "Context & activity" panel.
+    const agentMode = requestContext?.agentMode === true;
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    // The semantic-search tool is added to the agent only when an index exists;
+    // compute it now so the preview can list the exact toolset for this turn.
+    const searchTool = agentMode ? await workspaceIndex.searchTool() : undefined;
+    const extraAgentTools = searchTool === undefined ? [] : [searchTool];
     requestContext?.onContextPreview?.(
-      buildContextPreview(ideContext, routed.selected, instructions, builtinSkills),
+      buildContextPreview(ideContext, routed.selected, instructions, builtinSkills, {
+        provider: providerSummaryForPreview(),
+        agentMode,
+        ...(agentMode ? { tools: agentToolNames(workspaceRoot, extraAgentTools) } : {}),
+        ...(workspaceInfo === undefined ? {} : { workspace: workspaceInfo }),
+      }),
     );
 
     // Estimate how much context this turn carries (system prompt + IDE context +
@@ -171,8 +288,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ]),
     });
 
-    outputChannel.appendLine(`Chat request — agentMode=${requestContext?.agentMode === true}`);
-    if (requestContext?.agentMode === true) {
+    outputChannel.appendLine(`Chat request — agentMode=${agentMode}`);
+    if (agentMode) {
+      // Give the agent the semantic-search tool when an index exists, so it can
+      // retrieve by meaning instead of only grep/glob.
       return sendAgentChatRequest(
         providerMessages,
         buildProviderOptions(),
@@ -188,6 +307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         (checkpoint) => {
           lastAgentCheckpoint = checkpoint;
         },
+        extraAgentTools,
       );
     }
 
@@ -263,6 +383,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   );
 
+  const indexWorkspaceCommand = vscode.commands.registerCommand("codesetu.indexWorkspace", () =>
+    vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "CodeSetu: indexing workspace…" },
+      async (progress) => {
+        try {
+          const summary = await workspaceIndex.reindex((done, total) => {
+            progress.report({ message: `embedding ${done}/${total} chunks` });
+          });
+          void vscode.window.showInformationMessage(`CodeSetu: ${summary}`);
+        } catch (error: unknown) {
+          const message = formatErrorMessage(error);
+          outputChannel.appendLine(`[index] failed: ${message}`);
+          void vscode.window.showErrorMessage(`CodeSetu indexing failed: ${message}`);
+        }
+      },
+    ),
+  );
+
   const editorActions = registerCodeSetuEditorActions({
     context,
     responder,
@@ -293,6 +431,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     diagnoseProviderCommand,
     selectModelCommand,
     revertAgentEditsCommand,
+    indexWorkspaceCommand,
+    autoReindexOnSave,
     ...editorActions,
     ...editCommand,
     homeView,
@@ -432,6 +572,7 @@ async function sendAgentChatRequest(
   signal?: AbortSignal,
   requestApproval?: (request: ApprovalRequest) => Promise<ApprovalDecision>,
   onCheckpoint?: (checkpoint: WorkspaceCheckpoint) => void,
+  extraTools: AgentTool[] = [],
 ): Promise<string> {
   const configuration = readCodeSetuConfiguration();
   outputChannel.appendLine(
@@ -465,6 +606,7 @@ async function sendAgentChatRequest(
       maxTokens: configuration.chatMaxTokens,
       temperature: configuration.chatTemperature,
       workspaceRoot: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      ...(extraTools.length === 0 ? {} : { extraTools }),
       ...(onChunk === undefined ? {} : { onChunk }),
       ...(persistMessages === undefined ? {} : { onPersist: persistMessages }),
       ...(signal === undefined ? {} : { signal }),
@@ -525,11 +667,19 @@ function hasIdeContext(context: IdeContextPayload): boolean {
  * skills (with their slash), the IDE context summary (selection, file,
  * snippets), and the full system prompt + context markdown for deep inspection.
  */
+interface ContextPreviewExtras {
+  provider?: ContextPreview["provider"];
+  agentMode?: boolean;
+  tools?: string[];
+  workspace?: ContextPreview["workspace"];
+}
+
 function buildContextPreview(
   ideContext: IdeContextPayload,
   selectedSkills: readonly WorkspaceInstruction[],
   instructions: readonly WorkspaceInstruction[],
   builtinSkills: readonly { id: string; slashCommands: readonly string[] }[],
+  extras: ContextPreviewExtras = {},
 ): ContextPreview {
   const selection = ideContext.selectedText;
   return {
@@ -537,6 +687,10 @@ function buildContextPreview(
       const slash = builtinSkills.find((b) => b.id === skill.id)?.slashCommands[0];
       return { name: skill.name, ...(slash === undefined ? {} : { slash }) };
     }),
+    ...(extras.provider === undefined ? {} : { provider: extras.provider }),
+    ...(extras.agentMode === undefined ? {} : { agentMode: extras.agentMode }),
+    ...(extras.tools === undefined ? {} : { tools: extras.tools }),
+    ...(extras.workspace === undefined ? {} : { workspace: extras.workspace }),
     ideContext: {
       ...(ideContext.activeFilePath === undefined
         ? {}
@@ -545,6 +699,8 @@ function buildContextPreview(
       hasSelection: selection !== undefined && selection.length > 0,
       ...(selection === undefined ? {} : { selectedText: selection }),
       snippetCount: ideContext.relatedSnippets?.length ?? 0,
+      pinnedCount: ideContext.pinnedFiles?.length ?? 0,
+      retrievedCount: ideContext.retrievedSnippets?.length ?? 0,
     },
     full: {
       systemPrompt: buildCodeSetuSystemMessage([...instructions], {
@@ -552,5 +708,15 @@ function buildContextPreview(
       }),
       contextMarkdown: hasIdeContext(ideContext) ? buildContextMarkdown(ideContext) : "",
     },
+  };
+}
+
+/** Provider / model / endpoint shown in the activity panel (no secrets). */
+function providerSummaryForPreview(): ContextPreview["provider"] {
+  const summary = summarizeCodeSetuConfiguration();
+  return {
+    provider: summary.provider,
+    ...(summary.model === undefined ? {} : { model: summary.model }),
+    ...(summary.baseURL === undefined ? {} : { baseURL: summary.baseURL }),
   };
 }

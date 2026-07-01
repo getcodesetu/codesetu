@@ -1001,6 +1001,7 @@
                   <path d="M12 18v3" />
                 </svg>
               </button>
+              <span id="version-chip" class="usage-chip" title="CodeSetu plugin version">v__VERSION__</span>
               <button
                 id="model-chip"
                 class="model-chip"
@@ -1114,6 +1115,23 @@
                 </svg>
               </span>
               New chat
+            </span>
+          </button>
+          <button id="chat-history" type="button" class="menu-row menu-action">
+            <span class="menu-leading">
+              <span class="menu-icon">
+                <svg
+                  class="composer-icon"
+                  data-icon="history"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M3 3v5h5" />
+                  <path d="M3.05 13a9 9 0 1 0 2.13-5.66L3 8" />
+                  <path d="M12 7v5l3 2" />
+                </svg>
+              </span>
+              Chat history…
             </span>
           </button>
         </div>
@@ -1372,8 +1390,16 @@
         post({ type: "searchFiles", requestId: String(mentionRequestSeq), query: mention.token });
       }
 
+      // @workspace is a reserved mention (semantic codebase search), not a file
+      // pin — offer it whenever the typed token is still a prefix of "workspace".
+      function workspaceMentionMatches(token) {
+        return "workspace".startsWith(String(token || "").toLowerCase());
+      }
+
       function renderMentionMenu(items) {
-        mentionItems = items || [];
+        const token = mentionRange ? mentionRange.token : "";
+        const list = (workspaceMentionMatches(token) ? ["@workspace"] : []).concat(items || []);
+        mentionItems = list;
         if (mentionItems.length === 0) {
           closeMentionMenu();
           return;
@@ -1381,14 +1407,26 @@
         mentionSelectedIndex = 0;
         mentionMenu.innerHTML = mentionItems
           .map((path, index) => {
-            const slash = path.lastIndexOf("/");
-            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
-            const name = slash === -1 ? path : path.slice(slash + 1);
+            const selected = index === 0 ? "true" : "false";
+            if (path === "@workspace") {
+              return (
+                '<button type="button" class="mention-row" role="option" data-index="' +
+                index +
+                '" aria-selected="' +
+                selected +
+                '"><span class="dir">@</span>workspace <span class="desc">— search the indexed codebase</span></button>'
+              );
+            }
+            const isDir = path.endsWith("/");
+            const display = isDir ? path.slice(0, -1) : path;
+            const slash = display.lastIndexOf("/");
+            const dir = slash === -1 ? "" : display.slice(0, slash + 1);
+            const name = (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
             return (
               '<button type="button" class="mention-row" role="option" data-index="' +
               index +
               '" aria-selected="' +
-              (index === 0 ? "true" : "false") +
+              selected +
               '"><span class="dir">' +
               escapeAttr(dir) +
               "</span>" +
@@ -1420,6 +1458,19 @@
       function applyMentionSelection() {
         const path = mentionItems[mentionSelectedIndex];
         if (!path) return false;
+        // @workspace stays as literal text (the host detects it), not pinned.
+        if (path === "@workspace") {
+          if (mentionRange) {
+            const v = textarea.value;
+            const insert = "@workspace ";
+            textarea.value = v.slice(0, mentionRange.start) + insert + v.slice(mentionRange.end);
+            const caret = mentionRange.start + insert.length;
+            textarea.setSelectionRange(caret, caret);
+          }
+          closeMentionMenu();
+          textarea.focus();
+          return true;
+        }
         addPin(path);
         if (mentionRange) {
           const v = textarea.value;
@@ -1455,8 +1506,11 @@
           chip.className = "pin-chip";
           const label = document.createElement("span");
           label.className = "label";
-          const slash = path.lastIndexOf("/");
-          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          const isDir = path.endsWith("/");
+          const display = isDir ? path.slice(0, -1) : path;
+          const slash = display.lastIndexOf("/");
+          label.textContent =
+            "@" + (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
           label.title = path;
           chip.appendChild(label);
           const close = document.createElement("button");
@@ -2194,11 +2248,64 @@
         const details = document.createElement("details");
         details.className = "context-preview";
         const summary = document.createElement("summary");
-        summary.textContent = "Context sent to AI";
+        summary.textContent = "Context & activity";
         details.appendChild(summary);
 
         const body = document.createElement("div");
         body.className = "ctx-body";
+
+        // Provider / model / endpoint this turn is actually sent to.
+        if (preview.provider) {
+          const p = preview.provider;
+          const label = p.provider + (p.model ? " · " + p.model : "");
+          body.appendChild(ctxRow("Provider", p.baseURL ? label + "  (" + p.baseURL + ")" : label));
+        }
+        body.appendChild(ctxRow("Mode", preview.agentMode ? "Agent (tools enabled)" : "Chat"));
+
+        // Available tools (agent mode) under an expandable row.
+        if (preview.agentMode && preview.tools && preview.tools.length) {
+          const toolsDetails = document.createElement("details");
+          toolsDetails.className = "ctx-tools";
+          const ts = document.createElement("summary");
+          ts.textContent = "Tools available (" + preview.tools.length + ")";
+          toolsDetails.appendChild(ts);
+          const ul = document.createElement("ul");
+          ul.className = "ctx-hits";
+          preview.tools.forEach((t) => {
+            const li = document.createElement("li");
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          toolsDetails.appendChild(ul);
+          body.appendChild(toolsDetails);
+        }
+
+        // @workspace retrieval outcome + the actual file hits.
+        if (preview.workspace) {
+          const w = preview.workspace;
+          let line;
+          if (w.status === "ok") line = "retrieved " + (w.retrieved || 0) + " chunk(s)";
+          else if (w.status === "empty") line = "no matches (index may be empty)";
+          else line = "error: " + (w.message || "see Settings ▸ Tools ▸ CodeSetu");
+          body.appendChild(ctxRow("@workspace", line));
+          if (w.hits && w.hits.length) {
+            const hitsRow = document.createElement("div");
+            hitsRow.className = "ctx-row";
+            const hl = document.createElement("span");
+            hl.className = "ctx-label";
+            hl.textContent = "Retrieved files: ";
+            hitsRow.appendChild(hl);
+            const ul = document.createElement("ul");
+            ul.className = "ctx-hits";
+            w.hits.forEach((h) => {
+              const li = document.createElement("li");
+              li.textContent = h;
+              ul.appendChild(li);
+            });
+            hitsRow.appendChild(ul);
+            body.appendChild(hitsRow);
+          }
+        }
 
         const skills = (preview.skills || []).map((s) =>
           s.slash ? s.slash + " (" + s.name + ")" : s.name,
@@ -2234,6 +2341,10 @@
         body.appendChild(selRow);
 
         body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+        if (ctx.pinnedCount) body.appendChild(ctxRow("Pinned files", String(ctx.pinnedCount)));
+        if (ctx.retrievedCount) {
+          body.appendChild(ctxRow("Retrieved (@workspace)", String(ctx.retrievedCount)));
+        }
 
         const fullDetails = document.createElement("details");
         fullDetails.className = "ctx-full";
@@ -2271,6 +2382,11 @@
       document.getElementById("new-chat").addEventListener("click", () => {
         setMenuOpen(false);
         post({ type: "newChat" });
+      });
+
+      document.getElementById("chat-history").addEventListener("click", () => {
+        setMenuOpen(false);
+        post({ type: "openHistory" });
       });
 
       welcomeConfigure.addEventListener("click", () => {
@@ -2311,6 +2427,15 @@
         event.preventDefault();
         const text = textarea.value.trim();
         if (text.length === 0) {
+          return;
+        }
+        // /edit triggers the Edit with CodeSetu diff flow on the active editor
+        // (with per-hunk accept/reject), not a chat turn.
+        const editMatch = /^\/edit\b([\s\S]*)$/.exec(text);
+        if (editMatch) {
+          textarea.value = "";
+          closeSlashMenu();
+          post({ type: "editSelection", instruction: editMatch[1].trim() });
           return;
         }
         sendUserMessage(text);

@@ -149,6 +149,11 @@
         text="Revert Last Agent Edits"
         description="Restore the files changed by the most recent CodeSetu agent turn"/>
       <action
+        id="ai.codesetu.IndexWorkspaceAction"
+        class="ai.codesetu.actions.IndexWorkspaceAction"
+        text="Index Workspace (@workspace)"
+        description="Build the semantic index used by @workspace retrieval"/>
+      <action
         id="ai.codesetu.EditWithCodeSetuAction"
         class="ai.codesetu.edit.EditWithCodeSetuAction"
         text="Edit with CodeSetu"

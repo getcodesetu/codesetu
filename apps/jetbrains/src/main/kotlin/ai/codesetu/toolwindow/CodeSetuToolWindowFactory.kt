@@ -21,11 +21,15 @@ import ai.codesetu.context.collectIdeContext
 import ai.codesetu.context.estimateTokensForParts
 import ai.codesetu.context.readPinnedFiles
 import ai.codesetu.context.searchWorkspaceFiles
+import ai.codesetu.edit.EditWithCodeSetuAction
 import ai.codesetu.instructions.loadWorkspaceInstructions
 import ai.codesetu.model.ChatMessage
 import ai.codesetu.model.IdeContextPayload
+import ai.codesetu.model.RetrievedSnippet
 import ai.codesetu.model.WorkspaceInstruction
 import ai.codesetu.provider.CodeSetuProviderClient
+import ai.codesetu.retrieval.WorkspaceIndexService
+import ai.codesetu.retrieval.mentionsWorkspace
 import ai.codesetu.prompts.PLAN_MODE_SKILL_ID
 import ai.codesetu.prompts.buildContextMarkdown
 import ai.codesetu.prompts.buildSystemMessage
@@ -50,15 +54,19 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileDocumentManagerListener
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.Alarm
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
@@ -113,8 +121,12 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val speechClient = CodeSetuSpeechClient()
   private val historyJson = Json { ignoreUnknownKeys = true }
   private val history = mutableListOf<ChatMessage>()
-  // Snapshot of the persisted transcript, replayed once the webview mounts.
-  private val restoredHistory: List<ChatMessage> = loadPersistedHistory()
+  // Saved conversations (most-recent first); the active one mirrors `history`.
+  private val sessions: MutableList<ChatSession> = loadSessions().toMutableList()
+  private var activeSessionId: String = sessions.firstOrNull()?.id ?: UUID.randomUUID().toString()
+  // Snapshot of the active conversation, replayed once the webview mounts.
+  private val restoredHistory: List<ChatMessage> =
+    sessions.firstOrNull { it.id == activeSessionId }?.messages ?: emptyList()
   private var replayedHistory = false
   // File snapshots from the most recent agent turn, for "Revert Last Agent Edits".
   private var lastAgentCheckpoint: WorkspaceCheckpoint? = null
@@ -127,6 +139,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   private val cancelRequested = AtomicBoolean(false)
   // In-flight inline tool approvals, keyed by request id, awaiting a webview click.
   private val pendingApprovals = ConcurrentHashMap<String, CompletableFuture<ApprovalDecision>>()
+  // Debounces auto re-index after saves so a burst of saves triggers one rebuild.
+  private val reindexAlarm = Alarm(Alarm.ThreadToUse.POOLED_THREAD, this)
 
   val component: JComponent
     get() = browser.component
@@ -140,6 +154,28 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     // restart) doesn't lose the transcript. Replayed into the webview on ready.
     history.addAll(restoredHistory)
     browser.loadHTML(ChatWebviewHtml.render(modelLabelText(), jsQuery.inject("payload")))
+
+    // Keep an existing @workspace index fresh: a short debounce after any save,
+    // re-index incrementally. Never auto-builds — only refreshes an existing index.
+    ApplicationManager.getApplication().messageBus.connect(this).subscribe(
+      FileDocumentManagerListener.TOPIC,
+      object : FileDocumentManagerListener {
+        override fun beforeDocumentSaving(document: Document) {
+          if (!CodeSetuSettingsState.getInstance().state.workspaceAutoReindex) return
+          reindexAlarm.cancelAllRequests()
+          reindexAlarm.addRequest({
+            val svc = WorkspaceIndexService.getInstance(project)
+            if (svc.isIndexed()) {
+              try {
+                svc.reindex()
+              } catch (error: Exception) {
+                // Ignore — a failed background refresh must not disrupt editing.
+              }
+            }
+          }, 3000)
+        }
+      },
+    )
   }
 
   /** Entry point for editor actions (Explain/Refactor/...) with pre-captured context. */
@@ -201,7 +237,16 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
         val code = obj["code"]?.jsonPrimitive?.contentOrNull ?: return
         ApplicationManager.getApplication().invokeLater { insertCodeIntoEditor(code) }
       }
+      "editSelection" -> {
+        // /edit <instruction> from the composer: run Edit with CodeSetu on the
+        // active editor (blank instruction → it prompts).
+        val instruction = obj["instruction"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        ApplicationManager.getApplication().invokeLater {
+          EditWithCodeSetuAction().run(project, null, instruction.ifBlank { null })
+        }
+      }
       "newChat" -> ApplicationManager.getApplication().invokeLater { clearConversation() }
+      "openHistory" -> ApplicationManager.getApplication().invokeLater { openHistory() }
       "cancel" -> {
         cancelRequested.set(true)
         resolvePendingApprovals(ApprovalDecision.DENY)
@@ -360,7 +405,7 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
   ) {
     // @-pinned files are an explicit user choice — read them (off the EDT) and
     // attach as related snippets so they ride along as primary context.
-    val ideContext =
+    var ideContext =
       if (pinnedFiles.isEmpty()) {
         baseIdeContext
       } else {
@@ -368,6 +413,57 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
           relatedSnippets = baseIdeContext.relatedSnippets + readPinnedFiles(project.basePath, pinnedFiles),
         )
       }
+    // @workspace opts the turn into semantic retrieval: pull the most relevant
+    // indexed chunks and attach them as their own context section. The first use
+    // auto-builds the index (this runs off the EDT) so the user doesn't have to
+    // run "Index Workspace" manually — matching the VS Code behaviour.
+    var workspacePreview: WorkspacePreview? = null
+    val settingsForIndex = CodeSetuSettingsState.getInstance().state
+    val explicitWorkspace = mentionsWorkspace(userText)
+    // Always-on retrieval pulls context every turn (when an index exists) without
+    // needing @workspace; it never triggers a build (that stays explicit).
+    if (explicitWorkspace || settingsForIndex.workspaceAlwaysRetrieve) {
+      val svc = WorkspaceIndexService.getInstance(project)
+      val k = settingsForIndex.workspaceRetrievalK
+      try {
+        // Auto-build only on an explicit @workspace request (off the EDT).
+        if (explicitWorkspace && !svc.isIndexed()) svc.reindex()
+        if (svc.isIndexed()) {
+          val retrieved = svc.retrieve(userText, k)
+          if (retrieved.isNotEmpty()) {
+            ideContext = ideContext.copy(
+              retrievedSnippets = retrieved.map {
+                RetrievedSnippet(path = it.path, startLine = it.startLine, endLine = it.endLine, text = it.text)
+              },
+            )
+            workspacePreview = WorkspacePreview(
+              status = "ok",
+              retrieved = retrieved.size,
+              hits = retrieved.map { "${it.path}:${it.startLine}-${it.endLine}" },
+            )
+          } else if (explicitWorkspace) {
+            workspacePreview = WorkspacePreview(status = "empty")
+          }
+        } else if (explicitWorkspace) {
+          workspacePreview = WorkspacePreview(status = "empty")
+        }
+      } catch (error: Exception) {
+        // A down/misconfigured embeddings endpoint must not break the chat turn;
+        // the model still answers without @workspace context.
+        workspacePreview = WorkspacePreview(status = "error", message = error.message ?: error.toString())
+        if (explicitWorkspace) {
+          push(
+            message("error") {
+              put(
+                "text",
+                "CodeSetu @workspace failed: ${error.message ?: error}. " +
+                  "Check the embeddings endpoint (Settings ▸ Tools ▸ CodeSetu) and that the model is pulled.",
+              )
+            },
+          )
+        }
+      }
+    }
     val instructions = ReadAction.compute<List<WorkspaceInstruction>, RuntimeException> {
       loadWorkspaceInstructions(project)
     }
@@ -395,8 +491,18 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     // split a tool-call/result pair, which the provider would reject.
     val messages = sanitizeToolMessages(listOf(ChatMessage("system", systemPrompt)) + history)
 
-    // Surface exactly what we're about to send for the "Context sent to AI" panel.
-    pushContextPreview(ideContext, routed.selected, systemPrompt, contextMarkdown)
+    // Surface exactly what we're about to send — provider, mode, tools, and the
+    // @workspace outcome — for the chat's "Context & activity" panel.
+    pushContextPreview(
+      ideContext,
+      routed.selected,
+      systemPrompt,
+      contextMarkdown,
+      agentMode = agentMode,
+      toolNames = if (agentMode) agentToolNames() else emptyList(),
+      pinnedCount = pinnedFiles.size,
+      workspace = workspacePreview,
+    )
 
     // Estimate how much context this turn carries (system prompt + rolling
     // history, which already folds in the IDE context) for the composer gauge.
@@ -503,7 +609,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
       runAgentLoop(
         client = client,
         initialMessages = messages,
-        tools = defaultAgentTools() + GetDiagnosticsTool(project),
+        tools = defaultAgentTools() + GetDiagnosticsTool(project) +
+          listOfNotNull(WorkspaceIndexService.getInstance(project).searchToolOrNull()),
         host = host,
         maxTokens = 4096,
         temperature = 0.2,
@@ -760,21 +867,95 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     push(busy(false))
   }
 
-  private fun historyStorageKey(): String = "codesetu.chat.history"
+  private fun sessionsStorageKey(): String = "codesetu.chat.sessions"
+  private fun legacyHistoryKey(): String = "codesetu.chat.history"
 
-  private fun loadPersistedHistory(): List<ChatMessage> {
-    val raw = PropertiesComponent.getInstance(project).getValue(historyStorageKey()) ?: return emptyList()
-    return try {
-      historyJson.decodeFromString<List<ChatMessage>>(raw)
+  /** Load saved sessions, migrating a legacy single transcript on first run. */
+  private fun loadSessions(): List<ChatSession> {
+    val props = PropertiesComponent.getInstance(project)
+    props.getValue(sessionsStorageKey())?.let { raw ->
+      return try {
+        historyJson.decodeFromString<List<ChatSession>>(raw).sortedByDescending { it.updatedAt }
+      } catch (error: Exception) {
+        emptyList()
+      }
+    }
+    // Migrate the old single transcript into one session.
+    val legacy = props.getValue(legacyHistoryKey()) ?: return emptyList()
+    val messages = try {
+      historyJson.decodeFromString<List<ChatMessage>>(legacy)
     } catch (error: Exception) {
       emptyList()
     }
+    return if (messages.isEmpty()) {
+      emptyList()
+    } else {
+      listOf(
+        ChatSession(
+          UUID.randomUUID().toString(),
+          deriveSessionTitle(messages),
+          messages,
+          System.currentTimeMillis(),
+        ),
+      )
+    }
   }
 
-  /** Persist the current transcript for this project so it survives a reload. */
+  /** Persist the active conversation as a session for this project. */
   private fun persistHistory() {
+    if (history.isNotEmpty()) {
+      val session = ChatSession(
+        id = activeSessionId,
+        title = deriveSessionTitle(history),
+        messages = history.toList(),
+        updatedAt = System.currentTimeMillis(),
+      )
+      val updated = upsertSession(sessions, session)
+      sessions.clear()
+      sessions.addAll(updated)
+    }
     PropertiesComponent.getInstance(project)
-      .setValue(historyStorageKey(), historyJson.encodeToString(history.toList()))
+      .setValue(sessionsStorageKey(), historyJson.encodeToString(sessions.toList()))
+  }
+
+  /** Switch the active conversation to a saved session and replay it. */
+  private fun switchToSession(id: String) {
+    if (id == activeSessionId) return
+    persistHistory()
+    val target = sessions.firstOrNull { it.id == id } ?: return
+    history.clear()
+    history.addAll(target.messages)
+    activeSessionId = id
+    push(message("clearTranscript"))
+    for (entry in target.messages) {
+      if (entry.content.isEmpty()) continue
+      when (entry.role) {
+        "user" -> push(message("userMessage") { put("text", entry.content) })
+        "assistant" -> push(message("assistantMessage") { put("text", entry.content) })
+      }
+    }
+  }
+
+  /** Show the chat-history switcher popup (runs on the EDT). */
+  private fun openHistory() {
+    persistHistory()
+    val items = sessions.filter { it.messages.isNotEmpty() }
+    if (items.isEmpty()) {
+      Messages.showInfoMessage(project, "No past chats yet.", "CodeSetu")
+      return
+    }
+    val now = System.currentTimeMillis()
+    JBPopupFactory.getInstance()
+      .createPopupChooserBuilder(items)
+      .setTitle("CodeSetu chat history")
+      .setRenderer(
+        SimpleListCellRenderer.create("") { s ->
+          s.title + if (s.id == activeSessionId) "  (current)" else "  " + relativeTime(s.updatedAt, now)
+        },
+      )
+      .setItemChosenCallback { switchToSession(it.id) }
+      .createPopup()
+      .showCenteredInCurrentWindow(project)
   }
 
   /** Replay the persisted conversation into a freshly mounted webview (once). */
@@ -831,14 +1012,15 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     }
   }
 
-  /** Clear the conversation in both the host and the webview ("New chat"). */
+  /** Start a fresh chat, saving the one we're leaving as a session ("New chat"). */
   private fun clearConversation() {
     if (inFlight) {
       cancelRequested.set(true)
       resolvePendingApprovals(ApprovalDecision.DENY)
     }
+    persistHistory() // save the chat we're leaving
     history.clear()
-    persistHistory()
+    activeSessionId = UUID.randomUUID().toString()
     push(message("clearTranscript"))
   }
 
@@ -891,15 +1073,45 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
 
   /** Emit the "Context sent to AI" preview: routed skills, the IDE-context
    *  summary, and the full assembled payload for deep inspection. */
+  /** The names of the tools the agent has this turn — defaults + diagnostics + @workspace search. */
+  private fun agentToolNames(): List<String> =
+    (defaultAgentTools() + GetDiagnosticsTool(project) +
+      listOfNotNull(WorkspaceIndexService.getInstance(project).searchToolOrNull()))
+      .map { it.name }
+
   private fun pushContextPreview(
     ideContext: IdeContextPayload,
     selectedSkills: List<WorkspaceInstruction>,
     systemPrompt: String,
     contextMarkdown: String,
+    agentMode: Boolean,
+    toolNames: List<String>,
+    pinnedCount: Int,
+    workspace: WorkspacePreview?,
   ) {
+    val settings = CodeSetuSettingsState.getInstance().state
     push(
       message("contextPreview") {
         putJsonObject("preview") {
+          putJsonObject("provider") {
+            put("provider", settings.provider)
+            put("model", resolveCodeSetuModel(settings.model))
+            put("baseURL", settings.baseUrl)
+          }
+          put("agentMode", agentMode)
+          if (agentMode && toolNames.isNotEmpty()) {
+            putJsonArray("tools") { toolNames.forEach { add(it) } }
+          }
+          workspace?.let { ws ->
+            putJsonObject("workspace") {
+              put("status", ws.status)
+              put("retrieved", ws.retrieved)
+              ws.message?.let { put("message", it) }
+              if (ws.hits.isNotEmpty()) {
+                putJsonArray("hits") { ws.hits.forEach { add(it) } }
+              }
+            }
+          }
           putJsonArray("skills") {
             selectedSkills.forEach { skill ->
               addJsonObject {
@@ -916,6 +1128,8 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
             put("hasSelection", !ideContext.selectedText.isNullOrEmpty())
             ideContext.selectedText?.let { put("selectedText", it) }
             put("snippetCount", ideContext.relatedSnippets.size)
+            put("pinnedCount", pinnedCount)
+            put("retrievedCount", ideContext.retrievedSnippets.size)
           }
           putJsonObject("full") {
             put("systemPrompt", systemPrompt)
@@ -932,3 +1146,11 @@ class CodeSetuChatPanel(private val project: Project) : Disposable {
     Disposer.dispose(browser)
   }
 }
+
+/** @workspace retrieval outcome for the "Context & activity" panel. */
+private data class WorkspacePreview(
+  val status: String,
+  val retrieved: Int = 0,
+  val hits: List<String> = emptyList(),
+  val message: String? = null,
+)

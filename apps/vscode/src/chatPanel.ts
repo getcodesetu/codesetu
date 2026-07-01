@@ -62,12 +62,28 @@ interface HistoryQuickPickItem extends vscode.QuickPickItem {
  *  collapsible "Context sent to AI" panel. */
 export interface ContextPreview {
   skills: { name: string; slash?: string }[];
+  /** The provider/model/endpoint this turn is sent to. */
+  provider?: { provider: string; model?: string; baseURL?: string };
+  /** Whether the tool-calling agent loop drives this turn. */
+  agentMode?: boolean;
+  /** Names of the tools available to the agent this turn (agent mode only). */
+  tools?: string[];
+  /** @workspace retrieval status for this turn (absent when not requested). */
+  workspace?: {
+    status: "ok" | "empty" | "error" | "no-folder";
+    indexedChunks?: number;
+    retrieved?: number;
+    hits?: string[];
+    message?: string;
+  };
   ideContext: {
     activeFilePath?: string;
     languageId?: string;
     hasSelection: boolean;
     selectedText?: string;
     snippetCount: number;
+    pinnedCount: number;
+    retrievedCount: number;
   };
   full: { systemPrompt: string; contextMarkdown: string };
 }
@@ -165,6 +181,11 @@ interface CopyCodeRequest {
   code: string;
 }
 
+interface EditSelectionRequest {
+  type: "editSelection";
+  instruction: string;
+}
+
 export class ChatPanel {
   private static currentPanel: ChatPanel | undefined;
   // Built-in skills resolved at activation (loaded from bundled SKILL.md, or the
@@ -183,6 +204,15 @@ export class ChatPanel {
   /** Provide the Memento used to persist/restore the conversation (call once). */
   public static configureStorage(storage: vscode.Memento): void {
     ChatPanel.storage = storage;
+  }
+
+  // Extension version, shown in the composer so users can confirm which build is
+  // actually loaded after an update.
+  private static version = "";
+
+  /** Provide the extension version for the panel badge (call once at activation). */
+  public static configureVersion(version: string): void {
+    ChatPanel.version = version;
   }
 
   /** Clear the active panel's conversation (backs the New Chat command). */
@@ -369,6 +399,16 @@ export class ChatPanel {
 
     if (isInsertCodeRequest(message)) {
       await this.insertCodeIntoEditor(message.code);
+      return;
+    }
+
+    if (isEditSelectionRequest(message)) {
+      // Delegate to the Edit with CodeSetu command; an empty instruction makes it
+      // prompt for one. The instruction is optional on the command.
+      await vscode.commands.executeCommand(
+        "codesetu.editSelection",
+        message.instruction.length > 0 ? message.instruction : undefined,
+      );
       return;
     }
 
@@ -807,13 +847,23 @@ export class ChatPanel {
       cspSource: webview.cspSource,
       nonce: crypto.randomUUID(),
       modelLabel: `${summary.provider} · ${summary.model ?? "default"}`,
-      slashCommands: ChatPanel.builtinSkills.flatMap((skill) =>
-        skill.slashCommands.map((command) => ({
-          command,
-          skillName: skill.name,
-          description: skill.description,
-        })),
-      ),
+      version: ChatPanel.version,
+      slashCommands: [
+        // /edit is not a skill — it triggers the Edit with CodeSetu diff flow on
+        // the active editor rather than producing a chat reply.
+        {
+          command: "/edit",
+          skillName: "Edit with CodeSetu",
+          description: "Rewrite the active selection/file from an instruction, with a diff preview",
+        },
+        ...ChatPanel.builtinSkills.flatMap((skill) =>
+          skill.slashCommands.map((command) => ({
+            command,
+            skillName: skill.name,
+            description: skill.description,
+          })),
+        ),
+      ],
       speechConnectSources: speechConnectSources(speech),
       speechSttProvider: speech.sttProvider,
       speechLanguage: speech.language,
@@ -935,6 +985,12 @@ function isCopyCodeRequest(message: unknown): message is CopyCodeRequest {
   if (typeof message !== "object" || message === null) return false;
   const candidate = message as Partial<CopyCodeRequest>;
   return candidate.type === "copyCode" && typeof candidate.code === "string";
+}
+
+function isEditSelectionRequest(message: unknown): message is EditSelectionRequest {
+  if (typeof message !== "object" || message === null) return false;
+  const candidate = message as Partial<EditSelectionRequest>;
+  return candidate.type === "editSelection" && typeof candidate.instruction === "string";
 }
 
 function isCancelRequest(message: unknown): boolean {

@@ -518,6 +518,9 @@ describe("runAgentLoop", () => {
       tools: [...DEFAULT_AGENT_TOOLS],
       host,
       requestApproval: approveAll,
+      // This test checks the tool-call mechanics; skip the prompted-tools system
+      // message so the transcript length is exactly the turns produced.
+      promptTools: false,
     });
 
     expect(result.stoppedReason).toBe("completed");
@@ -525,6 +528,31 @@ describe("runAgentLoop", () => {
     expect(host.files.get("x.txt")).toBe("hi");
     // user + assistant(tool_call) + tool result + assistant(final)
     expect(result.messages).toHaveLength(4);
+  });
+
+  it("injects a prompted tool-calling instruction so non-native models can call tools", async () => {
+    const host = new FakeHost();
+    // A Gemma-like model: no structured tool_calls, emits the call as text.
+    const provider = scriptedProvider([
+      textCompletion('<tool_call>{"name": "write_file", "arguments": {"path": "y.txt", "content": "hey"}}</tool_call>'),
+      textCompletion("All set."),
+    ]);
+
+    const result = await runAgentLoop({
+      provider,
+      messages: [{ role: "system", content: "You are CodeSetu." }, ...baseMessages],
+      tools: [...DEFAULT_AGENT_TOOLS],
+      host,
+      requestApproval: approveAll,
+    });
+
+    // The tool catalog + <tool_call> format was folded into the system message…
+    const system = result.messages.find((m) => m.role === "system");
+    expect(system?.content).toContain("<tool_call>");
+    expect(system?.content).toContain("write_file:");
+    // …and the text-emitted tool call was recovered and executed.
+    expect(host.files.get("y.txt")).toBe("hey");
+    expect(result.text).toBe("All set.");
   });
 
   it("asks for approval on a mutating tool and skips it when denied", async () => {

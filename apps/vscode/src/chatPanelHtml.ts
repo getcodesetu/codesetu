@@ -19,6 +19,8 @@ export interface RenderChatPanelHtmlOptions {
   nonce: string;
   /** Human-readable "provider · model" shown in the composer (real, configured values). */
   modelLabel: string;
+  /** Extension version, shown as a small badge so users can confirm the loaded build. */
+  version?: string;
   /** Slash commands available in the composer palette. */
   slashCommands?: ReadonlyArray<{ command: string; skillName: string; description: string }>;
   /**
@@ -43,6 +45,7 @@ function escapeHtml(value: string): string {
 
 export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string {
   const modelLabel = escapeHtml(options.modelLabel);
+  const version = escapeHtml(options.version ?? "");
   // Serialized into the script body via JSON. JSON.stringify can produce "</"
   // sequences that would close the script tag, so escape the slash.
   const slashCommandsJson = JSON.stringify(options.slashCommands ?? []).replace(/</g, "\\u003c");
@@ -889,6 +892,7 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
                 </svg>
               </button>
               <span id="usage-chip" class="usage-chip" hidden title="Estimated tokens in the context sent to the model (approximate)"></span>
+              ${version.length > 0 ? `<span id="version-chip" class="usage-chip" title="CodeSetu extension version">v${version}</span>` : ""}
               <button id="model-chip" class="model-chip" type="button" aria-label="Select model" title="Click to switch model">
                 <span id="model-label">${modelLabel}</span>
                 <svg class="composer-icon chevron" data-icon="chevron-down" viewBox="0 0 24 24" aria-hidden="true">
@@ -1029,9 +1033,8 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       if (savedState.planMode === true) {
         planModeToggle.checked = true;
       }
-      if (savedState.agentMode === true) {
-        agentModeToggle.checked = true;
-      }
+      // Agent Mode is the default experience; only off if the user turned it off.
+      agentModeToggle.checked = savedState.agentMode !== false;
       if (savedState.includeContext === false) {
         includeContext.checked = false;
       }
@@ -1259,23 +1262,43 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         });
       }
 
+      // @workspace is a reserved mention (semantic codebase search), not a file
+      // pin — offer it whenever the typed token is still a prefix of "workspace".
+      function workspaceMentionMatches(token) {
+        return "workspace".startsWith(String(token || "").toLowerCase());
+      }
+
       function renderMentionMenu(items) {
-        mentionItems = items;
-        if (!items || items.length === 0) {
+        const token = mentionRange ? mentionRange.token : "";
+        const list = (workspaceMentionMatches(token) ? ["@workspace"] : []).concat(items || []);
+        mentionItems = list;
+        if (list.length === 0) {
           closeMentionMenu();
           return;
         }
         mentionSelectedIndex = 0;
-        mentionMenu.innerHTML = items
+        mentionMenu.innerHTML = list
           .map((path, index) => {
-            const slash = path.lastIndexOf("/");
-            const dir = slash === -1 ? "" : path.slice(0, slash + 1);
-            const name = slash === -1 ? path : path.slice(slash + 1);
+            const selected = index === 0 ? "true" : "false";
+            if (path === "@workspace") {
+              return (
+                '<button type="button" class="mention-row" role="option" data-index="' +
+                index +
+                '" aria-selected="' +
+                selected +
+                '"><span class="dir">@</span>workspace <span class="desc">— search the indexed codebase</span></button>'
+              );
+            }
+            const isDir = path.endsWith("/");
+            const display = isDir ? path.slice(0, -1) : path;
+            const slash = display.lastIndexOf("/");
+            const dir = slash === -1 ? "" : display.slice(0, slash + 1);
+            const name = (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
             return (
               '<button type="button" class="mention-row" role="option" data-index="' +
               index +
               '" aria-selected="' +
-              (index === 0 ? "true" : "false") +
+              selected +
               '"><span class="dir">' +
               escapeAttr(dir) +
               "</span>" +
@@ -1307,6 +1330,19 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
       function applyMentionSelection() {
         const path = mentionItems[mentionSelectedIndex];
         if (!path) return false;
+        // @workspace is kept as literal text (the host detects it), not pinned.
+        if (path === "@workspace") {
+          if (mentionRange) {
+            const v = textarea.value;
+            const insert = "@workspace ";
+            textarea.value = v.slice(0, mentionRange.start) + insert + v.slice(mentionRange.end);
+            const caret = mentionRange.start + insert.length;
+            textarea.setSelectionRange(caret, caret);
+          }
+          closeMentionMenu();
+          textarea.focus();
+          return true;
+        }
         addPin(path);
         if (mentionRange) {
           const v = textarea.value;
@@ -1344,8 +1380,11 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
           chip.className = "pin-chip";
           const label = document.createElement("span");
           label.className = "label";
-          const slash = path.lastIndexOf("/");
-          label.textContent = "@" + (slash === -1 ? path : path.slice(slash + 1));
+          const isDir = path.endsWith("/");
+          const display = isDir ? path.slice(0, -1) : path;
+          const slash = display.lastIndexOf("/");
+          label.textContent =
+            "@" + (slash === -1 ? display : display.slice(slash + 1)) + (isDir ? "/" : "");
           label.title = path;
           chip.appendChild(label);
           const close = document.createElement("button");
@@ -1892,11 +1931,69 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         const details = document.createElement("details");
         details.className = "context-preview";
         const summary = document.createElement("summary");
-        summary.textContent = "Context sent to AI";
+        summary.textContent = "Context & activity";
         details.appendChild(summary);
 
         const body = document.createElement("div");
         body.className = "ctx-body";
+
+        // Provider / model / endpoint this turn is actually sent to.
+        if (preview.provider) {
+          const p = preview.provider;
+          const label = p.provider + (p.model ? " · " + p.model : "");
+          body.appendChild(ctxRow("Provider", p.baseURL ? label + "  (" + p.baseURL + ")" : label));
+        }
+        body.appendChild(ctxRow("Mode", preview.agentMode ? "Agent (tools enabled)" : "Chat"));
+        if (preview.agentMode && preview.tools && preview.tools.length) {
+          const toolsDetails = document.createElement("details");
+          toolsDetails.className = "ctx-tools";
+          const ts = document.createElement("summary");
+          ts.textContent = "Tools available (" + preview.tools.length + ")";
+          toolsDetails.appendChild(ts);
+          const ul = document.createElement("ul");
+          ul.className = "ctx-hits";
+          preview.tools.forEach((t) => {
+            const li = document.createElement("li");
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          toolsDetails.appendChild(ul);
+          body.appendChild(toolsDetails);
+        }
+
+        // @workspace retrieval status + the actual file hits, so it's obvious
+        // whether semantic context was injected (and why not, when it wasn't).
+        if (preview.workspace) {
+          const w = preview.workspace;
+          let line;
+          if (w.status === "ok") {
+            line = "retrieved " + (w.retrieved || 0) + " chunk(s) from " + (w.indexedChunks || 0) + " indexed";
+          } else if (w.status === "empty") {
+            line = "no matches (" + (w.indexedChunks || 0) + " chunks indexed)";
+          } else if (w.status === "no-folder") {
+            line = "no folder open — File → Open Folder";
+          } else {
+            line = "error: " + (w.message || "see Output → CodeSetu");
+          }
+          body.appendChild(ctxRow("@workspace", line));
+          if (w.hits && w.hits.length) {
+            const hitsRow = document.createElement("div");
+            hitsRow.className = "ctx-row";
+            const hl = document.createElement("span");
+            hl.className = "ctx-label";
+            hl.textContent = "Retrieved files: ";
+            hitsRow.appendChild(hl);
+            const ul = document.createElement("ul");
+            ul.className = "ctx-hits";
+            w.hits.forEach((h) => {
+              const li = document.createElement("li");
+              li.textContent = h;
+              ul.appendChild(li);
+            });
+            hitsRow.appendChild(ul);
+            body.appendChild(hitsRow);
+          }
+        }
 
         const skills = (preview.skills || []).map((s) =>
           s.slash ? s.slash + " (" + s.name + ")" : s.name,
@@ -1927,6 +2024,10 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         body.appendChild(selRow);
 
         body.appendChild(ctxRow("Related snippets", String(ctx.snippetCount || 0)));
+        if (ctx.pinnedCount) body.appendChild(ctxRow("Pinned files", String(ctx.pinnedCount)));
+        if (ctx.retrievedCount) {
+          body.appendChild(ctxRow("Retrieved (@workspace)", String(ctx.retrievedCount)));
+        }
 
         const fullDetails = document.createElement("details");
         fullDetails.className = "ctx-full";
@@ -2009,6 +2110,17 @@ export function renderChatPanelHtml(options: RenderChatPanelHtmlOptions): string
         const text = textarea.value.trim();
 
         if (text.length === 0) {
+          return;
+        }
+
+        // /edit triggers the Edit with CodeSetu diff flow on the active editor,
+        // using anything after the command as the instruction — it is not a chat
+        // turn, so don't post it as a message.
+        const editMatch = /^\\/edit\\b([\\s\\S]*)$/.exec(text);
+        if (editMatch) {
+          textarea.value = "";
+          closeSlashMenu();
+          vscode.postMessage({ type: "editSelection", instruction: editMatch[1].trim() });
           return;
         }
 

@@ -7,7 +7,7 @@ This is intentionally lightweight — it records intent and sequencing, not
 commitments. The [CHANGELOG](../CHANGELOG.md) remains the source of truth for
 what has actually shipped.
 
-Last reviewed: 2026-06-17
+Last reviewed: 2026-06-30
 
 ---
 
@@ -37,12 +37,18 @@ build/lint/test. JetBrains parity is the open follow-up for each.
 
 ### Open follow-ups from this batch
 
-- JetBrains parity for all seven (shared logic already lives in
-  `@codesetu/core` where applicable).
-- `@folder` pinning (only `@file` shipped).
+- ~~JetBrains parity~~ **Done** — JetBrains (plugin 0.4.13) now matches VS Code
+  across `@workspace` (auto-build, mention entry, Context & activity panel with
+  provider/tools/retrieved-chunks), `@folder` pinning, per-hunk `/edit` (command
+  **and** `/edit` slash), prompted tool-calling for non-native models (Gemma),
+  default Agent Mode, the version badge, and inline `🔧` tool-use.
+- ~~`@folder` pinning (only `@file` shipped).~~ **Done** — pinning a folder
+  expands to the files under it (capped, excludes honoured) on both platforms.
 - Multi-session history list (single rolling transcript shipped; no session
   switcher yet).
-- Per-hunk accept/reject in `/edit` (whole-edit apply shipped).
+- ~~Per-hunk accept/reject in `/edit` (whole-edit apply shipped).~~ **Done** —
+  `computeHunks` / `applyHunks` in `@codesetu/core` (Kotlin mirror in JetBrains)
+  back a "Choose Hunks…" picker on both platforms.
 
 ---
 
@@ -50,20 +56,37 @@ build/lint/test. JetBrains parity is the open follow-up for each.
 
 ### Codebase indexing — `@workspace` semantic retrieval
 
-The biggest _capability_ gap and the real moat for an on-prem / Indic-focused
-assistant. Today Agent Mode navigates by grep/glob, which burns iterations and
-misses semantically-related code. Embeddings + a local vector store would make
-both chat and the agent dramatically smarter on large repos.
+**Shipped for VSCode and JetBrains.** Chunking, embeddings against any
+OpenAI-compatible `/v1/embeddings` endpoint, a local persisted vector store under
+`.codesetu/`, incremental re-index by file hash, and retrieval wired into **both**
+chat context (`@workspace …`) and the agent loop (a `search_workspace` tool).
+Air-gapped-friendly: point embeddings at a local server. **CodeSetu: Index
+Workspace** builds/refreshes it. The engine lives in `@codesetu/core`; JetBrains
+has a native Kotlin mirror (`ai.codesetu.retrieval`).
 
-Scope (2–3 weeks): chunking, embeddings, a local vector store, incremental
-re-index on file change, and retrieval wired into both chat context and the
-agent loop. Air-gapped-friendly embedding options to match the
-bring-your-own-model philosophy.
+Open follow-ups:
+
+- **Auto re-index on save** — today indexing is a manual command; a debounced
+  file-watcher would keep it fresh.
+- **Always-on retrieval option** — a setting to retrieve every turn, not only
+  when `@workspace` is typed.
 
 ### On-prem Docker installer
 
-Marked "Planned." A turnkey self-hosted deployment for enterprises that want
-CodeSetu + an OpenAI-compatible inference server fully inside their network.
+**Shipped** — `deploy/docker/`. A turnkey self-hosted stack: an
+OpenAI-compatible server (Ollama) that serves both the chat/agent model and the
+`@workspace` embedding model, fully inside your network. Includes an air-gapped
+install path (save image + model volume, restore offline), a `print-settings.sh`
+that emits the exact IDE config, a `healthcheck.sh`, a GPU toggle, and a
+documented vLLM/TGI alternative. The IDE extensions are unchanged — they just
+point at the endpoint.
+
+Open follow-ups:
+
+- Optional bundled reverse proxy (TLS + auth) for exposure beyond a trusted
+  subnet.
+- A prebuilt offline bundle artifact (image + weights tarball) published per
+  release so customers skip the connected-machine step entirely.
 
 ---
 

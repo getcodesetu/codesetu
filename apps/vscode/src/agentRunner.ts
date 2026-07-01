@@ -24,6 +24,7 @@ import {
   runAgentLoop,
   type AgentEvent,
   type AgentPolicy,
+  type AgentTool,
   type ApprovalDecision,
   type ApprovalRequest,
   type ChatMessage,
@@ -62,6 +63,8 @@ export interface RunAgentTurnOptions {
   temperature?: number;
   maxTokens?: number;
   workspaceRoot: string | undefined;
+  /** Extra tools appended to the defaults (e.g. @workspace semantic search). */
+  extraTools?: AgentTool[];
   onChunk?: (chunk: ChatStreamChunk) => void;
   /** Receives the turn's new messages (tool turns + final answer) to persist. */
   onPersist?: (messages: ChatMessage[]) => void;
@@ -83,12 +86,17 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
     options.workspaceRoot,
   );
   const policy = await loadAgentPolicy(options.workspaceRoot);
-  const tools = [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(options.workspaceRoot)];
+  const tools = [
+    ...DEFAULT_AGENT_TOOLS,
+    ...createVscodeNativeTools(options.workspaceRoot),
+    ...(options.extraTools ?? []),
+  ];
   let toolCallCount = 0;
 
   options.outputChannel.appendLine(
     `[agent] tool loop started — ${tools.length} tools, root=${options.workspaceRoot ?? "(none)"}`,
   );
+  options.outputChannel.appendLine(`[agent] tools: ${tools.map((tool) => tool.name).join(", ")}`);
 
   const result = await runAgentLoop({
     provider: options.provider,
@@ -137,6 +145,22 @@ export async function runAgentTurn(options: RunAgentTurnOptions): Promise<string
   // tool results, final answer) is the new history to persist for next turn.
   options.onPersist?.(result.messages.slice(options.messages.length));
   return result.text;
+}
+
+/**
+ * The names of the tools the agent will have this turn — the defaults, the
+ * VS Code-native tools, and any extras (e.g. @workspace search). Lets the UI
+ * show exactly which tools are available without running the loop.
+ */
+export function agentToolNames(
+  workspaceRoot: string | undefined,
+  extraTools: AgentTool[] = [],
+): string[] {
+  return [
+    ...DEFAULT_AGENT_TOOLS,
+    ...createVscodeNativeTools(workspaceRoot),
+    ...extraTools,
+  ].map((tool) => tool.name);
 }
 
 /** Load the committable project agent policy from `.codesetu/agent.json`. */

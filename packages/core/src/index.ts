@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+export * from "./retrieval/index.js";
 export type {
   ChatCompletion,
   ChatCompletionRequest,
@@ -106,6 +107,7 @@ export {
   type IdeContextPayload,
   type ProviderDiagnostic,
   type ProviderDiagnosticStatus,
+  type RetrievedSnippet,
   type WorkspaceInstruction,
   type WorkspaceInstructionParseResult,
   type WorkspaceInstructionSource,
@@ -123,6 +125,7 @@ export { listTools, registerTool, type CodeSetuTool } from "./tools/index.js";
 export type { AgentHost, DirEntry, ExecOptions, ExecResult } from "./agent/index.js";
 export {
   BASH_TOOL,
+  buildAgentToolsPrompt,
   DEFAULT_AGENT_TOOLS,
   DEFAULT_BASH_TIMEOUT_MS,
   DEFAULT_MAX_ITERATIONS,
@@ -131,8 +134,11 @@ export {
   GLOB_TOOL,
   MAX_DIAGNOSTICS,
   MAX_DIFF_LINES,
+  applyHunks,
+  computeHunks,
   createBashCommandPolicy,
   diffLines,
+  type DiffHunk,
   formatDiagnostics,
   parseAgentPolicy,
   parseToolCallsFromContent,

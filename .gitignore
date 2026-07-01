@@ -18,6 +18,11 @@ artifacts/
 # (single source of truth is /skills; this copy ships in the .vsix)
 apps/vscode/skills/
 
+# CodeSetu @workspace semantic index — machine-generated and large.
+# (.codesetu/agent.json IS meant to be committed for shared team policy.)
+.codesetu/index.json
+.codesetu/workspace-index.json
+
 # Local environment and secrets
 .env
 .env.*

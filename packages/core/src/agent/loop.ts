@@ -21,7 +21,7 @@ import type {
 
 import type { ChatMessage, LlmProvider } from "../providers/base.js";
 import type { AgentHost } from "./host.js";
-import type { AgentTool } from "./tools.js";
+import { buildAgentToolsPrompt, type AgentTool } from "./tools.js";
 
 /** What the user decides when a mutating tool asks for approval. */
 export type ApprovalDecision = "approve" | "approve_always" | "deny";
@@ -71,6 +71,13 @@ export interface AgentLoopOptions {
   resolvePolicy?: (tool: AgentTool, args: Record<string, unknown>) => "allow" | "deny" | "prompt";
   onEvent?: (event: AgentEvent) => void;
   signal?: AbortSignal;
+  /**
+   * Append a prompted tool-calling instruction (tool catalog + `<tool_call>`
+   * format) to the system message so models without native function-calling
+   * (e.g. Gemma) can still drive the loop. Default true; set false to rely only
+   * on the provider's structured tool calling.
+   */
+  promptTools?: boolean;
 }
 
 export interface AgentLoopResult {
@@ -95,6 +102,21 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   const messages: ChatMessage[] = [...options.messages];
   const toolsByName = new Map(tools.map((tool) => [tool.name, tool]));
   const toolSchemas = tools.map(toChatCompletionTool);
+
+  // Teach non-native-tool models how to call tools as text (recovered by
+  // parseToolCallsFromContent). Folded into the system message so it rides with
+  // the prompt; native models ignore it and use the structured path.
+  if (options.promptTools !== false && tools.length > 0) {
+    const toolsPrompt = buildAgentToolsPrompt(tools);
+    const systemIndex = messages.findIndex((message) => message.role === "system");
+    if (systemIndex >= 0) {
+      const existing = messages[systemIndex]!;
+      const existingContent = typeof existing.content === "string" ? existing.content : "";
+      messages[systemIndex] = { ...existing, content: `${existingContent}\n\n${toolsPrompt}` };
+    } else {
+      messages.unshift({ role: "system", content: toolsPrompt });
+    }
+  }
   const alwaysApproved = new Set<string>();
   let finalText = "";
 

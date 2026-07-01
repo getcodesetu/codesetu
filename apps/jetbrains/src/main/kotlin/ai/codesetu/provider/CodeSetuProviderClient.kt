@@ -5,12 +5,15 @@ import ai.codesetu.model.ChatCompletionRequest
 import ai.codesetu.model.ChatCompletionResponse
 import ai.codesetu.model.ChatCompletionChunk
 import ai.codesetu.model.ChatMessage
+import ai.codesetu.model.EmbeddingRequest
+import ai.codesetu.model.EmbeddingResponse
 import ai.codesetu.model.FimCompletionRequest
 import ai.codesetu.model.FimCompletionResponse
 import ai.codesetu.model.ProviderKind
 import ai.codesetu.model.Tool
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.settings.resolveCodeSetuModel
+import ai.codesetu.settings.resolveEmbeddingModel
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -122,6 +125,33 @@ class CodeSetuProviderClient(
 
     return json.decodeFromString<FimCompletionResponse>(response.body())
       .choices.firstOrNull()?.text.orEmpty()
+  }
+
+  /**
+   * Embed a batch of texts via the OpenAI-compatible `/v1/embeddings` endpoint.
+   * Powers @workspace indexing. Uses the embedding base URL/model when set,
+   * otherwise falls back to the chat base URL and the embedding default model.
+   */
+  fun embed(texts: List<String>): List<List<Double>> {
+    if (texts.isEmpty()) return emptyList()
+    val state = CodeSetuSettingsState.getInstance().state
+    val baseUrl = state.embeddingBaseUrl.ifBlank { state.baseUrl }.trimEnd('/')
+    val body = json.encodeToString(
+      EmbeddingRequest(model = resolveEmbeddingModel(state.embeddingModel), input = texts),
+    )
+    val request = HttpRequest.newBuilder()
+      .uri(URI.create("$baseUrl/embeddings"))
+      .header("Authorization", "Bearer ${CodeSetuSettingsState.getInstance().getApiKey()}")
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build()
+    val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+
+    if (response.statusCode() !in 200..299) {
+      error("Embedding request failed with HTTP ${response.statusCode()}: ${response.body()}")
+    }
+
+    return json.decodeFromString<EmbeddingResponse>(response.body()).data.map { it.embedding }
   }
 
   fun streamChat(

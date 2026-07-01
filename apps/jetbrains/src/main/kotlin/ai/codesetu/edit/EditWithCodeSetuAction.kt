@@ -30,6 +30,16 @@ class EditWithCodeSetuAction : AnAction() {
     val project = e.project ?: return
     val editor =
       FileEditorManager.getInstance(project).selectedTextEditor ?: e.getData(CommonDataKeys.EDITOR)
+    run(project, editor, null)
+  }
+
+  /**
+   * Run the edit flow. [presetInstruction] (e.g. from the chat composer's
+   * `/edit <instruction>`) skips the input prompt when non-blank. Public so the
+   * chat tool window can invoke it.
+   */
+  fun run(project: Project, editorArg: com.intellij.openapi.editor.Editor?, presetInstruction: String?) {
+    val editor = editorArg ?: FileEditorManager.getInstance(project).selectedTextEditor
     if (editor == null) {
       warn(project, "Open a file (and optionally select code) before running Edit with CodeSetu.")
       return
@@ -46,15 +56,20 @@ class EditWithCodeSetuAction : AnAction() {
       return
     }
 
+    val preset = presetInstruction?.trim().orEmpty()
     val instruction =
-      Messages.showInputDialog(
-        project,
-        if (hasSelection) "Describe the change for the selection" else "Describe the change for the whole file",
-        "Edit with CodeSetu",
-        null,
-        "",
-        null,
-      )
+      if (preset.isNotEmpty()) {
+        preset
+      } else {
+        Messages.showInputDialog(
+          project,
+          if (hasSelection) "Describe the change for the selection" else "Describe the change for the whole file",
+          "Edit with CodeSetu",
+          null,
+          "",
+          null,
+        )
+      }
     if (instruction.isNullOrBlank()) return
 
     // Capture everything we need on the EDT before going to a background thread.
@@ -86,7 +101,7 @@ class EditWithCodeSetuAction : AnAction() {
 
       val proposedFull = originalFull.substring(0, start) + newCode + originalFull.substring(end)
       ApplicationManager.getApplication().invokeLater {
-        reviewAndApply(project, document, fileType, originalFull, proposedFull, start, end, newCode)
+        reviewAndApply(project, document, fileType, originalFull, proposedFull, start, end, target, newCode)
       }
     }
   }
@@ -99,6 +114,7 @@ class EditWithCodeSetuAction : AnAction() {
     proposedFull: String,
     start: Int,
     end: Int,
+    target: String,
     newCode: String,
   ) {
     val factory = DiffContentFactory.getInstance()
@@ -107,22 +123,53 @@ class EditWithCodeSetuAction : AnAction() {
     DiffManager.getInstance()
       .showDiff(project, SimpleDiffRequest("CodeSetu edit — review", left, right, "Current", "CodeSetu edit"))
 
-    val choice =
-      Messages.showYesNoDialog(
-        project,
-        "Apply this CodeSetu edit?",
-        "Edit with CodeSetu",
-        "Apply",
-        "Discard",
-        Messages.getQuestionIcon(),
-      )
-    if (choice != Messages.YES) return
+    val hunks = computeHunks(target, newCode)
+    // Only offer per-hunk selection when there's more than one independent
+    // change — a single hunk is just the all-or-nothing case.
+    val finalText: String =
+      if (hunks.size > 1) {
+        when (
+          Messages.showDialog(
+            project,
+            "Apply this CodeSetu edit?",
+            "Edit with CodeSetu",
+            arrayOf("Apply All", "Choose Hunks…", "Discard"),
+            0,
+            Messages.getQuestionIcon(),
+          )
+        ) {
+          0 -> newCode
+          1 -> {
+            val dialog = HunkSelectionDialog(project, hunks)
+            if (!dialog.showAndGet()) return
+            val accepted = dialog.acceptedIndices()
+            if (accepted.isEmpty()) {
+              warn(project, "No hunks selected — nothing applied.")
+              return
+            }
+            applyHunks(target, hunks, accepted)
+          }
+          else -> return
+        }
+      } else {
+        val choice =
+          Messages.showYesNoDialog(
+            project,
+            "Apply this CodeSetu edit?",
+            "Edit with CodeSetu",
+            "Apply",
+            "Discard",
+            Messages.getQuestionIcon(),
+          )
+        if (choice != Messages.YES) return
+        newCode
+      }
 
     // Guard the range in case the document shifted while the dialog was open.
     val safeEnd = minOf(end, document.textLength)
     val safeStart = minOf(start, safeEnd)
     WriteCommandAction.runWriteCommandAction(project) {
-      document.replaceString(safeStart, safeEnd, newCode)
+      document.replaceString(safeStart, safeEnd, finalText)
     }
   }
 
