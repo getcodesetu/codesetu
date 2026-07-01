@@ -40,7 +40,7 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
   endpoint**, whether **Agent Mode** is on, an expandable **Tools available (N)**
   list, and the **@workspace** outcome (retrieved N chunks with the file hits, or
   the failure reason) plus pinned/retrieved counts — matching VS Code. (Tool
-  calls actually *used* during a turn already stream inline as `🔧` lines.)
+  calls actually _used_ during a turn already stream inline as `🔧` lines.)
 - **JetBrains: `@workspace` auto-builds the index on first use** (plugin 0.4.11):
   typing `@workspace …` when no index exists now builds it automatically before
   retrieving (off the EDT), instead of silently returning nothing — matching the
@@ -83,7 +83,7 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
 - **Agent tools are now visible** (VSCode): the "Context & activity" panel lists
   the exact tools the agent has this turn under an expandable **Tools available
   (N)** row (e.g. `read_file, write_file, edit_file, bash, list_dir, glob, grep,
-  todo_write, get_diagnostics, find_symbol, find_references, search_workspace`).
+todo_write, get_diagnostics, find_symbol, find_references, search_workspace`).
   The Output → CodeSetu log also prints the tool names, not just the count.
 
 ---
@@ -184,14 +184,14 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
 - **On-prem Docker installer** (`deploy/docker/`): a turnkey self-hosted stack —
   one OpenAI-compatible server (Ollama) serving both the chat/agent model and the
   `@workspace` embedding model, fully inside your network. `cp .env.example .env
-  && docker compose up -d`, then `./print-settings.sh` emits the exact IDE
+&& docker compose up -d`, then `./print-settings.sh` emits the exact IDE
   config. Includes an air-gapped install path (save the image + model volume,
   restore offline), a `healthcheck.sh`, an optional GPU toggle, and a documented
   vLLM/TGI alternative. The IDE extensions are unchanged — they point at the
   endpoint.
 - **`@workspace` semantic indexing** (VSCode + JetBrains): build a local
   embeddings index of the repo (**CodeSetu: Index Workspace**) and retrieve code
-  by *meaning*. Type `@workspace …` in chat to add the most relevant chunks to
+  by _meaning_. Type `@workspace …` in chat to add the most relevant chunks to
   the turn's context, and in Agent Mode the model gets a `search_workspace` tool
   to retrieve on demand instead of guessing with grep/glob. Embeddings run
   against any OpenAI-compatible `/v1/embeddings` endpoint (VSCode:

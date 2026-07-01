@@ -14,7 +14,13 @@
  * limitations under the License.
  */
 
-import { applyHunks, computeHunks, getAssistantText, type DiffHunk, type LlmProvider } from "@codesetu/core";
+import {
+  applyHunks,
+  computeHunks,
+  getAssistantText,
+  type DiffHunk,
+  type LlmProvider,
+} from "@codesetu/core";
 import * as vscode from "vscode";
 
 import type { CodeSetuConfiguration } from "./configuration";
@@ -73,110 +79,115 @@ export function registerEditCommand(options: RegisterEditCommandOptions): vscode
   const command = vscode.commands.registerCommand(
     "codesetu.editSelection",
     async (presetInstruction?: unknown) => {
-    const editor = getActiveOrLastEditor(vscode);
-    if (editor === undefined) {
-      void vscode.window.showWarningMessage(
-        "CodeSetu: open a file (and optionally select code) before running Edit with CodeSetu.",
-      );
-      return;
-    }
+      const editor = getActiveOrLastEditor(vscode);
+      if (editor === undefined) {
+        void vscode.window.showWarningMessage(
+          "CodeSetu: open a file (and optionally select code) before running Edit with CodeSetu.",
+        );
+        return;
+      }
 
-    const document = editor.document;
-    const range = editor.selection.isEmpty
-      ? fullRange(document)
-      : new vscode.Range(editor.selection.start, editor.selection.end);
-    const target = document.getText(range);
-    if (target.trim().length === 0) {
-      void vscode.window.showWarningMessage("CodeSetu: nothing to edit — the file is empty.");
-      return;
-    }
+      const document = editor.document;
+      const range = editor.selection.isEmpty
+        ? fullRange(document)
+        : new vscode.Range(editor.selection.start, editor.selection.end);
+      const target = document.getText(range);
+      if (target.trim().length === 0) {
+        void vscode.window.showWarningMessage("CodeSetu: nothing to edit — the file is empty.");
+        return;
+      }
 
-    // When invoked from the chat composer's `/edit <instruction>`, the
-    // instruction is passed in and we skip the prompt; otherwise ask for it.
-    const preset = typeof presetInstruction === "string" ? presetInstruction.trim() : "";
-    const instruction =
-      preset.length > 0
-        ? preset
-        : await vscode.window.showInputBox({
-            title: "Edit with CodeSetu",
-            prompt: editor.selection.isEmpty
-              ? "Describe the change for the whole file"
-              : "Describe the change for the selection",
-            placeHolder: "e.g. add error handling and JSDoc",
-            ignoreFocusOut: true,
-          });
-    if (instruction === undefined || instruction.trim().length === 0) {
-      return;
-    }
+      // When invoked from the chat composer's `/edit <instruction>`, the
+      // instruction is passed in and we skip the prompt; otherwise ask for it.
+      const preset = typeof presetInstruction === "string" ? presetInstruction.trim() : "";
+      const instruction =
+        preset.length > 0
+          ? preset
+          : await vscode.window.showInputBox({
+              title: "Edit with CodeSetu",
+              prompt: editor.selection.isEmpty
+                ? "Describe the change for the whole file"
+                : "Describe the change for the selection",
+              placeHolder: "e.g. add error handling and JSDoc",
+              ignoreFocusOut: true,
+            });
+      if (instruction === undefined || instruction.trim().length === 0) {
+        return;
+      }
 
-    let newCode: string;
-    try {
-      newCode = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: "CodeSetu is editing…" },
-        () => requestEdit(options, document.languageId, target, instruction),
-      );
-    } catch (error: unknown) {
-      options.outputChannel.appendLine(`Edit failed: ${formatErrorMessage(error)}`);
-      void vscode.window.showErrorMessage(`CodeSetu edit failed: ${formatErrorMessage(error)}`);
-      return;
-    }
+      let newCode: string;
+      try {
+        newCode = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "CodeSetu is editing…" },
+          () => requestEdit(options, document.languageId, target, instruction),
+        );
+      } catch (error: unknown) {
+        options.outputChannel.appendLine(`Edit failed: ${formatErrorMessage(error)}`);
+        void vscode.window.showErrorMessage(`CodeSetu edit failed: ${formatErrorMessage(error)}`);
+        return;
+      }
 
-    if (newCode.trim().length === 0) {
-      void vscode.window.showWarningMessage("CodeSetu returned no edit.");
-      return;
-    }
+      if (newCode.trim().length === 0) {
+        void vscode.window.showWarningMessage("CodeSetu returned no edit.");
+        return;
+      }
 
-    const proposedFull = spliceText(
-      document.getText(),
-      document.offsetAt(range.start),
-      document.offsetAt(range.end),
-      newCode,
-    );
-
-    counter += 1;
-    const proposedUri = vscode.Uri.from({
-      scheme: EDIT_SCHEME,
-      path: `/${counter}/${baseName(document.uri)}`,
-    });
-    proposed.set(proposedUri, proposedFull);
-
-    try {
-      await vscode.commands.executeCommand(
-        "vscode.diff",
-        document.uri,
-        proposedUri,
-        `CodeSetu edit: ${baseName(document.uri)} (review)`,
-        { preview: true },
+      const proposedFull = spliceText(
+        document.getText(),
+        document.offsetAt(range.start),
+        document.offsetAt(range.end),
+        newCode,
       );
 
-      const hunks = computeHunks(target, newCode);
-      // Only offer per-hunk selection when there's more than one independent
-      // change — a single hunk is just the all-or-nothing case.
-      const canChooseHunks = hunks.length > 1;
-      const actions = canChooseHunks ? ["Apply All", "Choose Hunks…", "Discard"] : ["Apply", "Discard"];
+      counter += 1;
+      const proposedUri = vscode.Uri.from({
+        scheme: EDIT_SCHEME,
+        path: `/${counter}/${baseName(document.uri)}`,
+      });
+      proposed.set(proposedUri, proposedFull);
 
-      const choice = await vscode.window.showInformationMessage(
-        "Apply this CodeSetu edit?",
-        { modal: false },
-        ...actions,
-      );
+      try {
+        await vscode.commands.executeCommand(
+          "vscode.diff",
+          document.uri,
+          proposedUri,
+          `CodeSetu edit: ${baseName(document.uri)} (review)`,
+          { preview: true },
+        );
 
-      if (choice === "Apply" || choice === "Apply All") {
-        await applyRangeEdit(document.uri, range, newCode);
-      } else if (choice === "Choose Hunks…") {
-        const accepted = await pickHunks(hunks);
-        if (accepted !== undefined) {
-          if (accepted.length === 0) {
-            void vscode.window.showInformationMessage("CodeSetu: no hunks selected — nothing applied.");
-          } else {
-            await applyRangeEdit(document.uri, range, applyHunks(target, hunks, accepted));
+        const hunks = computeHunks(target, newCode);
+        // Only offer per-hunk selection when there's more than one independent
+        // change — a single hunk is just the all-or-nothing case.
+        const canChooseHunks = hunks.length > 1;
+        const actions = canChooseHunks
+          ? ["Apply All", "Choose Hunks…", "Discard"]
+          : ["Apply", "Discard"];
+
+        const choice = await vscode.window.showInformationMessage(
+          "Apply this CodeSetu edit?",
+          { modal: false },
+          ...actions,
+        );
+
+        if (choice === "Apply" || choice === "Apply All") {
+          await applyRangeEdit(document.uri, range, newCode);
+        } else if (choice === "Choose Hunks…") {
+          const accepted = await pickHunks(hunks);
+          if (accepted !== undefined) {
+            if (accepted.length === 0) {
+              void vscode.window.showInformationMessage(
+                "CodeSetu: no hunks selected — nothing applied.",
+              );
+            } else {
+              await applyRangeEdit(document.uri, range, applyHunks(target, hunks, accepted));
+            }
           }
         }
+      } finally {
+        proposed.delete(proposedUri);
       }
-    } finally {
-      proposed.delete(proposedUri);
-    }
-  });
+    },
+  );
 
   return [command, providerRegistration];
 }
@@ -223,7 +234,10 @@ async function pickHunks(hunks: readonly DiffHunk[]): Promise<number[] | undefin
 function hunkPreview(hunk: DiffHunk): string {
   const removed = hunk.oldLines.length > 0 ? `− ${hunk.oldLines[0]!.trim()}` : "";
   const added = hunk.newLines.length > 0 ? `+ ${hunk.newLines[0]!.trim()}` : "";
-  return [removed, added].filter((part) => part.length > 0).join("   ").slice(0, 120);
+  return [removed, added]
+    .filter((part) => part.length > 0)
+    .join("   ")
+    .slice(0, 120);
 }
 
 async function requestEdit(

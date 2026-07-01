@@ -40,11 +40,7 @@ export {
   type IndexUpdateOptions,
   type IndexUpdateResult,
 } from "./indexer.js";
-export {
-  DEFAULT_RETRIEVAL_K,
-  retrieveFromWorkspace,
-  type RetrievalOptions,
-} from "./retriever.js";
+export { DEFAULT_RETRIEVAL_K, retrieveFromWorkspace, type RetrievalOptions } from "./retriever.js";
 export {
   DEFAULT_EMBEDDING_BASE_URL,
   DEFAULT_EMBEDDING_MODEL,
@@ -52,7 +48,4 @@ export {
   type EmbeddingClient,
   type OpenAIEmbeddingProviderOptions,
 } from "./openaiEmbeddingProvider.js";
-export {
-  createSearchWorkspaceTool,
-  type SearchWorkspaceToolOptions,
-} from "./searchTool.js";
+export { createSearchWorkspaceTool, type SearchWorkspaceToolOptions } from "./searchTool.js";

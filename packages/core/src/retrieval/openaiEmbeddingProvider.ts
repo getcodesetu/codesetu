@@ -27,7 +27,10 @@ export const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 /** The slice of the OpenAI embeddings API this provider uses; injectable for tests. */
 export interface EmbeddingClient {
   embeddings: {
-    create(params: { model: string; input: string[] }): Promise<{ data: Array<{ embedding: number[] }> }>;
+    create(params: {
+      model: string;
+      input: string[];
+    }): Promise<{ data: Array<{ embedding: number[] }> }>;
   };
 }
 

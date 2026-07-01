@@ -156,11 +156,9 @@ export function agentToolNames(
   workspaceRoot: string | undefined,
   extraTools: AgentTool[] = [],
 ): string[] {
-  return [
-    ...DEFAULT_AGENT_TOOLS,
-    ...createVscodeNativeTools(workspaceRoot),
-    ...extraTools,
-  ].map((tool) => tool.name);
+  return [...DEFAULT_AGENT_TOOLS, ...createVscodeNativeTools(workspaceRoot), ...extraTools].map(
+    (tool) => tool.name,
+  );
 }
 
 /** Load the committable project agent policy from `.codesetu/agent.json`. */

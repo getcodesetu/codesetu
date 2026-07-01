@@ -103,7 +103,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // it only refreshes an index the user already created.
   let reindexTimer: ReturnType<typeof setTimeout> | undefined;
   const autoReindexOnSave = vscode.workspace.onDidSaveTextDocument(() => {
-    if (!vscode.workspace.getConfiguration("codesetu").get<boolean>("workspaceIndex.autoReindex", true)) {
+    if (
+      !vscode.workspace
+        .getConfiguration("codesetu")
+        .get<boolean>("workspaceIndex.autoReindex", true)
+    ) {
       return;
     }
     if (reindexTimer !== undefined) {
@@ -115,7 +119,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           return;
         }
         try {
-          outputChannel.appendLine(`[index] auto-reindex on save: ${await workspaceIndex.reindex()}`);
+          outputChannel.appendLine(
+            `[index] auto-reindex on save: ${await workspaceIndex.reindex()}`,
+          );
         } catch (error) {
           outputChannel.appendLine(`[index] auto-reindex failed: ${formatErrorMessage(error)}`);
         }
@@ -198,7 +204,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (folders.length === 0) {
         if (explicitWorkspace) {
           outputChannel.appendLine("[index] @workspace: no workspace folder is open.");
-          workspaceInfo = { status: "no-folder", message: "No folder open — use File → Open Folder." };
+          workspaceInfo = {
+            status: "no-folder",
+            message: "No folder open — use File → Open Folder.",
+          };
           void vscode.window.showWarningMessage(
             "CodeSetu @workspace needs an open folder. Use File → Open Folder, then try again.",
           );

@@ -42,11 +42,11 @@ Build the semantic index once with **CodeSetu: Index Workspace**.
 
 ## Configuration (`.env`)
 
-| Variable          | Default              | Purpose                                            |
-| ----------------- | -------------------- | -------------------------------------------------- |
-| `CODESETU_PORT`   | `11434`              | Host port for the OpenAI-compatible API.           |
-| `CHAT_MODEL`      | `qwen2.5-coder:7b`   | Chat/agent model. **Must support tool calling** for Agent Mode. |
-| `EMBEDDING_MODEL` | `nomic-embed-text`   | Embedding model for `@workspace` indexing.         |
+| Variable          | Default            | Purpose                                                         |
+| ----------------- | ------------------ | --------------------------------------------------------------- |
+| `CODESETU_PORT`   | `11434`            | Host port for the OpenAI-compatible API.                        |
+| `CHAT_MODEL`      | `qwen2.5-coder:7b` | Chat/agent model. **Must support tool calling** for Agent Mode. |
+| `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model for `@workspace` indexing.                      |
 
 Bigger chat models (`qwen2.5-coder:14b`, `:32b`) are smarter but need more
 RAM/VRAM. `llama3.1:8b` is a solid general alternative.

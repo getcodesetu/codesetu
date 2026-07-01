@@ -37,7 +37,10 @@ export function chunkFile(path: string, text: string, options: ChunkOptions = {}
     return [];
   }
   const maxLines = Math.max(1, Math.floor(options.maxLines ?? DEFAULT_CHUNK_MAX_LINES));
-  const overlap = Math.max(0, Math.min(Math.floor(options.overlap ?? DEFAULT_CHUNK_OVERLAP), maxLines - 1));
+  const overlap = Math.max(
+    0,
+    Math.min(Math.floor(options.overlap ?? DEFAULT_CHUNK_OVERLAP), maxLines - 1),
+  );
   const step = maxLines - overlap;
 
   const lines = text.split("\n");

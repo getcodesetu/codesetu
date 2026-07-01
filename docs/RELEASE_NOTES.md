@@ -17,13 +17,13 @@ aligned at the same version.
 
 ### 🧠 `@workspace` — semantic codebase search
 
-Index your repo once and CodeSetu retrieves code by *meaning*, not just text.
+Index your repo once and CodeSetu retrieves code by _meaning_, not just text.
 
 - Type `@workspace <question>` in chat, or let Agent Mode call the
   `search_workspace` tool.
 - **Auto-builds on first use** and **auto re-indexes a few seconds after you
   save** (incremental) — retrieval stays fresh with no manual step.
-- **Always-on retrieval** option: pull relevant code into *every* turn, not only
+- **Always-on retrieval** option: pull relevant code into _every_ turn, not only
   when you type `@workspace`.
 - Runs against any OpenAI-compatible embeddings endpoint (defaults to Ollama
   `nomic-embed-text`). The index persists under `.codesetu/`.
