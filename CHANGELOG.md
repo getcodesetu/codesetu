@@ -11,43 +11,6 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
 
 ## [Unreleased]
 
-### Added
-
-- **JetBrains: parity for index freshness, always-on retrieval, and multi-session
-  history** (plugin 0.4.14): auto re-index `@workspace` after a save (debounced;
-  toggle in Settings ▸ Tools ▸ CodeSetu), an "always retrieve every turn" option,
-  and a **Chat history…** switcher (composer menu) backed by saved sessions —
-  New chat now starts a fresh session and the old one is kept. Settings UI gains
-  a **@workspace** group (embedding base URL/model + the two toggles). Brings
-  JetBrains level with VS Code 0.4.14.
-- **Auto re-index `@workspace` on save** (VSCode 0.4.14): when an index already
-  exists, CodeSetu re-indexes incrementally a few seconds after you save a file,
-  so retrieval stays fresh without re-running the command. Toggle with
-  `codesetu.workspaceIndex.autoReindex` (default on). It never auto-builds — only
-  refreshes an index you've already created.
-- **Always-on `@workspace` retrieval** (VSCode 0.4.14): set
-  `codesetu.workspaceIndex.alwaysRetrieve` to pull relevant indexed code into
-  every chat turn, not only when you type `@workspace`. Retrieves silently when
-  an index exists (never triggers a build).
-- **JetBrains: full composer parity with VS Code** (plugin 0.4.13): Agent Mode
-  is now the **default** for new chats; a **version badge** (`v<x.y.z>`) sits by
-  the model picker; typing `@` offers a dedicated **@workspace** entry (inserts
-  the literal mention instead of pinning a file); and the slash palette includes
-  **`/edit`**, which runs the Edit with CodeSetu diff flow (per-hunk
-  accept/reject) on the active editor using the text after the command.
-- **JetBrains: Context & activity panel** (plugin 0.4.12): the per-turn panel
-  (renamed from "Context sent to AI") now shows the **provider · model ·
-  endpoint**, whether **Agent Mode** is on, an expandable **Tools available (N)**
-  list, and the **@workspace** outcome (retrieved N chunks with the file hits, or
-  the failure reason) plus pinned/retrieved counts — matching VS Code. (Tool
-  calls actually _used_ during a turn already stream inline as `🔧` lines.)
-- **JetBrains: `@workspace` auto-builds the index on first use** (plugin 0.4.11):
-  typing `@workspace …` when no index exists now builds it automatically before
-  retrieving (off the EDT), instead of silently returning nothing — matching the
-  VS Code behaviour. A down/misconfigured embeddings endpoint surfaces an error
-  in the chat rather than breaking the turn. The **Index Workspace** command
-  remains for explicit rebuilds.
-
 ### Planned for v0.1
 
 - Inline FIM completions via Sarvam-30B
@@ -56,6 +19,47 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
 - `/edit` command with diff view
 - Codebase indexing (`@workspace`)
 - On-prem Docker installer
+
+---
+
+## [0.4.14] - 2026-07-01
+
+VSCode and JetBrains are aligned at 0.4.14.
+
+### Added
+
+- **Auto re-index `@workspace` on save** (VSCode + JetBrains): when an index
+  already exists, CodeSetu re-indexes incrementally a few seconds after you save
+  a file, so retrieval stays fresh without re-running the command. Toggle:
+  `codesetu.workspaceIndex.autoReindex` (VSCode) / Settings ▸ Tools ▸ CodeSetu
+  (JetBrains); default on. Never auto-builds — only refreshes an existing index.
+- **Always-on `@workspace` retrieval** (VSCode + JetBrains):
+  `codesetu.workspaceIndex.alwaysRetrieve` pulls relevant indexed code into every
+  chat turn, not only when you type `@workspace`. Retrieves silently when an
+  index exists (never triggers a build).
+- **Multi-session chat history in JetBrains**: a **Chat history…** switcher
+  (composer menu) backed by saved sessions; New chat starts a fresh session and
+  keeps the old one. (VSCode already had this.)
+- **Full composer parity in JetBrains**: Agent Mode is the **default** for new
+  chats; a **version badge** (`v<x.y.z>`) sits by the model picker; typing `@`
+  offers a dedicated **@workspace** entry (inserts the literal mention instead of
+  pinning a file); the slash palette includes **`/edit`**, which runs the Edit
+  with CodeSetu diff flow (per-hunk accept/reject) on the active editor.
+- **Context & activity panel in JetBrains**: the per-turn panel shows the
+  **provider · model · endpoint**, whether Agent Mode is on, an expandable
+  **Tools available (N)** list, and the **@workspace** outcome (retrieved files,
+  or the failure reason) plus pinned/retrieved counts — matching VS Code.
+- **JetBrains: `@workspace` auto-builds the index on first use**: typing
+  `@workspace …` with no index builds it automatically before retrieving (off the
+  EDT) instead of silently returning nothing; a bad embeddings endpoint surfaces
+  an error rather than breaking the turn. The **Index Workspace** command remains
+  for explicit rebuilds.
+
+### Fixed
+
+- **JetBrains: version badge no longer uses an internal API** — read the version
+  from the shipped `plugin.xml` instead of `PluginManagerCore.getPlugin`, clearing
+  the Plugin Verifier "internal method usage" finding.
 
 ---
 
