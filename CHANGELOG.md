@@ -5,6 +5,8 @@ All notable changes to CodeSetu will be documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 Versioning: [Semantic Versioning](https://semver.org/)
 
+For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md).
+
 ---
 
 ## [Unreleased]

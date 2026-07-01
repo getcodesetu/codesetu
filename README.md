@@ -22,6 +22,7 @@ This repository is a pnpm + Gradle monorepo organized as:
 - `skills/` — AI skill manifests (`SKILL.md` per skill) loaded by hosts at activation
 - `plugins/` — first-party plugins built on `@codesetu/plugin-sdk`
 - `docs/ARCHITECTURE.md` — full architecture, layout, and deployment notes
+- `docs/RELEASE_NOTES.md` — human-friendly highlights of what's new each release
 
 ## Agent Mode
 
