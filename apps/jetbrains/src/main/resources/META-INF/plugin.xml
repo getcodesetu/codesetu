@@ -57,7 +57,7 @@
   ]]></description>
 
   <change-notes><![CDATA[
-    <h3>0.4.14</h3>
+    <h3>0.4.15</h3>
     <ul>
       <li><b>@workspace — semantic codebase search</b> — index your repo and retrieve code by meaning. Auto-builds on first use, auto re-indexes after you save, and an optional "always retrieve every turn" mode. Runs on any OpenAI-compatible embeddings endpoint.</li>
       <li><b>Agent Mode is now the default</b>, and works with models that lack native tool-calling (e.g. Gemma) via prompted tool-calls.</li>

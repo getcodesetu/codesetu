@@ -10,7 +10,7 @@ endpoint.
 
 ---
 
-## 0.4.14 — Codebase-aware, more transparent, runs anywhere
+## 0.4.15 — Codebase-aware, more transparent, runs anywhere
 
 Shipped for **both** VS Code and JetBrains (IntelliJ / PyCharm / WebStorm), now
 aligned at the same version.
