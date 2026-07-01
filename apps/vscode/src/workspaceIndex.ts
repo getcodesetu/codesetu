@@ -75,7 +75,11 @@ export class WorkspaceIndexManager {
   private provider(): OpenAIEmbeddingProvider {
     const { baseURL, model } = this.embeddingConfig();
     const apiKey = this.getApiKey();
-    return new OpenAIEmbeddingProvider({ baseURL, model, ...(apiKey === undefined ? {} : { apiKey }) });
+    return new OpenAIEmbeddingProvider({
+      baseURL,
+      model,
+      ...(apiKey === undefined ? {} : { apiKey }),
+    });
   }
 
   /** Load the persisted index from disk (or start empty) for the current model. */
@@ -154,7 +158,9 @@ export class WorkspaceIndexManager {
         text: hit.text,
       }));
     } catch (error) {
-      this.output.appendLine(`[index] retrieval failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.output.appendLine(
+        `[index] retrieval failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return [];
     }
   }

@@ -36,7 +36,16 @@ import {
 class FakeEmbedder implements EmbeddingProvider {
   public batches = 0;
   public embedded = 0;
-  private readonly vocab = ["auth", "token", "login", "payment", "charge", "refund", "render", "pixel"];
+  private readonly vocab = [
+    "auth",
+    "token",
+    "login",
+    "payment",
+    "charge",
+    "refund",
+    "render",
+    "pixel",
+  ];
 
   public embed(texts: string[]): Promise<number[][]> {
     this.batches += 1;
@@ -120,7 +129,9 @@ describe("retrieveFromWorkspace", () => {
     const index = new WorkspaceIndex("fake-model");
     await updateWorkspaceIndex(index, embedder, FILES);
 
-    const hits = await retrieveFromWorkspace(index, embedder, "how do we validate the auth token", { k: 3 });
+    const hits = await retrieveFromWorkspace(index, embedder, "how do we validate the auth token", {
+      k: 3,
+    });
     expect(hits[0]?.path).toBe("src/auth.ts");
   });
 

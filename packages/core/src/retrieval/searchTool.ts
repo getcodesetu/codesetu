@@ -58,7 +58,8 @@ export function createSearchWorkspaceTool(options: SearchWorkspaceToolOptions): 
       if (typeof query !== "string" || query.trim().length === 0) {
         return { content: 'Missing required string argument "query".', isError: true };
       }
-      const k = typeof args.k === "number" && Number.isFinite(args.k) ? Math.max(1, args.k) : defaultK;
+      const k =
+        typeof args.k === "number" && Number.isFinite(args.k) ? Math.max(1, args.k) : defaultK;
       let hits: RetrievedChunk[];
       try {
         hits = await retrieveFromWorkspace(options.index, options.provider, query, { k });
@@ -69,10 +70,15 @@ export function createSearchWorkspaceTool(options: SearchWorkspaceToolOptions): 
         };
       }
       if (hits.length === 0) {
-        return { content: "No indexed matches. The workspace index may be empty — fall back to grep/glob." };
+        return {
+          content: "No indexed matches. The workspace index may be empty — fall back to grep/glob.",
+        };
       }
       const formatted = hits
-        .map((hit) => `${hit.path}:${hit.startLine}-${hit.endLine} (score ${hit.score.toFixed(3)})\n${hit.text}`)
+        .map(
+          (hit) =>
+            `${hit.path}:${hit.startLine}-${hit.endLine} (score ${hit.score.toFixed(3)})\n${hit.text}`,
+        )
         .join("\n\n");
       const capped =
         formatted.length <= MAX_SEARCH_OUTPUT_CHARS

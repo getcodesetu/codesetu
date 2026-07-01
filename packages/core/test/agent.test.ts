@@ -534,7 +534,9 @@ describe("runAgentLoop", () => {
     const host = new FakeHost();
     // A Gemma-like model: no structured tool_calls, emits the call as text.
     const provider = scriptedProvider([
-      textCompletion('<tool_call>{"name": "write_file", "arguments": {"path": "y.txt", "content": "hey"}}</tool_call>'),
+      textCompletion(
+        '<tool_call>{"name": "write_file", "arguments": {"path": "y.txt", "content": "hey"}}</tool_call>',
+      ),
       textCompletion("All set."),
     ]);
 
