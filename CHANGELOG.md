@@ -22,9 +22,9 @@ For human-friendly, themed highlights see [Release Notes](docs/RELEASE_NOTES.md)
 
 ---
 
-## [0.4.14] - 2026-07-01
+## [0.4.15] - 2026-07-01
 
-VSCode and JetBrains are aligned at 0.4.14.
+VSCode and JetBrains are aligned at 0.4.15.
 
 ### Added
 
