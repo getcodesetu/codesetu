@@ -2,8 +2,6 @@ package ai.codesetu.toolwindow
 
 import ai.codesetu.settings.CodeSetuSettingsState
 import ai.codesetu.skills.loadBuiltinSkills
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
 import java.net.URI
 import java.nio.charset.StandardCharsets
 
@@ -33,9 +31,19 @@ object ChatWebviewHtml {
       .replace("__VERSION__", escapeHtml(pluginVersion()))
   }
 
-  /** The installed plugin version, shown as a badge so a stale build is obvious. */
-  private fun pluginVersion(): String =
-    PluginManagerCore.getPlugin(PluginId.getId("ai.codesetu.codesetu"))?.version ?: ""
+  /**
+   * The plugin version, read from the shipped plugin.xml (patched with the real
+   * version at build time). Avoids the internal `PluginManagerCore.getPlugin`
+   * API flagged by the Plugin Verifier; shown as a badge so a stale build is
+   * obvious.
+   */
+  private val version: String by lazy {
+    val xml = ChatWebviewHtml::class.java.getResourceAsStream("/META-INF/plugin.xml")
+      ?.use { String(it.readAllBytes(), StandardCharsets.UTF_8) } ?: return@lazy ""
+    Regex("<version>([^<]+)</version>").find(xml)?.groupValues?.get(1)?.trim() ?: ""
+  }
+
+  private fun pluginVersion(): String = version
 
   private fun speechConfigJson(state: CodeSetuSettingsState.State): String =
     "{\"sttProvider\":${jsonString(state.speechSttProvider)}," +

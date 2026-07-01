@@ -57,6 +57,15 @@
   ]]></description>
 
   <change-notes><![CDATA[
+    <h3>0.4.14</h3>
+    <ul>
+      <li><b>@workspace — semantic codebase search</b> — index your repo and retrieve code by meaning. Auto-builds on first use, auto re-indexes after you save, and an optional "always retrieve every turn" mode. Runs on any OpenAI-compatible embeddings endpoint.</li>
+      <li><b>Agent Mode is now the default</b>, and works with models that lack native tool-calling (e.g. Gemma) via prompted tool-calls.</li>
+      <li><b>Context &amp; activity panel</b> — every turn shows the provider · model · endpoint, the tools available, and the @workspace results; a version badge sits by the model picker.</li>
+      <li><b>/edit</b> — rewrite a selection/file from an instruction with a diff preview and per-hunk accept/reject (command and <code>/edit</code> slash).</li>
+      <li><b>@folder pinning</b> and a <b>multi-session chat history</b> switcher.</li>
+      <li><b>On-prem Docker installer</b> — self-host chat + embeddings fully inside your network (air-gapped friendly).</li>
+    </ul>
     <h3>0.4.1</h3>
     <ul>
       <li><b>Inline FIM completions</b> — ghost-text suggestions as you type, debounced and cached so re-triggering at the same spot avoids a redundant model call.</li>
